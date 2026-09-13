@@ -478,32 +478,35 @@ local function set_crop(image, crop)
   dt.control.sleep(CROP_SETTLE_MS)
 
   local ok, err = pcall(function()
-    -- Neuer Fund (Shortcuts-Editor des Nutzers zeigt "Zuschneiden" mit
-    -- den Untereintraegen Format/links/oben/rechts/unten - bestaetigt
-    -- die Pfadnamen). Trotzdem bleiben die Slider-Werte unveraendert,
-    -- waehrend "soft-switch" (fuer das reine An/Aus) zuverlaessig
-    -- funktioniert - alle 3-Segment-Pfade auf ein Slider-Element
-    -- schlagen bislang identisch fehl, unabhaengig vom Namen. Ein
-    -- offizielles Beispielskript (examples/x-touch.lua) belegt ein
-    -- ECHTES Element "focus" fuer "welches Modul ist gerade aktiv/
-    -- aufgeklappt" - getrennt vom reinen Enable/Disable. Hypothese:
-    -- die Slider-Werte lassen sich nur aendern, wenn das Modul auch
-    -- fokussiert/aufgeklappt ist, nicht nur "enabled". Testweise hier
-    -- Fokus-Status vor und nach einem "toggle" loggen.
-    local f_before = dt.gui.action(CROP_PATH, 0, "focus")
-    local r_switch = dt.gui.action(CROP_PATH, 0, "soft-switch", "on")
-    local r_focus = dt.gui.action(CROP_PATH, 0, "focus", "toggle", 1)
-    local f_after = dt.gui.action(CROP_PATH, 0, "focus")
+    -- Fund: der Nutzer hat "focus" abgefragt (ein per offiziellem
+    -- Beispielskript examples/x-touch.lua bestaetigt ECHTES Element) -
+    -- und bekam ebenfalls nan, sowohl vor als auch nach einem
+    -- "toggle"-Versuch. Das entwertet "nan" als Fehlersignal endgueltig
+    -- (selbst ein garantiert gueltiges Element liefert nan in unserem
+    -- Aufrufkontext) UND zeigt: das Problem liegt nicht an Element-/
+    -- Pfadnamen.
+    --
+    -- Tatsaechlicher Verdaechtiger jetzt: die INSTANZ. Die API-Doku sagt
+    -- explizit "[instance] - wenn nicht angegeben, wird 1 verwendet" -
+    -- wir haben bislang ueberall explizit 0 uebergeben. Das offizielle,
+    -- praktisch identische Beispiel official/auto_straighten.lua setzt
+    -- fuer ashift (ebenfalls ein Geometrie-Modul mit On-Canvas-Overlay
+    -- wie crop) GENAU dieses Muster erfolgreich um, OHNE Instanz-Angabe
+    -- (also automatisch 1):
+    --   dt.gui.action("iop/ashift", "enable", "", "")
+    --   dt.gui.action("iop/ashift/rotation", "value", "set", roll)
+    -- Instanz 0 koennte fuer einfache History-Mutationen (Modul an/aus)
+    -- noch "zufaellig" funktionieren, fuer eine echte Live-Widget-
+    -- Aufloesung (Wert lesen/setzen) aber schlicht ins Leere laufen.
+    -- Deshalb jetzt 1:1 auf das ashift-Muster umgestellt: "enable" statt
+    -- "soft-switch", und ueberall Instanz 1 statt 0.
+    local r_switch = dt.gui.action(CROP_PATH, 1, "enable", "", "")
+    local r_left = dt.gui.action(CROP_PATH .. "/left", 1, "value", "set", left)
+    local r_top = dt.gui.action(CROP_PATH .. "/top", 1, "value", "set", top)
+    local r_right = dt.gui.action(CROP_PATH .. "/right", 1, "value", "set", right)
+    local r_bottom = dt.gui.action(CROP_PATH .. "/bottom", 1, "value", "set", bottom)
     log(string.format(
-      "set_crop %s: focus vorher=%s toggle-status=%s focus nachher=%s",
-      image.filename, tostring(f_before), tostring(r_focus),
-      tostring(f_after)))
-    local r_left = dt.gui.action(CROP_PATH .. "/left", 0, "value", "set", left)
-    local r_top = dt.gui.action(CROP_PATH .. "/top", 0, "value", "set", top)
-    local r_right = dt.gui.action(CROP_PATH .. "/right", 0, "value", "set", right)
-    local r_bottom = dt.gui.action(CROP_PATH .. "/bottom", 0, "value", "set", bottom)
-    log(string.format(
-      "set_crop %s: frac l=%s t=%s r=%s b=%s -> status switch=%s "
+      "set_crop %s: frac l=%s t=%s r=%s b=%s -> status enable=%s "
         .. "left=%s top=%s right=%s bottom=%s",
       image.filename, fmt_float_c(left, 4), fmt_float_c(top, 4),
       fmt_float_c(right, 4), fmt_float_c(bottom, 4),
@@ -513,13 +516,13 @@ local function set_crop(image, crop)
     -- Rueckfrage ohne effect/speed liefert laut API-Doku nur den
     -- aktuellen Wert, ohne etwas zu aendern - damit im Log sichtbar,
     -- ob die eben gesetzten Werte tatsaechlich angekommen sind.
-    local q_switch = dt.gui.action(CROP_PATH, 0, "soft-switch")
-    local q_left = dt.gui.action(CROP_PATH .. "/left", 0, "value")
-    local q_top = dt.gui.action(CROP_PATH .. "/top", 0, "value")
-    local q_right = dt.gui.action(CROP_PATH .. "/right", 0, "value")
-    local q_bottom = dt.gui.action(CROP_PATH .. "/bottom", 0, "value")
+    local q_switch = dt.gui.action(CROP_PATH, 1, "enable")
+    local q_left = dt.gui.action(CROP_PATH .. "/left", 1, "value")
+    local q_top = dt.gui.action(CROP_PATH .. "/top", 1, "value")
+    local q_right = dt.gui.action(CROP_PATH .. "/right", 1, "value")
+    local q_bottom = dt.gui.action(CROP_PATH .. "/bottom", 1, "value")
     log(string.format(
-      "set_crop %s: Rueckfrage switch=%s left=%s top=%s right=%s bottom=%s",
+      "set_crop %s: Rueckfrage enable=%s left=%s top=%s right=%s bottom=%s",
       image.filename, tostring(q_switch), tostring(q_left),
       tostring(q_top), tostring(q_right), tostring(q_bottom)))
   end)
