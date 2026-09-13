@@ -1658,20 +1658,28 @@ def _run_batch_pipeline(image_paths, t_yellow, t_green, debug, default_format):
         with open(tmp_q, "w") as f:
             f.write("{" + ",".join(parts) + "}")
         os.replace(tmp_q, qpath)
-        print(f"BATCHDONE green={n_green} yellow={n_yellow} red={n_red}",
-              file=sys.stderr, flush=True)
-        print(f"BATCHINFO queue={qpath}", file=sys.stderr, flush=True)
+        queue_msg = f"BATCHDONE green={n_green} yellow={n_yellow} red={n_red}"
+        queue_info_msg = f"BATCHINFO queue={qpath}"
     except Exception as e:
-        print(f"BATCHDONE green=0 yellow=0 red=0",
-              file=sys.stderr, flush=True)
-        print(f"BATCHERROR queue_write: {e}", file=sys.stderr, flush=True)
+        queue_msg = "BATCHDONE green=0 yellow=0 red=0"
+        queue_info_msg = f"BATCHERROR queue_write: {e}"
 
+    # Reihenfolge wichtig: Lua pollt die Fortschrittsdatei (stderr) und
+    # liest, sobald dort BATCHDONE auftaucht, sofort die JSON-Datei
+    # (stdout). print() auf eine in eine Datei umgeleitete stdout ist
+    # NICHT zeilengepuffert wie ein Terminal, sondern voll gepuffert -
+    # ohne explizites flush() konnte die JSON-Datei zum Zeitpunkt von
+    # BATCHDONE noch leer sein (Race, beobachtet als "BATCHDONE, aber
+    # JSON unlesbar" im Lua-Log). Deshalb: JSON zuerst schreiben+flushen,
+    # BATCHDONE als allerletztes Signal danach.
     output = {
         "film_aspects": {k: v["aspect_ratio"]
                          for k, v in film_aspects.items()},
         "results": results,
     }
-    print(json.dumps(output, indent=2, ensure_ascii=False))
+    print(json.dumps(output, indent=2, ensure_ascii=False), flush=True)
+    print(queue_msg, file=sys.stderr, flush=True)
+    print(queue_info_msg, file=sys.stderr, flush=True)
 
 
 
