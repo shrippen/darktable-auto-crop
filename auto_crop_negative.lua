@@ -201,6 +201,8 @@ local batch_state = {
   pid = nil, job = nil,
   json_file = nil, prog_file = nil,
   images = nil,
+  n_images = nil,     -- echte Bildzahl (Python meldet Fortschritt in
+                      -- Einheiten: RAW-Export + Pass A + Pass B je Bild)
   t_start = 0,        -- os.time() beim Spawn
   last_est = -1,      -- letzte angezeigte Schätzung (Sekunden), Dedupe
   toast_sec = 0,      -- letzte Sekunde, fuer die ein Toast kam
@@ -239,6 +241,14 @@ local function check_batch()
   local st = batch_state
   if not st.active then return end
   local prog = read_file(st.prog_file) or ""
+
+  -- Python meldet den Fortschritt in "Einheiten" (RAW-Export + Pass A +
+  -- Pass B je Bild - bei RAW-Dateien also bis zu 3 Einheiten PRO Bild),
+  -- nicht in Bildern. "BATCHINFO total=" traegt die echte Bildzahl; ohne
+  -- das wuerde die Statuszeile bei RAW-Rollen z.B. "Bild 42/108" fuer nur
+  -- 36 ausgewaehlte Bilder anzeigen (108 = 3x36 Einheiten).
+  local n_images = tonumber(prog:match("BATCHINFO total=(%d+)"))
+  if n_images then st.n_images = n_images end
 
   local done_ok, done_rev = prog:match("BATCHDONE ok=(%d+) review=(%d+)")
   local alive = false
@@ -319,6 +329,12 @@ local function check_batch()
     local frac = tonumber(k) / tonumber(n)
     if frac >= 0 and frac < 1 then  -- 1.0 wuerde den Job auto-schliessen
       st.job.percent = frac
+      -- Fuer die Anzeige aus der Einheiten-Fraktion eine Bildzahl
+      -- zurueckrechnen (n_images = echte Bildzahl aus BATCHINFO, sonst
+      -- Einheiten als Notloesung).
+      local disp_total = st.n_images or tonumber(n)
+      local disp_done = math.min(disp_total,
+        math.floor(frac * disp_total + 0.5))
       -- Zeitschaetzung: linear aus elapsed/frac, angezeigt im Toast
       -- (gedrosselt) und in der Statuszeile des Panels (jeder Poll)
       if frac > 0.02 and st.t_start > 0 then
@@ -336,8 +352,7 @@ local function check_batch()
           -- Panel-Statuszeile live aktualisieren
           pcall(function()
             lt_widget.children[10].label = string.format(
-              _("Restzeit: %s (Bild %d/%d)"), eta_txt, tonumber(k),
-              tonumber(n))
+              _("Restzeit: %s (Bild %d/%d)"), eta_txt, disp_done, disp_total)
           end)
           -- Toast nur bei deutlicher Aenderung (10 s Schritte)
           if math.abs(eta - st.last_est) >= 10
@@ -346,7 +361,7 @@ local function check_batch()
             st.toast_sec = os.time()
             dt.print(string.format(
               _("Auto Crop: ca. %s verbleibend (Bild %d/%d)"),
-              eta_txt, tonumber(k), tonumber(n)))
+              eta_txt, disp_done, disp_total))
           end
         end
       end
@@ -454,6 +469,7 @@ local function detect_and_queue()
   batch_state.t_start = os.time()
   batch_state.last_est = -1
   batch_state.toast_sec = 0
+  batch_state.n_images = #paths
   batch_state.job = dt.gui.create_job(
     _("Auto Crop: detecting film frames"), true, batch_cancel)
   batch_state.job.percent = 0
