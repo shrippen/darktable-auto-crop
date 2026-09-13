@@ -250,6 +250,19 @@ end
 
 -- Poller: wird von haeufigen Events (selection-changed, mouse-over, ...)
 -- aufgerufen. Aktualisiert den Fortschritt und finalisiert den Lauf.
+-- Farblabels sind in der darktable-Lua-API BOOLEAN-FELDER direkt am
+-- Bild-Objekt (image.red/yellow/green/blue/purple) - es gibt KEIN
+-- dt.colorlabels-Modul/-Funktion (bestaetigt anhand der mitgelieferten
+-- offiziellen Scripts unter /usr/share/darktable/lua-scripts/lib/dtutils/
+-- string.lua). Die urspruengliche Fassung nutzte "dt.colorlabels.set(img,
+-- dt.colorlabels.GREEN, true)", was IMMER mit "attempt to index a nil
+-- value (field 'colorlabels')" abbrach.
+local function set_color_label(img, band)
+  img.red = (band == "red")
+  img.yellow = (band == "yellow")
+  img.green = (band == "green")
+end
+
 local function check_batch()
   local st = batch_state
   if not st.active then return end
@@ -278,18 +291,13 @@ local function check_batch()
     local raw = read_file(st.json_file) or ""
     local data = parse_json(raw)
     if type(data) == "table" and data.results then
-      local COLOR = {
-        green = dt.colorlabels.GREEN,
-        yellow = dt.colorlabels.YELLOW,
-        red = dt.colorlabels.RED,
-      }
       for _, r in ipairs(data.results) do
         if r and r.x ~= nil and r.width ~= nil then
           local band = classify_confidence(r.confidence or 0, st.t_green,
             st.t_yellow)
           for _, img in ipairs(st.images or {}) do
             if img.filename == r.filename then
-              dt.colorlabels.set(img, COLOR[band], true)
+              set_color_label(img, band)
               break
             end
           end
@@ -411,9 +419,7 @@ local function apply_crop(image)
   if not crop then return false end
   local ok = set_crop(image, crop)
   if ok then
-    dt.colorlabels.set(image,
-      crop.band == "green" and dt.colorlabels.GREEN or dt.colorlabels.YELLOW,
-      true)
+    set_color_label(image, crop.band == "green" and "green" or "yellow")
     queue[image.filename] = nil
     save_queue(queue)
   end
