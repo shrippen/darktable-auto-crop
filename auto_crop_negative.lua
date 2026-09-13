@@ -370,6 +370,16 @@ local function check_batch()
   end
 end
 
+-- check_batch(), aber ein Fehler landet im Log statt spurlos zu
+-- verschwinden (darktable faengt Fehler in Event-Callbacks selbst ab,
+-- ohne sie in unser eigenes Log zu schreiben).
+local function safe_check_batch()
+  local ok, err = pcall(check_batch)
+  if not ok then
+    log("check_batch Fehler: " .. tostring(err))
+  end
+end
+
 -- ═══ Crop application via dt.gui.action ═══════
 -- Die vier GUI-Slider des Crop-Moduls heissen left/top/right/bottom und
 -- entsprechen 1:1 den rohen History-Params cx/cy/cw/ch (0..1-Fraktionen
@@ -503,7 +513,14 @@ local function detect_and_queue()
   -- Zustand kaputt pollen.
   while batch_state.active and batch_state.pid == pid do
     dt.control.sleep(300)
-    check_batch()
+    -- pcall: ein Fehler hier (z.B. ein Bild-Objekt aus st.images wurde
+    -- ungueltig) darf die Schleife nicht stillschweigend abbrechen - dann
+    -- wuerde die Erkennung wieder "haengenbleiben", nur diesmal ohne jede
+    -- Fehlermeldung. Im Log sichtbar machen und weiterprobieren.
+    local ok, err = pcall(check_batch)
+    if not ok then
+      log("check_batch Fehler in Warteschleife: " .. tostring(err))
+    end
   end
 end
 
@@ -511,20 +528,22 @@ end
 
 dt.register_event("auto_crop_negative_darkroom_loaded", "darkroom-image-loaded",
   function(event, image)
-    check_batch()
+    safe_check_batch()
     if event ~= "darkroom-image-loaded" or not image then return end
     apply_crop(image)
   end)
 
--- Poller-Aufrufe ueber haeufige Events (Lua blockiert nie -> Abbruch lebt)
+-- Fallback-Poller ueber haeufige Events, falls die Wartschleife in
+-- detect_and_queue() aus irgendeinem Grund nicht mehr laeuft (Script neu
+-- geladen, Fehler, ...).
 dt.register_event("auto_crop_poll_selection", "selection-changed",
-  function() check_batch() end)
+  safe_check_batch)
 dt.register_event("auto_crop_poll_collection", "collection-changed",
-  function() check_batch() end)
+  safe_check_batch)
 dt.register_event("auto_crop_poll_mouseover", "mouse-over-image-changed",
-  function() check_batch() end)
+  safe_check_batch)
 dt.register_event("auto_crop_poll_pipe", "pixelpipe-processing-complete",
-  function() check_batch() end)
+  safe_check_batch)
 
 -- ═══ Darkroom: manual apply ═══════
 
