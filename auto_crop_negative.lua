@@ -389,13 +389,19 @@ local function safe_check_batch()
 end
 
 -- ═══ Crop application via dt.gui.action ═══════
--- Die vier GUI-Slider des Crop-Moduls heissen left/top/right/bottom und
--- entsprechen 1:1 den rohen History-Params cx/cy/cw/ch (0..1-Fraktionen
--- der Bildkante) - per Spike in einer echten darktable-Session bestaetigt
--- (siehe auto-memory darktable-native-crop-application). Element "value"
--- setzt dabei die Fraktion direkt, NICHT einen Anzeige-Prozentwert.
--- Die urspruengliche Fassung nutzte "iop/crop" mit Element "cx"/"cw"/...
--- - das ist kein gueltiges Element und hat den Crop nie gesetzt.
+-- Quellcode-Check (src/iop/crop.c, dt_bauhaus_slider_from_params(self,
+-- "cx"/"cy"/"cw"/"ch")): die vier Slider werden UNTER DIESEN NAMEN als
+-- Action registriert - "left"/"top"/"right"/"bottom" sind nur die
+-- Tooltip-Beschriftung, kein gueltiger Action-Pfad. Das erklaerte den
+-- durchgaengigen "status=nan" bei jedem dt.gui.action-Aufruf (Pfad
+-- existierte schlicht nicht). Richtig: "iop/crop/cx" etc., Element
+-- "value". cx/cy sind direkte 0..1-Kantenfraktionen (Slider-Anzeige
+-- linear 0-100%, factor=100). cw/ch werden laut Quellcode invertiert
+-- angezeigt (dt_bauhaus_slider_set_factor(-100)/set_offset(100): Anzeige
+-- = 100 - 100*roh) - ob dt.gui.action "set" die Roh- oder die Anzeige-
+-- Fraktion erwartet, ist NICHT verifiziert. Erst mit den korrigierten
+-- Pfaden testen; falls der Crop rechts/unten falsch sitzt, hier 1-right/
+-- 1-bottom statt right/bottom versuchen.
 
 local function set_crop(image, crop)
   local iw, ih = image.width, image.height
@@ -418,14 +424,15 @@ local function set_crop(image, crop)
   -- ist NICHT abschliessend verifiziert.
   local ok, err = pcall(function()
     local r_switch = dt.gui.action(CROP_PATH, 0, "soft-switch", "on")
-    local r_left = dt.gui.action(CROP_PATH .. "/left", 0, "value", "set", left)
-    local r_top = dt.gui.action(CROP_PATH .. "/top", 0, "value", "set", top)
-    local r_right = dt.gui.action(CROP_PATH .. "/right", 0, "value", "set", right)
-    local r_bottom = dt.gui.action(CROP_PATH .. "/bottom", 0, "value", "set", bottom)
+    local r_left = dt.gui.action(CROP_PATH .. "/cx", 0, "value", "set", left)
+    local r_top = dt.gui.action(CROP_PATH .. "/cy", 0, "value", "set", top)
+    local r_right = dt.gui.action(CROP_PATH .. "/cw", 0, "value", "set", right)
+    local r_bottom = dt.gui.action(CROP_PATH .. "/ch", 0, "value", "set", bottom)
     log(string.format(
-      "set_crop %s: frac l=%.4f t=%.4f r=%.4f b=%.4f -> status switch=%s "
-        .. "left=%s top=%s right=%s bottom=%s",
-      image.filename, left, top, right, bottom,
+      "set_crop %s: frac l=%s t=%s r=%s b=%s -> status switch=%s "
+        .. "cx=%s cy=%s cw=%s ch=%s",
+      image.filename, fmt_float_c(left, 4), fmt_float_c(top, 4),
+      fmt_float_c(right, 4), fmt_float_c(bottom, 4),
       tostring(r_switch), tostring(r_left), tostring(r_top),
       tostring(r_right), tostring(r_bottom)))
   end)
