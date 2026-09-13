@@ -65,6 +65,15 @@ local function write_file(p, c)
   h:write(c); h:close(); return true
 end
 
+-- string.format("%f", ...) folgt der C-Locale des Prozesses: unter z.B.
+-- Deutsch liefert es "0,300" statt "0.300" (Komma-Dezimaltrenner). An
+-- Python weitergereicht bricht das --confidence-threshold sofort mit
+-- "invalid float value" ab. Fuer Zahlen, die an einen anderen Prozess
+-- gehen, IMMER diese Funktion statt string.format("%f", ...) verwenden.
+local function fmt_float_c(v, prec)
+  return string.format("%." .. prec .. "f", v):gsub(",", ".")
+end
+
 -- Datei-Log fuer Diagnose (unabhaengig von Terminal-Flags)
 local LOG_FILE = os.getenv("HOME") .. "/.cache/darktable/auto_crop_negative.log"
 
@@ -169,9 +178,10 @@ local function save_queue(queue)
   local parts = {}
   for fn, c in pairs(queue) do
     parts[#parts+1] = string.format(
-      '"%s":{"x":%.4f,"y":%.4f,"w":%.4f,"h":%.4f,"band":"%s"}',
+      '"%s":{"x":%s,"y":%s,"w":%s,"h":%s,"band":"%s"}',
       fn:gsub('\\','\\\\'):gsub('"','\\"'),
-      c.x, c.y, c.w, c.h, c.band or "yellow")
+      fmt_float_c(c.x, 4), fmt_float_c(c.y, 4), fmt_float_c(c.w, 4),
+      fmt_float_c(c.h, 4), c.band or "yellow")
   end
   write_file(QUEUE_PATH, "{" .. table.concat(parts, ",") .. "}")
 end
@@ -440,9 +450,10 @@ local function detect_and_queue()
   local t_green = dt.preferences.read(MOD_LT, "t_green", "float")
   local t_yellow = dt.preferences.read(MOD_LT, "t_yellow", "float")
   local cmd = string.format(
-    "'%s' --batch %s --confidence-threshold %.3f --t-green %.3f "
+    "'%s' --batch %s --confidence-threshold %s --t-green %s "
       .. "2> '%s' > '%s' & echo $!",
-    py, table.concat(escaped, " "), t_yellow, t_green, prog_file, json_file)
+    py, table.concat(escaped, " "), fmt_float_c(t_yellow, 3),
+    fmt_float_c(t_green, 3), prog_file, json_file)
   log("spawn cmd: " .. cmd)
   local handle = io.popen(cmd, "r")
   local pid = handle and tonumber(handle:read("*l"))
