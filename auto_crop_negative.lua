@@ -478,7 +478,26 @@ local function set_crop(image, crop)
   dt.control.sleep(CROP_SETTLE_MS)
 
   local ok, err = pcall(function()
+    -- Neuer Fund (Shortcuts-Editor des Nutzers zeigt "Zuschneiden" mit
+    -- den Untereintraegen Format/links/oben/rechts/unten - bestaetigt
+    -- die Pfadnamen). Trotzdem bleiben die Slider-Werte unveraendert,
+    -- waehrend "soft-switch" (fuer das reine An/Aus) zuverlaessig
+    -- funktioniert - alle 3-Segment-Pfade auf ein Slider-Element
+    -- schlagen bislang identisch fehl, unabhaengig vom Namen. Ein
+    -- offizielles Beispielskript (examples/x-touch.lua) belegt ein
+    -- ECHTES Element "focus" fuer "welches Modul ist gerade aktiv/
+    -- aufgeklappt" - getrennt vom reinen Enable/Disable. Hypothese:
+    -- die Slider-Werte lassen sich nur aendern, wenn das Modul auch
+    -- fokussiert/aufgeklappt ist, nicht nur "enabled". Testweise hier
+    -- Fokus-Status vor und nach einem "toggle" loggen.
+    local f_before = dt.gui.action(CROP_PATH, 0, "focus")
     local r_switch = dt.gui.action(CROP_PATH, 0, "soft-switch", "on")
+    local r_focus = dt.gui.action(CROP_PATH, 0, "focus", "toggle", 1)
+    local f_after = dt.gui.action(CROP_PATH, 0, "focus")
+    log(string.format(
+      "set_crop %s: focus vorher=%s toggle-status=%s focus nachher=%s",
+      image.filename, tostring(f_before), tostring(r_focus),
+      tostring(f_after)))
     local r_left = dt.gui.action(CROP_PATH .. "/left", 0, "value", "set", left)
     local r_top = dt.gui.action(CROP_PATH .. "/top", 0, "value", "set", top)
     local r_right = dt.gui.action(CROP_PATH .. "/right", 0, "value", "set", right)
