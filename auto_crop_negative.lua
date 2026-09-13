@@ -422,18 +422,40 @@ end
 -- gespeicherter Config offen) und danach erneut "Apply all queued now"
 -- probieren - falls das etwas aendert, war die Sektion die Ursache.
 
--- SICHERHEITSSPERRE (13. Sep, nach Nutzer-Meldung): der Nutzer hat
--- bestaetigt, dass beim Testen tatsaechlich der komplette Bearbeitungs-
--- stand (u.a. Negadoctor) verloren ging und von Hand neu aufgebaut werden
--- musste - trotz eines XMP-Sidecar-Checks kurz zuvor, der (an einem
--- anderen Zeitpunkt/Bild) noch intakte History zeigte. Der echte
--- Mechanismus ist NICHT verstanden (siehe Kommentarblock oben zu
--- set_crop) und ein XMP-Schnappschuss ist offenbar KEIN verlässlicher
--- Beweis fuer den Zustand der laufenden Dunkelkammer-Session. Bis die
--- Ursache gefunden ist, darf set_crop() unter keinen Umstaenden mehr
--- dt.gui.action auf das echte crop-Modul loslassen - das Risiko eines
--- weiteren Datenverlusts wiegt schwerer als der Nutzen der Funktion.
-local CROP_APPLY_DISABLED = true
+-- WAS SET_CROP UEBER DIE EDITHISTORY ANNIMMT (13. Sep, nach Nutzer-Frage):
+-- set_crop() fuegt KEIN eigenes/zusaetzliches Crop-Modul hinzu - crop ist
+-- in darktable ein einzelnes, nicht-multi-instance Modul pro Bild. Der
+-- "soft-switch"/"on"-Aufruf schaltet das EINE vorhandene crop-Modul ein
+-- (egal ob es vorher nie, oder schon frueher mit anderen Werten in der
+-- History war) und die vier "set"-Aufrufe aendern dessen Parameter.
+--
+-- Die stillschweigende Annahme dabei: darktable haengt eine Modul-
+-- aenderung immer NACH dem aktuellen History-Ende ("history_end", quasi
+-- ein Undo-Zeiger) an und verwirft dabei ALLES, was in der gespeicherten
+-- History NACH diesem Zeiger lag (identisch zum bekannten "Undo, dann neu
+-- editieren verwirft die Redo-Kette"-Verhalten in jeder normalen
+-- Darkroom-Session). set_crop() geht implizit davon aus, dass dieser
+-- Zeiger zum Zeitpunkt des dt.gui.action-Aufrufs bereits ganz am Ende
+-- der ECHTEN, vollstaendigen Bearbeitung (inkl. z.B. Negadoctor) steht.
+-- Wenn ein frisch in die Dunkelkammer geladenes Bild seine volle History
+-- aus der Datenbank noch nicht fertig in die laufende GUI-Session
+-- uebernommen hat (z.B. weil unser Aufruf sofort nach dem
+-- "darkroom-image-loaded"-Event ohne jede Wartezeit feuert), koennte
+-- dieser Zeiger noch auf einem frueheren/Default-Stand stehen - jede
+-- Aenderung wuerde dann alles Neuere (Negadoctor eingeschlossen) beim
+-- Zurueckschreiben abschneiden. Das ist die derzeit beste Erklaerung fuer
+-- den vom Nutzer bestaetigten Verlust, aber NICHT abschliessend bewiesen
+-- (dafuer fehlt eine direkte Lua-Moeglichkeit, history_end selbst zu
+-- lesen - die dt_lua_image_t-API bietet dafuer nur reset() und
+-- apply_sidecar(), keinen direkten Zugriff).
+--
+-- Nutzer hat Datenverlust auf den aktuellen Testbildern ausdruecklich als
+-- akzeptabel erklaert ("Sie sind zum Testen da") und um Wiedereinschalten
+-- gebeten. Als Gegenmassnahme (nicht als bewiesenen Fix): kurze Wartezeit
+-- vor dem ersten dt.gui.action-Zugriff auf das Modul, damit die GUI Zeit
+-- hat, history_end fuer das neu geladene Bild zu synchronisieren.
+local CROP_APPLY_DISABLED = false
+local CROP_SETTLE_MS = 500
 
 local function set_crop(image, crop)
   local iw, ih = image.width, image.height
@@ -456,6 +478,10 @@ local function set_crop(image, crop)
   local top = math.max(0, math.min(1, crop.y / ih))
   local right = math.max(left + 0.001, math.min(1, (crop.x + crop.w) / iw))
   local bottom = math.max(top + 0.001, math.min(1, (crop.y + crop.h) / ih))
+
+  -- Gegenmassnahme gegen die vermutete history_end-Race (siehe Kommentar
+  -- oben) - pumpt dabei auch die GTK-Eventloop durch, waehrend wir warten.
+  dt.control.sleep(CROP_SETTLE_MS)
 
   -- Diagnose: dt.gui.action() gibt laut API-Doku den Status als String
   -- zurueck. Alles mitloggen, bis in einer echten Session bestaetigt ist,
