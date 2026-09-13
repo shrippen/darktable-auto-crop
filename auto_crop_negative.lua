@@ -535,33 +535,61 @@ local function set_crop(image, crop)
   return true
 end
 
--- Rueckgaengig: deaktiviert das crop-Modul wieder fuer alle zuletzt
--- automatisch gecroppten Bilder. Fuegt (wie set_crop) einen neuen,
--- additiven History-Eintrag hinzu (enabled=0) statt echt etwas aus der
--- History zu entfernen - die Lua-API bietet keinen Weg, einzelne
+-- Rueckgaengig: deaktiviert das crop-Modul wieder fuer eine Teilmenge der
+-- zuletzt automatisch gecroppten Bilder. Fuegt (wie set_crop) einen
+-- neuen, additiven History-Eintrag hinzu (enabled=0) statt echt etwas
+-- aus der History zu entfernen - die Lua-API bietet keinen Weg, einzelne
 -- History-Eintraege zu loeschen. Das ist aber genau das native
 -- darktable-Verhalten: ein Modul ausschalten ist eine ganz normale,
 -- jederzeit umkehrbare History-Aenderung (in der History-Ansicht sichtbar,
 -- ueber die dortigen Bordmittel jederzeit wieder rueckgaengig zu machen).
-local function undo_crop()
+--
+-- "images" waehlt die zu behandelnde Teilmenge aus last_cropped_images
+-- (per Dateiname abgeglichen); nur tatsaechlich getroffene Bilder werden
+-- aus last_cropped_images entfernt, alles andere bleibt fuer einen
+-- spaeteren "Rueckgaengig"-Aufruf gemerkt.
+local function undo_crop_images(images, label)
+  local target = {}
+  for _, img in ipairs(images) do target[img.filename] = true end
+
+  local n = 0
+  local remaining = {}
+  for _, image in ipairs(last_cropped_images) do
+    if target[image.filename] then
+      local ok, err = pcall(function()
+        apply_crop_style(image, pack_crop_params(0, 0, 1, 1), false,
+          "Crop deaktiviert (Rueckgaengig, " .. label .. ")")
+      end)
+      if ok then
+        n = n + 1
+      else
+        log("undo_crop " .. image.filename .. " Fehler: " .. tostring(err))
+        remaining[#remaining + 1] = image
+      end
+    else
+      remaining[#remaining + 1] = image
+    end
+  end
+  last_cropped_images = remaining
+  dt.print(string.format(
+    _("Auto Crop: %d Crop(s) rueckgaengig gemacht (%s)"), n, label))
+end
+
+local function undo_crop_selected()
+  local images = dt.gui.action_images
+  if not images or #images == 0 then
+    dt.print(_("Auto Crop: keine Bilder ausgewaehlt"))
+    return
+  end
+  undo_crop_images(images, _("Auswahl"))
+end
+
+local function undo_crop_all()
   if #last_cropped_images == 0 then
     dt.print(_("Auto Crop: nichts zum Rueckgaengigmachen"))
     return
   end
-  local n = 0
-  for _, image in ipairs(last_cropped_images) do
-    local ok, err = pcall(function()
-      apply_crop_style(image, pack_crop_params(0, 0, 1, 1), false,
-        "Crop deaktiviert (Rueckgaengig)")
-    end)
-    if ok then
-      n = n + 1
-    else
-      log("undo_crop " .. image.filename .. " Fehler: " .. tostring(err))
-    end
-  end
-  dt.print(string.format(_("Auto Crop: %d Crop(s) rueckgaengig gemacht"), n))
-  last_cropped_images = {}
+  undo_crop_images(last_cropped_images, _("gesamte Sitzung"))
 end
 
 local function apply_crop(image)
@@ -789,11 +817,19 @@ lt_widget = dt.new_widget("box") {
     clicked_callback = function() apply_all_queued() end },
   dt.new_widget("separator") {},
   dt.new_widget("button") {
-    label = _("Undo last crop(s)"),
+    label = _("Undo crop (selected image(s))"),
+    tooltip = _("Disables the crop module again on the currently "
+      .. "selected image(s), if they were auto-cropped since the last "
+      .. "undo. Adds a new history step (non-destructive) instead of "
+      .. "removing the crop entry."),
+    clicked_callback = function() undo_crop_selected() end },
+  dt.new_widget("button") {
+    label = _("Undo crop (all in this session)"),
     tooltip = _("Disables the crop module again on every image that was "
-      .. "auto-cropped since the last undo. Adds a new history step "
-      .. "(non-destructive) instead of removing the crop entry."),
-    clicked_callback = function() undo_crop() end },
+      .. "auto-cropped since the last undo, regardless of the current "
+      .. "selection. Adds a new history step (non-destructive) instead "
+      .. "of removing the crop entry."),
+    clicked_callback = function() undo_crop_all() end },
   dt.new_widget("label") {
     label = _("After detection: open images in darkroom to apply crops.") },
   dt.new_widget("label") {
