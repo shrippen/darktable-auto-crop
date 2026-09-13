@@ -422,11 +422,34 @@ end
 -- gespeicherter Config offen) und danach erneut "Apply all queued now"
 -- probieren - falls das etwas aendert, war die Sektion die Ursache.
 
+-- SICHERHEITSSPERRE (13. Sep, nach Nutzer-Meldung): der Nutzer hat
+-- bestaetigt, dass beim Testen tatsaechlich der komplette Bearbeitungs-
+-- stand (u.a. Negadoctor) verloren ging und von Hand neu aufgebaut werden
+-- musste - trotz eines XMP-Sidecar-Checks kurz zuvor, der (an einem
+-- anderen Zeitpunkt/Bild) noch intakte History zeigte. Der echte
+-- Mechanismus ist NICHT verstanden (siehe Kommentarblock oben zu
+-- set_crop) und ein XMP-Schnappschuss ist offenbar KEIN verlässlicher
+-- Beweis fuer den Zustand der laufenden Dunkelkammer-Session. Bis die
+-- Ursache gefunden ist, darf set_crop() unter keinen Umstaenden mehr
+-- dt.gui.action auf das echte crop-Modul loslassen - das Risiko eines
+-- weiteren Datenverlusts wiegt schwerer als der Nutzen der Funktion.
+local CROP_APPLY_DISABLED = true
+
 local function set_crop(image, crop)
   local iw, ih = image.width, image.height
   if not iw or not ih or iw == 0 or ih == 0 then
     log(string.format("set_crop %s: ungueltige Bildgroesse %sx%s",
       image and image.filename or "?", tostring(iw), tostring(ih)))
+    return false
+  end
+  if CROP_APPLY_DISABLED then
+    log(string.format(
+      "set_crop %s: UEBERSPRUNGEN (CROP_APPLY_DISABLED - siehe Kommentar) "
+        .. "waere frac l=%s t=%s r=%s b=%s gewesen",
+      image.filename, fmt_float_c(math.max(0, math.min(1, crop.x / iw)), 4),
+      fmt_float_c(math.max(0, math.min(1, crop.y / ih)), 4),
+      fmt_float_c(math.max(0, math.min(1, (crop.x + crop.w) / iw)), 4),
+      fmt_float_c(math.max(0, math.min(1, (crop.y + crop.h) / ih)), 4)))
     return false
   end
   local left = math.max(0, math.min(1, crop.x / iw))
