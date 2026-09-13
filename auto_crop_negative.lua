@@ -435,6 +435,21 @@ local function set_crop(image, crop)
       fmt_float_c(right, 4), fmt_float_c(bottom, 4),
       tostring(r_switch), tostring(r_left), tostring(r_top),
       tostring(r_right), tostring(r_bottom)))
+
+    -- "set" liefert offenbar immer nan zurueck (evtl. normal fuer
+    -- imperative Effekte) - Rueckfrage ohne effect/speed soll laut
+    -- API-Doku nur den AKTUELLEN Wert liefern, ohne etwas zu aendern.
+    -- Zeigt der die eben gesetzten Werte, hat "set" trotz nan
+    -- funktioniert; bleibt er auf altem/default Wert, hat es nicht.
+    local q_switch = dt.gui.action(CROP_PATH, 0, "soft-switch")
+    local q_left = dt.gui.action(CROP_PATH .. "/cx", 0, "value")
+    local q_top = dt.gui.action(CROP_PATH .. "/cy", 0, "value")
+    local q_right = dt.gui.action(CROP_PATH .. "/cw", 0, "value")
+    local q_bottom = dt.gui.action(CROP_PATH .. "/ch", 0, "value")
+    log(string.format(
+      "set_crop %s: Rueckfrage switch=%s cx=%s cy=%s cw=%s ch=%s",
+      image.filename, tostring(q_switch), tostring(q_left),
+      tostring(q_top), tostring(q_right), tostring(q_bottom)))
   end)
   if not ok then
     log("set_crop " .. image.filename .. " Fehler: " .. tostring(err))
