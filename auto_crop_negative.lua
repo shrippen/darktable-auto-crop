@@ -399,24 +399,50 @@ end
 
 local function set_crop(image, crop)
   local iw, ih = image.width, image.height
-  if not iw or not ih or iw == 0 or ih == 0 then return false end
+  if not iw or not ih or iw == 0 or ih == 0 then
+    log(string.format("set_crop %s: ungueltige Bildgroesse %sx%s",
+      image and image.filename or "?", tostring(iw), tostring(ih)))
+    return false
+  end
   local left = math.max(0, math.min(1, crop.x / iw))
   local top = math.max(0, math.min(1, crop.y / ih))
   local right = math.max(left + 0.001, math.min(1, (crop.x + crop.w) / iw))
   local bottom = math.max(top + 0.001, math.min(1, (crop.y + crop.h) / ih))
 
-  dt.gui.action(CROP_PATH, 0, "soft-switch", "on")
-  dt.gui.action(CROP_PATH .. "/left", 0, "value", "set", left)
-  dt.gui.action(CROP_PATH .. "/top", 0, "value", "set", top)
-  dt.gui.action(CROP_PATH .. "/right", 0, "value", "set", right)
-  dt.gui.action(CROP_PATH .. "/bottom", 0, "value", "set", bottom)
+  -- Diagnose: dt.gui.action() gibt laut API-Doku den Status als String
+  -- zurueck. Alles mitloggen, bis in einer echten Session bestaetigt ist,
+  -- dass der Crop tatsaechlich sichtbar wird - bisherige Annahmen (Pfad
+  -- "iop/crop/left|top|right|bottom", Element "value", 0..1-Fraktion)
+  -- stammen aus einem frueheren Spike, aber ob rechts/unten als Position
+  -- oder als Rand-Prozent vom GEGENUEBERLIEGENDEN Rand erwartet werden,
+  -- ist NICHT abschliessend verifiziert.
+  local ok, err = pcall(function()
+    local r_switch = dt.gui.action(CROP_PATH, 0, "soft-switch", "on")
+    local r_left = dt.gui.action(CROP_PATH .. "/left", 0, "value", "set", left)
+    local r_top = dt.gui.action(CROP_PATH .. "/top", 0, "value", "set", top)
+    local r_right = dt.gui.action(CROP_PATH .. "/right", 0, "value", "set", right)
+    local r_bottom = dt.gui.action(CROP_PATH .. "/bottom", 0, "value", "set", bottom)
+    log(string.format(
+      "set_crop %s: frac l=%.4f t=%.4f r=%.4f b=%.4f -> status switch=%s "
+        .. "left=%s top=%s right=%s bottom=%s",
+      image.filename, left, top, right, bottom,
+      tostring(r_switch), tostring(r_left), tostring(r_top),
+      tostring(r_right), tostring(r_bottom)))
+  end)
+  if not ok then
+    log("set_crop " .. image.filename .. " Fehler: " .. tostring(err))
+    return false
+  end
   return true
 end
 
 local function apply_crop(image)
   local queue = load_queue()
   local crop = queue[image.filename]
-  if not crop then return false end
+  if not crop then
+    log("apply_crop " .. image.filename .. ": kein Queue-Eintrag")
+    return false
+  end
   local ok = set_crop(image, crop)
   if ok then
     set_color_label(image, crop.band == "green" and "green" or "yellow")
@@ -536,7 +562,9 @@ dt.register_event("auto_crop_negative_darkroom_loaded", "darkroom-image-loaded",
   function(event, image)
     safe_check_batch()
     if event ~= "darkroom-image-loaded" or not image then return end
-    apply_crop(image)
+    local applied = apply_crop(image)
+    log(string.format("darkroom-image-loaded %s: apply_crop -> %s",
+      image.filename, tostring(applied)))
   end)
 
 -- Fallback-Poller ueber haeufige Events, falls die Wartschleife in
