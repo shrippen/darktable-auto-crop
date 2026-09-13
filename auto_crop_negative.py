@@ -1423,6 +1423,15 @@ def apply_film_consensus(results, load_paths, report=None):
         conf *= exposure_factor
 
         r["confidence"] = float(round(min(1.0, max(0.0, conf)), 3))
+        # Fuer die Konfidenz-Kalibrierung (tools/calibrate.py): die
+        # Einzelfaktoren unveraendert mitgeben, statt sie nur zur fertigen
+        # Zahl zu verrechnen.
+        r["_conf_parts"] = {
+            "size_agree": round(size_agree, 4),
+            "edge_score": round(float(edge_score), 4),
+            "film_trust": round(p["film_trust"], 4),
+            "exposure_factor": round(exposure_factor, 4),
+        }
         if exposure_factor < 1.0:
             r.setdefault("reasons", []).append(
                 f"Kontrastarm/unterbelichtet (Kontrast "
@@ -1651,7 +1660,10 @@ def main():
     parser.add_argument("--aspect-ratio", type=float, default=None,
                         help="Seitenverhältnis überschreiben (z.B. 1.0 für "
                              "1:1, 1.5 für 3:2)")
-    parser.add_argument("--confidence-threshold", type=float, default=0.7)
+    # 0.50: kalibriert via tools/calibrate.py auf den 98 Referenz-Crops -
+    # ab hier 100% Precision (keine Fehltreffer unter den bekannten Faellen)
+    # bei deutlich mehr Abdeckung als der alte Default 0.70 (Recall 65%->76%).
+    parser.add_argument("--confidence-threshold", type=float, default=0.5)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--output", "-o", help="Debug-Visualisierung speichern")
     parser.add_argument("--dump-candidates", action="store_true",

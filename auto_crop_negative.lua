@@ -18,7 +18,28 @@ script_data.metadata = {
 
 local MOD_LT = "auto_crop_negative"
 local CROP_PATH = "iop/crop"
-local CROP_ELEMS = { cx = "cx", cy = "cy", cw = "cw", ch = "ch" }
+
+-- Preferences: Gruen/Gelb-Schwellen fuer die Konfidenz (Phase 3, siehe
+-- tools/calibrate.py). Standardwerte sind auf den 98 Referenz-Crops
+-- kalibriert: >= t_green -> croppen + gruen, >= t_yellow -> croppen +
+-- gelb (zur Kontrolle), darunter -> NICHT croppen + rot.
+dt.preferences.register(MOD_LT, "t_green", "float",
+  _("Auto Crop: Gruen-Schwelle"),
+  _("Ab dieser Konfidenz automatisch croppen und gruen markieren"),
+  0.50, 0.0, 1.0, 0.01)
+dt.preferences.register(MOD_LT, "t_yellow", "float",
+  _("Auto Crop: Gelb-Schwelle"),
+  _("Ab dieser Konfidenz croppen, aber zur Kontrolle gelb markieren "
+    .. "- darunter wird NICHT gecroppt (rot)"),
+  0.30, 0.0, 1.0, 0.01)
+
+local function classify_confidence(conf)
+  local t_green = dt.preferences.read(MOD_LT, "t_green", "float")
+  local t_yellow = dt.preferences.read(MOD_LT, "t_yellow", "float")
+  if conf >= t_green then return "green"
+  elseif conf >= t_yellow then return "yellow"
+  else return "red" end
+end
 
 local function get_script_dir()
   local info = debug.getinfo(1, "S")
@@ -150,9 +171,9 @@ local function save_queue(queue)
   local parts = {}
   for fn, c in pairs(queue) do
     parts[#parts+1] = string.format(
-      '"%s":{"x":%.4f,"y":%.4f,"w":%.4f,"h":%.4f,"review":%s}',
+      '"%s":{"x":%.4f,"y":%.4f,"w":%.4f,"h":%.4f,"band":"%s"}',
       fn:gsub('\\','\\\\'):gsub('"','\\"'),
-      c.x, c.y, c.w, c.h, tostring(c.review))
+      c.x, c.y, c.w, c.h, c.band or "yellow")
   end
   write_file(QUEUE_PATH, "{" .. table.concat(parts, ",") .. "}")
 end
@@ -192,7 +213,7 @@ local function cleanup_batch(closing_job)
   local st = batch_state
   if st.json_file then os.remove(st.json_file); st.json_file = nil end
   if st.prog_file then os.remove(st.prog_file); st.prog_file = nil end
-  pcall(function() lt_widget.children[8].label = "" end)
+  pcall(function() lt_widget.children[10].label = "" end)
   if closing_job and st.job then
     pcall(function() st.job.valid = false end)
     st.job = nil
@@ -232,30 +253,43 @@ local function check_batch()
     local data = parse_json(raw)
     if type(data) == "table" and data.results then
       local queue = load_queue()
-      done_ok, done_rev = 0, 0
+      local n_green, n_yellow, n_red = 0, 0, 0
+      local COLOR = {
+        green = dt.colorlabels.GREEN,
+        yellow = dt.colorlabels.YELLOW,
+        red = dt.colorlabels.RED,
+      }
       for _, r in ipairs(data.results) do
         if r and r.x ~= nil and r.width ~= nil then
-          queue[r.filename] = {
-            x = r.x, y = r.y, w = r.width, h = r.height,
-            review = r.needs_review or false,
-          }
+          local band = classify_confidence(r.confidence or 0)
           for _, img in ipairs(st.images or {}) do
             if img.filename == r.filename then
-              dt.colorlabels.set(img,
-                r.needs_review and dt.colorlabels.YELLOW
-                  or dt.colorlabels.GREEN, true)
-              if r.needs_review then done_rev = done_rev + 1
-              else done_ok = done_ok + 1 end
+              dt.colorlabels.set(img, COLOR[band], true)
               break
             end
+          end
+          if band == "red" then
+            -- Niedrige Konfidenz: NICHT croppen (Nutzer-Vorgabe). Ein
+            -- eventuell noch offener Eintrag aus einem frueheren Lauf
+            -- fuer dasselbe Bild wird verworfen.
+            queue[r.filename] = nil
+            n_red = n_red + 1
+          else
+            queue[r.filename] = {
+              x = r.x, y = r.y, w = r.width, h = r.height, band = band,
+            }
+            if band == "green" then n_green = n_green + 1
+            else n_yellow = n_yellow + 1 end
           end
         end
       end
       save_queue(queue)
-      log(string.format("queued: ok=%d review=%d", done_ok, done_rev))
+      log(string.format("queued: green=%d yellow=%d red=%d",
+        n_green, n_yellow, n_red))
       dt.print(string.format(
-        _("Auto Crop: %d queued (%d OK, %d review). Open in darkroom."),
-        done_ok + done_rev, done_ok, done_rev))
+        _("Auto Crop: %d gruen, %d gelb (Kontrolle), %d rot (nicht "
+          .. "gecroppt). Zum Anwenden Bilder im Dunkelraum oeffnen."),
+        n_green, n_yellow, n_red))
     else
       log("BATCHDONE, aber JSON unlesbar: "
           .. raw:sub(1, 150):gsub("[%c]", " "))
@@ -301,7 +335,7 @@ local function check_batch()
           local eta_txt = fmt(eta)
           -- Panel-Statuszeile live aktualisieren
           pcall(function()
-            lt_widget.children[8].label = string.format(
+            lt_widget.children[10].label = string.format(
               _("Restzeit: %s (Bild %d/%d)"), eta_txt, tonumber(k),
               tonumber(n))
           end)
@@ -321,24 +355,27 @@ local function check_batch()
 end
 
 -- ═══ Crop application via dt.gui.action ═══════
--- Crop module params (from crop.c):
---   cx=left, cy=top, cw=right, ch=bottom (all 0-1 fractions)
--- cw/ch display: factor=-100, offset=100 (shows as margin %)
--- dt.gui.action sets RAW param value (0-1), not displayed.
+-- Die vier GUI-Slider des Crop-Moduls heissen left/top/right/bottom und
+-- entsprechen 1:1 den rohen History-Params cx/cy/cw/ch (0..1-Fraktionen
+-- der Bildkante) - per Spike in einer echten darktable-Session bestaetigt
+-- (siehe auto-memory darktable-native-crop-application). Element "value"
+-- setzt dabei die Fraktion direkt, NICHT einen Anzeige-Prozentwert.
+-- Die urspruengliche Fassung nutzte "iop/crop" mit Element "cx"/"cw"/...
+-- - das ist kein gueltiges Element und hat den Crop nie gesetzt.
 
 local function set_crop(image, crop)
   local iw, ih = image.width, image.height
   if not iw or not ih or iw == 0 or ih == 0 then return false end
-  local cx = math.max(0, math.min(1, crop.x / iw))
-  local cy = math.max(0, math.min(1, crop.y / ih))
-  local cw = math.max(cx + 0.001, math.min(1, (crop.x + crop.w) / iw))
-  local ch = math.max(cy + 0.001, math.min(1, (crop.y + crop.h) / ih))
+  local left = math.max(0, math.min(1, crop.x / iw))
+  local top = math.max(0, math.min(1, crop.y / ih))
+  local right = math.max(left + 0.001, math.min(1, (crop.x + crop.w) / iw))
+  local bottom = math.max(top + 0.001, math.min(1, (crop.y + crop.h) / ih))
 
   dt.gui.action(CROP_PATH, 0, "soft-switch", "on")
-  dt.gui.action(CROP_PATH, 0, CROP_ELEMS.cx, "set", cx)
-  dt.gui.action(CROP_PATH, 0, CROP_ELEMS.cy, "set", cy)
-  dt.gui.action(CROP_PATH, 0, CROP_ELEMS.cw, "set", cw)
-  dt.gui.action(CROP_PATH, 0, CROP_ELEMS.ch, "set", ch)
+  dt.gui.action(CROP_PATH .. "/left", 0, "value", "set", left)
+  dt.gui.action(CROP_PATH .. "/top", 0, "value", "set", top)
+  dt.gui.action(CROP_PATH .. "/right", 0, "value", "set", right)
+  dt.gui.action(CROP_PATH .. "/bottom", 0, "value", "set", bottom)
   return true
 end
 
@@ -349,7 +386,8 @@ local function apply_crop(image)
   local ok = set_crop(image, crop)
   if ok then
     dt.colorlabels.set(image,
-      crop.review and dt.colorlabels.RED or dt.colorlabels.GREEN, true)
+      crop.band == "green" and dt.colorlabels.GREEN or dt.colorlabels.YELLOW,
+      true)
     queue[image.filename] = nil
     save_queue(queue)
   end
@@ -386,10 +424,15 @@ local function detect_and_queue()
     escaped[#escaped+1] = string.format("'%s'", fp:gsub("'", "'\\''"))
   end
   -- stdout -> json_file (Ergebnis), stderr -> prog_file (Fortschritt);
-  -- & startet Python im Hintergrund, echo $! liefert die PID
+  -- & startet Python im Hintergrund, echo $! liefert die PID.
+  -- --confidence-threshold ist nur fuer Pythons EIGENEN "review"-Wert im
+  -- BATCHDONE-Log relevant (Diagnose) - die tatsaechliche gruen/gelb/rot-
+  -- Einstufung macht Lua anhand der rohen Konfidenz + den Preferences
+  -- oben (classify_confidence), unabhaengig davon.
+  local t_yellow = dt.preferences.read(MOD_LT, "t_yellow", "float")
   local cmd = string.format(
-    "'%s' --batch %s --confidence-threshold 0.70 2> '%s' > '%s' & echo $!",
-    py, table.concat(escaped, " "), prog_file, json_file)
+    "'%s' --batch %s --confidence-threshold %.3f 2> '%s' > '%s' & echo $!",
+    py, table.concat(escaped, " "), t_yellow, prog_file, json_file)
   log("spawn cmd: " .. cmd)
   local handle = io.popen(cmd, "r")
   local pid = handle and tonumber(handle:read("*l"))
@@ -416,7 +459,7 @@ local function detect_and_queue()
   batch_state.job.percent = 0
   log(string.format("spawned pid=%d", pid))
   pcall(function()
-    lt_widget.children[8].label = _("Auto Crop: 0 / %d Bilder analysiert...")
+    lt_widget.children[10].label = _("Auto Crop: 0 / %d Bilder analysiert...")
       :format(#paths)
   end)
   dt.print(string.format(
@@ -462,6 +505,53 @@ local function apply_current()
   end
 end
 
+-- ═══ Darkroom: alle Crops jetzt anwenden (experimentell) ═══════
+-- Variante 3, zweiter (optionaler) Teil: automatisierte Schleife statt
+-- "ein Bild pro Dunkelraum-Aufruf". Laut Spike (siehe auto-memory
+-- darktable-native-crop-application) lehnt darktable dt.gui.action ohne
+-- vollen Lighttable<->Dunkelraum-Rundlauf pro Bild als "nicht gueltig fuer
+-- aktuelle Ansicht" ab; dt.control.sleep pumpt die Event-Loop bei
+-- unsichtbarem Fenster nicht ausreichend durch. Deshalb: nur mit
+-- sichtbarem Fenster verwenden und Ergebnis pruefen (daher "experimentell"
+-- im Label, kein automatischer Aufruf von irgendwo sonst).
+local function apply_all_queued()
+  local images = dt.gui.action_images
+  if not images or #images == 0 then
+    dt.print(_("Auto Crop: keine Bilder ausgewaehlt"))
+    return
+  end
+  local queue = load_queue()
+  local todo = {}
+  for _, img in ipairs(images) do
+    if queue[img.filename] then todo[#todo+1] = img end
+  end
+  if #todo == 0 then
+    dt.print(_("Auto Crop: keine wartenden Crops in der Auswahl"))
+    return
+  end
+  dt.print(string.format(
+    _("Auto Crop: wende %d Crops an (experimentell - Fenster sichtbar "
+      .. "lassen)"), #todo))
+  local n = 0
+  for _, img in ipairs(todo) do
+    local ok, err = pcall(function()
+      dt.gui.current_view(dt.gui.views.lighttable)
+      dt.control.sleep(150)
+      dt.gui.views.darkroom.display_image(img)
+      dt.control.sleep(400)
+      if apply_crop(img) then n = n + 1 end
+      dt.control.sleep(200)
+    end)
+    if not ok then
+      log("apply_all_queued: Fehler bei " .. img.filename .. ": "
+          .. tostring(err))
+    end
+  end
+  pcall(function() dt.gui.current_view(dt.gui.views.lighttable) end)
+  dt.print(string.format(_("Auto Crop: %d von %d Crops angewendet"),
+    n, #todo))
+end
+
 -- ═══ Widgets ═══════
 
 -- Ein Widget fuer beide Views (Lighttable + Darkroom)
@@ -481,6 +571,13 @@ lt_widget = dt.new_widget("box") {
     label = _("Apply crop to current image"),
     tooltip = _("Apply queued crop from detection results"),
     clicked_callback = function() apply_current() end },
+  dt.new_widget("separator") {},
+  dt.new_widget("button") {
+    label = _("Apply all queued now (experimental)"),
+    tooltip = _("Loops selected images through the darkroom to apply "
+      .. "all queued crops at once. Fragile - keep the darktable window "
+      .. "visible and check the result."),
+    clicked_callback = function() apply_all_queued() end },
   dt.new_widget("label") {
     label = _("After detection: open images in darkroom to apply crops.") },
   dt.new_widget("label") {
