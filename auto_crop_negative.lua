@@ -33,9 +33,7 @@ dt.preferences.register(MOD_LT, "t_yellow", "float",
     .. "- darunter wird NICHT gecroppt (rot)"),
   0.30, 0.0, 1.0, 0.01)
 
-local function classify_confidence(conf)
-  local t_green = dt.preferences.read(MOD_LT, "t_green", "float")
-  local t_yellow = dt.preferences.read(MOD_LT, "t_yellow", "float")
+local function classify_confidence(conf, t_green, t_yellow)
   if conf >= t_green then return "green"
   elseif conf >= t_yellow then return "yellow"
   else return "red" end
@@ -203,6 +201,11 @@ local batch_state = {
   images = nil,
   n_images = nil,     -- echte Bildzahl (Python meldet Fortschritt in
                       -- Einheiten: RAW-Export + Pass A + Pass B je Bild)
+  t_green = 0.5, t_yellow = 0.3,  -- bei Spawn aus den Preferences erfasst,
+                                  -- damit ein spaeteres Aendern der
+                                  -- Preferences den laufenden Batch nicht
+                                  -- inkonsistent macht (Python nutzt zum
+                                  -- Queue-Schreiben dieselben Werte)
   t_start = 0,        -- os.time() beim Spawn
   last_est = -1,      -- letzte angezeigte Schätzung (Sekunden), Dedupe
   toast_sec = 0,      -- letzte Sekunde, fuer die ein Toast kam
@@ -250,20 +253,21 @@ local function check_batch()
   local n_images = tonumber(prog:match("BATCHINFO total=(%d+)"))
   if n_images then st.n_images = n_images end
 
-  local done_ok, done_rev = prog:match("BATCHDONE ok=(%d+) review=(%d+)")
+  local g_str, y_str, r_str =
+    prog:match("BATCHDONE green=(%d+) yellow=(%d+) red=(%d+)")
+  local done = g_str ~= nil
   local alive = false
-  if st.pid and not done_ok then
+  if st.pid and not done then
     alive = (os.execute(string.format("kill -0 %d 2>/dev/null", st.pid))
              == true)
   end
 
-  if done_ok then
-    -- Lauf fertig: Queue schrieb Python bereits; Colorlabels + Toast hier
+  if done then
+    -- Lauf fertig: Python hat die Queue bereits geschrieben (band-basiert,
+    -- rot ausgeschlossen) - hier nur noch Colorlabels setzen und melden.
     local raw = read_file(st.json_file) or ""
     local data = parse_json(raw)
     if type(data) == "table" and data.results then
-      local queue = load_queue()
-      local n_green, n_yellow, n_red = 0, 0, 0
       local COLOR = {
         green = dt.colorlabels.GREEN,
         yellow = dt.colorlabels.YELLOW,
@@ -271,35 +275,22 @@ local function check_batch()
       }
       for _, r in ipairs(data.results) do
         if r and r.x ~= nil and r.width ~= nil then
-          local band = classify_confidence(r.confidence or 0)
+          local band = classify_confidence(r.confidence or 0, st.t_green,
+            st.t_yellow)
           for _, img in ipairs(st.images or {}) do
             if img.filename == r.filename then
               dt.colorlabels.set(img, COLOR[band], true)
               break
             end
           end
-          if band == "red" then
-            -- Niedrige Konfidenz: NICHT croppen (Nutzer-Vorgabe). Ein
-            -- eventuell noch offener Eintrag aus einem frueheren Lauf
-            -- fuer dasselbe Bild wird verworfen.
-            queue[r.filename] = nil
-            n_red = n_red + 1
-          else
-            queue[r.filename] = {
-              x = r.x, y = r.y, w = r.width, h = r.height, band = band,
-            }
-            if band == "green" then n_green = n_green + 1
-            else n_yellow = n_yellow + 1 end
-          end
         end
       end
-      save_queue(queue)
-      log(string.format("queued: green=%d yellow=%d red=%d",
-        n_green, n_yellow, n_red))
+      log(string.format("queued: green=%s yellow=%s red=%s",
+        g_str, y_str, r_str))
       dt.print(string.format(
-        _("Auto Crop: %d gruen, %d gelb (Kontrolle), %d rot (nicht "
+        _("Auto Crop: %s gruen, %s gelb (Kontrolle), %s rot (nicht "
           .. "gecroppt). Zum Anwenden Bilder im Dunkelraum oeffnen."),
-        n_green, n_yellow, n_red))
+        g_str, y_str, r_str))
     else
       log("BATCHDONE, aber JSON unlesbar: "
           .. raw:sub(1, 150):gsub("[%c]", " "))
@@ -440,14 +431,18 @@ local function detect_and_queue()
   end
   -- stdout -> json_file (Ergebnis), stderr -> prog_file (Fortschritt);
   -- & startet Python im Hintergrund, echo $! liefert die PID.
-  -- --confidence-threshold ist nur fuer Pythons EIGENEN "review"-Wert im
-  -- BATCHDONE-Log relevant (Diagnose) - die tatsaechliche gruen/gelb/rot-
-  -- Einstufung macht Lua anhand der rohen Konfidenz + den Preferences
-  -- oben (classify_confidence), unabhaengig davon.
+  -- Schwellen EINMAL bei Spawn aus den Preferences lesen und Python direkt
+  -- mitgeben: Python schreibt die gruen/gelb/rot-Queue selbst (siehe
+  -- _run_batch_pipeline) und ist damit die alleinige Quelle dafuer - Lua
+  -- pollt nur ereignisgesteuert und koennte sonst verzoegert oder gar
+  -- nicht mehr finalisieren, wenn der Nutzer waehrend der Erkennung
+  -- nichts anfasst.
+  local t_green = dt.preferences.read(MOD_LT, "t_green", "float")
   local t_yellow = dt.preferences.read(MOD_LT, "t_yellow", "float")
   local cmd = string.format(
-    "'%s' --batch %s --confidence-threshold %.3f 2> '%s' > '%s' & echo $!",
-    py, table.concat(escaped, " "), t_yellow, prog_file, json_file)
+    "'%s' --batch %s --confidence-threshold %.3f --t-green %.3f "
+      .. "2> '%s' > '%s' & echo $!",
+    py, table.concat(escaped, " "), t_yellow, t_green, prog_file, json_file)
   log("spawn cmd: " .. cmd)
   local handle = io.popen(cmd, "r")
   local pid = handle and tonumber(handle:read("*l"))
@@ -466,6 +461,8 @@ local function detect_and_queue()
   batch_state.json_file = json_file
   batch_state.prog_file = prog_file
   batch_state.images = images
+  batch_state.t_green = t_green
+  batch_state.t_yellow = t_yellow
   batch_state.t_start = os.time()
   batch_state.last_est = -1
   batch_state.toast_sec = 0
@@ -481,6 +478,22 @@ local function detect_and_queue()
   dt.print(string.format(
     _("Auto Crop: %d Bilder werden im Hintergrund analysiert - Abbruch ueber ✗"),
     #paths))
+
+  -- Robuste Fertigstellung: NICHT nur auf zufaellige UI-Events warten
+  -- (selection-changed, mouse-over, ...). Beobachtet: der Python-Prozess
+  -- war laengst fertig (BATCHDONE stand in der Progress-Datei), aber
+  -- check_batch() wurde nie wieder aufgerufen, weil der Nutzer waehrend
+  -- des Wartens nichts angefasst hat - die Erkennung wirkte dadurch
+  -- "haengengeblieben", obwohl das Backend laengst durch war.
+  -- dt.control.sleep pumpt waehrenddessen die GTK-Eventloop durch (der
+  -- Abbruch-Knopf bleibt reaktionsfaehig), blockiert also nicht wie ein
+  -- OS-Sleep. batch_state.pid == pid schuetzt davor, dass zwei
+  -- ueberlappende Aufrufe (Nutzer klickt zweimal) sich gegenseitig den
+  -- Zustand kaputt pollen.
+  while batch_state.active and batch_state.pid == pid do
+    dt.control.sleep(300)
+    check_batch()
+  end
 end
 
 -- ═══ Darkroom: auto-apply on image load ═══════

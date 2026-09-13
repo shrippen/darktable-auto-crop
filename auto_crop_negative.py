@@ -1580,19 +1580,25 @@ def compute_batch(image_paths, confidence_threshold, debug, default_format,
     return {"film_aspects": film_aspects, "results": results}
 
 
-def _run_batch_pipeline(image_paths, confidence_threshold, debug, default_format):
+def _run_batch_pipeline(image_paths, t_yellow, t_green, debug, default_format):
     """Batch-Einstieg fuers Darktable-Lua-Backend: ruft compute_batch und
-    schreibt zusaetzlich die crop_queue.json + BATCHDONE (Lua blockiert nicht,
-    daher finalisiert Python selbst). JSON-Ergebnis geht auf stdout."""
+    schreibt zusaetzlich die crop_queue.json + BATCHDONE.
+
+    Python ist hier die alleinige Quelle fuer die Gruen/Gelb/Rot-Einstufung
+    und den Queue-Inhalt (nicht Lua): Lua pollt nur ereignisgesteuert
+    (selection-changed, mouse-over, ...) und kann daher verzoegert oder gar
+    nicht mehr laufen, wenn der Nutzer waehrend der Erkennung nichts
+    anfasst - der fertige Batch MUSS trotzdem eine nutzbare Queue
+    hinterlassen. Lua liest zur Finalisierung nur noch das Ergebnis-JSON
+    fuer die Colorlabels, schreibt die Queue selbst nicht mehr."""
     # PID fuer den Abbruch-Knopf im Lua-Backend (kill -TERM <pid>)
     print(f"BATCHINFO pid={os.getpid()}", file=sys.stderr, flush=True)
 
-    batch = compute_batch(image_paths, confidence_threshold, debug,
-                          default_format)
+    batch = compute_batch(image_paths, t_yellow, debug, default_format)
     results = batch["results"]
     film_aspects = batch["film_aspects"]
 
-    # === Queue + BATCHDONE: atomar im exakten Lua-save_queue-Format ===
+    # === Queue + BATCHDONE: atomar, band-basiert (rot wird NICHT gequeued) ===
     try:
         qpath = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "crop_queue.json")
@@ -1604,36 +1610,46 @@ def _run_batch_pipeline(image_paths, confidence_threshold, debug, default_format
             existing = {}
         if not isinstance(existing, dict):
             existing = {}
-        ok_n = 0
-        rev_n = 0
+        n_green = n_yellow = n_red = 0
         for r in results:
             if r.get("x") is None or r.get("width") is None:
+                continue
+            conf = r.get("confidence", 0.0)
+            if conf >= t_green:
+                band = "green"
+            elif conf >= t_yellow:
+                band = "yellow"
+            else:
+                band = "red"
+            if band == "red":
+                existing.pop(r["filename"], None)
+                n_red += 1
                 continue
             existing[r["filename"]] = {
                 "x": round(r["x"], 4), "y": round(r["y"], 4),
                 "w": round(r["width"], 4), "h": round(r["height"], 4),
-                "review": bool(r.get("needs_review")),
+                "band": band,
             }
-            if r.get("needs_review"):
-                rev_n += 1
+            if band == "green":
+                n_green += 1
             else:
-                ok_n += 1
+                n_yellow += 1
         parts = []
         for fn, c in existing.items():
             parts.append('"%s":{"x":%.4f,"y":%.4f,"w":%.4f,"h":%.4f,'
-                         '"review":%s}'
+                         '"band":"%s"}'
                          % (fn.replace('\\', '\\\\').replace('"', '\\"'),
-                            c["x"], c["y"], c["w"], c["h"],
-                            "true" if c["review"] else "false"))
+                            c["x"], c["y"], c["w"], c["h"], c["band"]))
         tmp_q = qpath + ".tmp"
         with open(tmp_q, "w") as f:
             f.write("{" + ",".join(parts) + "}")
         os.replace(tmp_q, qpath)
-        print(f"BATCHDONE ok={ok_n} review={rev_n}",
+        print(f"BATCHDONE green={n_green} yellow={n_yellow} red={n_red}",
               file=sys.stderr, flush=True)
         print(f"BATCHINFO queue={qpath}", file=sys.stderr, flush=True)
     except Exception as e:
-        print(f"BATCHDONE ok=0 review=0", file=sys.stderr, flush=True)
+        print(f"BATCHDONE green=0 yellow=0 red=0",
+              file=sys.stderr, flush=True)
         print(f"BATCHERROR queue_write: {e}", file=sys.stderr, flush=True)
 
     output = {
@@ -1664,6 +1680,10 @@ def main():
     # ab hier 100% Precision (keine Fehltreffer unter den bekannten Faellen)
     # bei deutlich mehr Abdeckung als der alte Default 0.70 (Recall 65%->76%).
     parser.add_argument("--confidence-threshold", type=float, default=0.5)
+    # Nur im --batch-Modus relevant: zweite (obere) Schwelle fuer die
+    # gruen/gelb/rot-Queue-Einstufung (--confidence-threshold ist dort die
+    # gelb/rot-Grenze). Default ebenfalls aus tools/calibrate.py.
+    parser.add_argument("--t-green", type=float, default=0.5)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--output", "-o", help="Debug-Visualisierung speichern")
     parser.add_argument("--dump-candidates", action="store_true",
@@ -1687,7 +1707,7 @@ def main():
     if args.batch:
         # Batch-Modus: Alle Bilder in einem Durchlauf verarbeiten
         _run_batch_pipeline(args.batch, args.confidence_threshold,
-                            args.debug, args.format)
+                            args.t_green, args.debug, args.format)
         return
 
     if args.image is None:
