@@ -1192,8 +1192,8 @@ def _pass_a_worker(item):
 
 def _pass_b_worker(item):
     """Ein Bild fuer Pass B verarbeiten.
-    item = (film, path, load_path, aspect, debug)."""
-    film, path, load_path, aspect, debug = item
+    item = (film, path, load_path, aspect, debug, exposure_contrast)."""
+    film, path, load_path, aspect, debug, exposure_contrast = item
     img = load_image(load_path)
     full, small, scale = _prepare_detect_gray(img)
     result = find_best_crop(small, target_ratio=aspect, debug=debug,
@@ -1209,6 +1209,7 @@ def _pass_b_worker(item):
     result["target_aspect_ratio"] = aspect
     result["_img_w"] = full.shape[1]
     result["_img_h"] = full.shape[0]
+    result["_exposure_contrast"] = exposure_contrast
     result["_raw"] = {"x": result.get("x"), "y": result.get("y"),
                       "width": result.get("width"),
                       "height": result.get("height")}
@@ -1244,7 +1245,8 @@ def apply_film_consensus(results, load_paths, report=None):
         if raw.get("width") and raw.get("height"):
             by_film[r["film"]].append(r)
 
-    plans = []  # Start-Box je Bild, gesammelt ueber alle Filme (fuer Phase 2)
+    # --- Pass 1: pro Film die rohe Konsens-Groesse bestimmen ---
+    film_stats = {}
     for film, rs in by_film.items():
         n = len(rs)
         if n < 3:
@@ -1256,8 +1258,71 @@ def apply_film_consensus(results, load_paths, report=None):
         shorts = [min(r["_raw"]["width"], r["_raw"]["height"]) for r in rs]
         long_px = _cluster_center(longs)
         short_px = _cluster_center(shorts)
-        mad_long = _median([abs(v - long_px) for v in longs])
-        mad_short = _median([abs(v - short_px) for v in shorts])
+        aspect = rs[0].get("film_aspect") or (long_px / max(short_px, 1))
+        film_stats[film] = {
+            "rs": rs, "n": n, "longs": longs, "shorts": shorts,
+            "long_px": long_px, "short_px": short_px,
+            "bucket_aspect": max(aspect, 1.0 / aspect),
+        }
+
+    # Format-Gruppen bilden: Filme nach normiertem Seitenverhaeltnis sortiert
+    # zu Ketten zusammenfassen, statt in ein festes Raster zu runden (ein
+    # festes Raster kann zwei fast gleiche Aspects auf verschiedene Bucket-
+    # Grenzen verteilen, z.B. 1.027 und 1.081 bei 0.1-Rasterung).
+    BUCKET_TOL = 0.08
+    ordered = sorted(film_stats.items(), key=lambda kv: kv[1]["bucket_aspect"])
+    bucket_id, prev_aspect = -1, None
+    for _film, st_ in ordered:
+        a = st_["bucket_aspect"]
+        if prev_aspect is None or abs(a - prev_aspect) / prev_aspect > BUCKET_TOL:
+            bucket_id += 1
+        st_["bucket"] = bucket_id
+        prev_aspect = a
+
+    # --- Cross-Film-Sanity: Format-Gruppen ueber die gesamte Charge poolen ---
+    # Grundannahme (Nutzer): dieselbe Digitalisierungs-Rigg fuer alle Rollen
+    # -> Filme mit gleichem Seitenverhaeltnis sollten (fast) dieselbe
+    # physische Bildgroesse in Pixel haben. Weicht der Konsens eines
+    # einzelnen Films deutlich (>3%) nach OBEN vom Konsens der uebrigen
+    # Filme im selben Format ab, ist seine Rohverteilung vermutlich
+    # systematisch zu gross (beobachtet: die Kantensuche rutscht auf
+    # manchen Rollen auf eine staerkere, aber falsche Kante - Nachbarframe/
+    # Filmhalter statt Bildrand). Nur nach OBEN wird gedeckelt: ein
+    # kleinerer eigener Wert bleibt unangetastet, da _cluster_center()
+    # Fehldetektionen typischerweise verkleinert, nicht vergroessert -
+    # dieser Fall ist bereits durch den robusten Median abgedeckt.
+    MIN_POOL_SUPPORT = 10  # Bilder aus ANDEREN Filmen, damit der Pool zaehlt
+    CLAMP_TOL = 1.03
+    for film, st_ in film_stats.items():
+        pool_longs, pool_shorts, pool_films = [], [], set()
+        for f2, st2 in film_stats.items():
+            if f2 != film and st2["bucket"] == st_["bucket"]:
+                pool_longs.extend(st2["longs"])
+                pool_shorts.extend(st2["shorts"])
+                pool_films.add(f2)
+        if len(pool_longs) < MIN_POOL_SUPPORT:
+            continue
+        pool_long = _cluster_center(pool_longs)
+        pool_short = _cluster_center(pool_shorts)
+        if st_["long_px"] > pool_long * CLAMP_TOL:
+            report(f"BATCHINFO consensus_clamp film={film!r} long "
+                  f"{st_['long_px']:.0f}->{pool_long:.0f} "
+                  f"(Pool {len(pool_longs)} Bilder aus {sorted(pool_films)})")
+            st_["long_px"] = pool_long
+        if st_["short_px"] > pool_short * CLAMP_TOL:
+            report(f"BATCHINFO consensus_clamp film={film!r} short "
+                  f"{st_['short_px']:.0f}->{pool_short:.0f} "
+                  f"(Pool {len(pool_shorts)} Bilder aus {sorted(pool_films)})")
+            st_["short_px"] = pool_short
+
+    plans = []  # Start-Box je Bild, gesammelt ueber alle Filme (fuer Phase 2)
+    for film, st_ in film_stats.items():
+        rs = st_["rs"]
+        n = st_["n"]
+        long_px = st_["long_px"]
+        short_px = st_["short_px"]
+        mad_long = _median([abs(v - long_px) for v in st_["longs"]])
+        mad_short = _median([abs(v - short_px) for v in st_["shorts"]])
 
         # Dominante Orientierung der Rolle (Mehrheit der Roh-Detektionen).
         # Fuer Ausreisser, deren Groesse weit vom Konsens liegt, ist die
@@ -1342,7 +1407,27 @@ def apply_film_consensus(results, load_paths, report=None):
                     + abs(min(p["rw"], p["rh"]) - short_px) / max(short_px, 1))
         size_agree = max(0.0, 1.0 - size_dev)
         conf = 0.45 * size_agree + 0.35 * edge_score + 0.20 * p["film_trust"]
-        r["confidence"] = round(min(1.0, max(0.0, conf)), 3)
+
+        # Unterbelichtete/kontrastarme Aufnahmen: Pass A findet dort kaum
+        # oder keine Bild/Rand-Grenze (siehe measure_image_aspect), was auch
+        # die Kantensuche in Pass B/Konsens unzuverlaessig macht - selbst bei
+        # hohem Groessen-/Kanten-Score. Ohne Bezug zu einer Referenz gibt
+        # es kein anderes Signal dafuer; die Konfidenz wird daher gedeckelt,
+        # statt den (moeglicherweise falschen) Crop als sicher zu markieren.
+        contrast = r.get("_exposure_contrast")
+        if contrast is None:
+            exposure_factor = 0.45
+        else:
+            contrast = float(contrast)
+            exposure_factor = min(1.0, max(0.45, 0.45 + 0.55 * (contrast - 8) / 22))
+        conf *= exposure_factor
+
+        r["confidence"] = float(round(min(1.0, max(0.0, conf)), 3))
+        if exposure_factor < 1.0:
+            r.setdefault("reasons", []).append(
+                f"Kontrastarm/unterbelichtet (Kontrast "
+                f"{'n/a' if contrast is None else int(contrast)}) "
+                f"- Konfidenz gedeckelt")
         r.setdefault("reasons", []).append(
             f"Film-Konsens {int(long_px)}x{int(short_px)} "
             f"(n={p['n']}, MAD {int(p['mad_long'])}/{int(p['mad_short'])})")
@@ -1453,9 +1538,11 @@ def compute_batch(image_paths, confidence_threshold, debug, default_format,
         film = meas["film"]
         fa = film_aspects.get(film, {})
         aspect = fa.get("aspect_ratio", ASPECT_RATIOS.get(default_format, 1.5))
+        m = meas["measurement"]
+        exposure_contrast = m.get("contrast") if m.get("valid") else None
         pass_b_items.append((film, meas["path"],
                              load_paths.get(meas["path"], meas["path"]),
-                             aspect, debug))
+                             aspect, debug, exposure_contrast))
 
     if pass_b_items:
         with ProcessPoolExecutor(max_workers=_worker_count(len(pass_b_items))) as ex:

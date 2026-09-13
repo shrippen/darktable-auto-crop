@@ -1,13 +1,13 @@
 {
-  "total_hits": 82,
+  "total_hits": 93,
   "total": 98,
   "tolerance_px": 60,
   "per_film": {
     "Film 27": 32,
-    "Film 28": 5,
+    "Film 28": 11,
     "Film 29": 12,
     "Film 30": 26,
-    "Film 31": 6,
+    "Film 31": 11,
     "Film 32": 1
   }
 }
