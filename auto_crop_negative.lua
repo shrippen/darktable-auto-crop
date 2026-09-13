@@ -416,8 +416,21 @@ end
 --   typedef struct { float cx, cy, cw, ch; int ratio_n, ratio_d; }
 -- cx/cy/cw/ch sind Kantenfraktionen 0..1 (links/oben/rechts/unten,
 -- gleiches Koordinatensystem wie unsere left/top/right/bottom-Werte -
--- keine Invertierung noetig). ratio_n/ratio_d im Default-Zustand: 0/1
--- (kein festes Seitenverhaeltnis).
+-- keine Invertierung noetig).
+--
+-- ratio_n/ratio_d waehlen die Seitenverhaeltnis-Sperre der Aspekt-
+-- Dropdown im Modul - relevant, weil ein gesperrtes Verhaeltnis unseren
+-- gesetzten Crop wieder Richtung Original-Format zurechtruecken kann.
+-- Aus der Preset-Liste in crop.c (dt_iop_crop_aspect_t, Feldreihenfolge
+-- {name, d, n}):
+--   { _("freehand"),       0, 0 }  -- "frei", kein gesperrtes Verhaeltnis
+--   { _("original image"), 1, 0 }  -- an das Originalbild gesperrt
+-- Bisher wurde hier (0, 1) gepackt - das entspricht laut dieser Liste
+-- "original image", nicht "frei"! Auf Nutzerwunsch jetzt (0, 0) =
+-- "freehand", damit das gesetzte Crop-Rechteck nicht wieder auf das
+-- Original-Seitenverhaeltnis gezwungen wird.
+local CROP_RATIO_N = 0
+local CROP_RATIO_D = 0
 local CROP_MODVERSION = 3
 local CROP_BLENDOP_VERSION = 14
 -- blendop_params eines echten, per obigem SQL-Check beobachteten
@@ -427,11 +440,12 @@ local CROP_BLENDOP_PARAMS =
   "gz11eJxjYIAACQYYOOHEgAZY0QWAgBGLGANDgz0Ej1Q+dcF/IADRAGpyHQU="
 
 local function pack_crop_params(cx, cy, cw, ch)
-  local bin = string.pack("<ffffi4i4", cx, cy, cw, ch, 0, 1)
+  local bin = string.pack("<ffffi4i4", cx, cy, cw, ch, CROP_RATIO_N,
+    CROP_RATIO_D)
   return (bin:gsub(".", function(c) return string.format("%02x", c:byte()) end))
 end
 
-local function crop_style_xml(style_name, op_params_hex)
+local function crop_style_xml(style_name, op_params_hex, enabled)
   return string.format([[<?xml version="1.0" encoding="UTF-8"?>
 <darktable_style version="1.0">
   <info>
@@ -444,7 +458,7 @@ local function crop_style_xml(style_name, op_params_hex)
       <module>%d</module>
       <operation>crop</operation>
       <op_params>%s</op_params>
-      <enabled>1</enabled>
+      <enabled>%d</enabled>
       <blendop_params>%s</blendop_params>
       <blendop_version>%d</blendop_version>
       <multi_priority>0</multi_priority>
@@ -453,9 +467,47 @@ local function crop_style_xml(style_name, op_params_hex)
     </plugin>
   </style>
 </darktable_style>
-]], style_name, CROP_MODVERSION, op_params_hex, CROP_BLENDOP_PARAMS,
-    CROP_BLENDOP_VERSION)
+]], style_name, CROP_MODVERSION, op_params_hex, enabled and 1 or 0,
+    CROP_BLENDOP_PARAMS, CROP_BLENDOP_VERSION)
 end
+
+-- Importiert+wendet einen einzelnen crop-Style auf ein Bild an und
+-- raeumt danach wieder auf. Gemeinsame Basis fuer set_crop() (Crop
+-- setzen) und undo_crop() (Crop-Modul wieder deaktivieren).
+local function apply_crop_style(image, op_params_hex, enabled, log_desc)
+  local style_name = "auto_crop_negative_tmp_" .. os.time() .. "_"
+    .. tostring(math.random(100000, 999999))
+  local tmp_path = os.tmpname() .. ".dtstyle"
+  local xml = crop_style_xml(style_name, op_params_hex, enabled)
+  local f = io.open(tmp_path, "w")
+  f:write(xml)
+  f:close()
+
+  dt.styles.import(tmp_path)
+  os.remove(tmp_path)
+
+  local style_obj = nil
+  for _, s in ipairs(dt.styles) do
+    if s.name == style_name then
+      style_obj = s
+      break
+    end
+  end
+  if not style_obj then
+    error("importierter Style '" .. style_name .. "' nicht gefunden")
+  end
+
+  dt.styles.apply(style_obj, image)
+  dt.styles.delete(style_obj)
+  log(string.format("apply_crop_style %s: %s", image.filename, log_desc))
+end
+
+-- Bilder, denen in dieser Sitzung zuletzt per set_crop() ein Crop
+-- verpasst wurde - Grundlage fuer den "Rueckgaengig"-Knopf. Absichtlich
+-- nur ein einfacher Verlauf (kein Stack mit mehreren Ebenen): ein
+-- erneuter Klick auf "Rueckgaengig" deaktiviert einfach nochmal alle
+-- zuletzt gecroppten Bilder.
+local last_cropped_images = {}
 
 local function set_crop(image, crop)
   local iw, ih = image.width, image.height
@@ -470,42 +522,46 @@ local function set_crop(image, crop)
   local bottom = math.max(top + 0.001, math.min(1, (crop.y + crop.h) / ih))
 
   local ok, err = pcall(function()
-    local style_name = "auto_crop_negative_tmp_" .. os.time() .. "_"
-      .. tostring(math.random(100000, 999999))
-    local tmp_path = os.tmpname() .. ".dtstyle"
-    local xml = crop_style_xml(style_name,
-      pack_crop_params(left, top, right, bottom))
-    local f = io.open(tmp_path, "w")
-    f:write(xml)
-    f:close()
-
-    dt.styles.import(tmp_path)
-    os.remove(tmp_path)
-
-    local style_obj = nil
-    for _, s in ipairs(dt.styles) do
-      if s.name == style_name then
-        style_obj = s
-        break
-      end
-    end
-    if not style_obj then
-      error("importierter Style '" .. style_name .. "' nicht gefunden")
-    end
-
-    dt.styles.apply(style_obj, image)
-    dt.styles.delete(style_obj)
-
-    log(string.format(
-      "set_crop %s: Style angewendet, frac l=%s t=%s r=%s b=%s",
-      image.filename, fmt_float_c(left, 4), fmt_float_c(top, 4),
-      fmt_float_c(right, 4), fmt_float_c(bottom, 4)))
+    apply_crop_style(image, pack_crop_params(left, top, right, bottom), true,
+      string.format("Style angewendet, frac l=%s t=%s r=%s b=%s",
+        fmt_float_c(left, 4), fmt_float_c(top, 4), fmt_float_c(right, 4),
+        fmt_float_c(bottom, 4)))
   end)
   if not ok then
     log("set_crop " .. image.filename .. " Fehler: " .. tostring(err))
     return false
   end
+  last_cropped_images[#last_cropped_images + 1] = image
   return true
+end
+
+-- Rueckgaengig: deaktiviert das crop-Modul wieder fuer alle zuletzt
+-- automatisch gecroppten Bilder. Fuegt (wie set_crop) einen neuen,
+-- additiven History-Eintrag hinzu (enabled=0) statt echt etwas aus der
+-- History zu entfernen - die Lua-API bietet keinen Weg, einzelne
+-- History-Eintraege zu loeschen. Das ist aber genau das native
+-- darktable-Verhalten: ein Modul ausschalten ist eine ganz normale,
+-- jederzeit umkehrbare History-Aenderung (in der History-Ansicht sichtbar,
+-- ueber die dortigen Bordmittel jederzeit wieder rueckgaengig zu machen).
+local function undo_crop()
+  if #last_cropped_images == 0 then
+    dt.print(_("Auto Crop: nichts zum Rueckgaengigmachen"))
+    return
+  end
+  local n = 0
+  for _, image in ipairs(last_cropped_images) do
+    local ok, err = pcall(function()
+      apply_crop_style(image, pack_crop_params(0, 0, 1, 1), false,
+        "Crop deaktiviert (Rueckgaengig)")
+    end)
+    if ok then
+      n = n + 1
+    else
+      log("undo_crop " .. image.filename .. " Fehler: " .. tostring(err))
+    end
+  end
+  dt.print(string.format(_("Auto Crop: %d Crop(s) rueckgaengig gemacht"), n))
+  last_cropped_images = {}
 end
 
 local function apply_crop(image)
@@ -727,11 +783,17 @@ lt_widget = dt.new_widget("box") {
     clicked_callback = function() apply_current() end },
   dt.new_widget("separator") {},
   dt.new_widget("button") {
-    label = _("Apply all queued now (experimental)"),
-    tooltip = _("Loops selected images through the darkroom to apply "
-      .. "all queued crops at once. Fragile - keep the darktable window "
-      .. "visible and check the result."),
+    label = _("Apply all queued now"),
+    tooltip = _("Applies all queued crops to the current selection at "
+      .. "once, directly from the lighttable."),
     clicked_callback = function() apply_all_queued() end },
+  dt.new_widget("separator") {},
+  dt.new_widget("button") {
+    label = _("Undo last crop(s)"),
+    tooltip = _("Disables the crop module again on every image that was "
+      .. "auto-cropped since the last undo. Adds a new history step "
+      .. "(non-destructive) instead of removing the crop entry."),
+    clicked_callback = function() undo_crop() end },
   dt.new_widget("label") {
     label = _("After detection: open images in darkroom to apply crops.") },
   dt.new_widget("label") {
