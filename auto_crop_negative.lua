@@ -389,38 +389,32 @@ local function safe_check_batch()
 end
 
 -- ═══ Crop application via dt.gui.action ═══════
--- Quellcode-Check (src/iop/crop.c, dt_bauhaus_slider_from_params(self,
--- "cx"/"cy"/"cw"/"ch")): die vier Slider werden UNTER DIESEN NAMEN als
--- Action registriert - "left"/"top"/"right"/"bottom" sind nur die
--- Tooltip-Beschriftung, kein gueltiger Action-Pfad. Richtig: "iop/crop/cx"
--- etc., Element "value", Effekt "set".
+-- KORRIGIERT (13. Sep, zweiter Anlauf): der vorherige "Fix" von
+-- left/top/right/bottom auf cx/cy/cw/ch war FALSCH - ich hatte den
+-- internen C-Struct-Feldnamen (fuer die Introspection-Bindung) mit dem
+-- oeffentlichen Action-Pfad verwechselt. src/iop/crop.c, Zeilen 62-65:
+--   float cx;  // $MIN: 0.0 $MAX: 1.0 $DESCRIPTION: "left"
+--   float cy;  // $MIN: 0.0 $MAX: 1.0 $DESCRIPTION: "top"
+--   float cw;  // $MIN: 0.0 $MAX: 1.0 $DESCRIPTION: "right"
+--   float ch;  // $MIN: 0.0 $MAX: 1.0 $DESCRIPTION: "bottom"
+-- dt_bauhaus_slider_from_params() liest dieses $DESCRIPTION-Feld aus und
+-- reicht es als "label" an dt_bauhaus_widget_set_label() weiter
+-- (src/develop/imageop_gui.c). DORT wird per
+-- "dt_action_define(w->module, section, label, widget, ...)"
+-- (src/bauhaus/bauhaus.c) genau dieser LABEL-STRING (nicht der
+-- Struct-Feldname) als Action-Pfad-Segment registriert. Der oeffentliche
+-- Pfad ist also tatsaechlich "iop/crop/left", "iop/crop/top",
+-- "iop/crop/right", "iop/crop/bottom" - exakt wie im allerersten Spike
+-- angenommen. "cx"/"cy"/"cw"/"ch" existieren als Action-Pfad schlicht
+-- NICHT, was den durchgaengigen status=nan bei jedem Aufruf erklaert
+-- (Pfad loest ins Leere auf, dt_bauhaus_slider_set() wird nie erreicht).
 --
--- Weiterer Quellcode-Check (src/bauhaus/bauhaus.c, _action_process_slider):
--- Effekt "set" ruft 1:1 dt_bauhaus_slider_set(widget, speed) auf, und DAS
--- ist die "public interface"-Funktion, die den Wert im ROHEN Parameter-
--- Bereich (hard_min..hard_max) erwartet, NICHT im angezeigten/skalierten
--- Bereich. Fuer cx/cy/cw/ch ist das 0..1 (Kantenfraktion) - der
--- factor=-100/offset=100 bei cw/ch betrifft NUR die Anzeige (Prozent-Text
--- im Slider), nicht den Wert, den "set" erwartet. Unsere Fraktionen
--- (left/top/right/bottom) sind also schon im richtigen Bereich, KEINE
--- 1-right/1-bottom-Invertierung noetig.
---
--- Trotzdem bleibt "set" bislang wirkungslos (siehe Log: cx/cy/cw/ch
--- verharren nach dem set-Aufruf exakt auf dem Default 0/0/1/1, ueber alle
--- 36 Bilder von Film 35 hinweg identisch - per XMP-Vergleich verifiziert).
--- dt_bauhaus_slider_set() selbst hat nur einen einzigen Grund, sofort
--- abzubrechen: "if(dt_isnan(pos)) return;" - d.h. entweder kommt bei der
--- Lua->C-Uebergabe tatsaechlich NaN an (obwohl wir eine normale Zahl
--- schicken), oder der per Pfad aufgeloeste Widget-Zeiger ist gar nicht das
--- erwartete Bauhaus-Slider-Objekt (Pfad loest ins Leere auf, obwohl der
--- Name laut Quellcode stimmt). Ebenfalls auffaellig: die vier Slider
--- liegen in crop.c hinter einer eigenen einklappbaren Sektion
--- ("plugins/darkroom/crop/expand_margins", Default zugeklappt) - das
--- sollte laut GTK-Semantik (Sichtbarkeit != Existenz) den Datenwert nicht
--- betreffen, ist aber nicht 100% ausgeschlossen. Naechster Test: die
--- Sektion "margins" im Modul EINMAL manuell aufklappen (bleibt dank
--- gespeicherter Config offen) und danach erneut "Apply all queued now"
--- probieren - falls das etwas aendert, war die Sektion die Ursache.
+-- Wertebereich (weiterhin gueltig, unabhaengig vom Pfadnamen):
+-- dt_bauhaus_slider_set(widget, value) erwartet den ROHEN Parameterwert
+-- (0..1 Kantenfraktion), nicht die angezeigte/skalierte Prozentzahl -
+-- unsere left/top/right/bottom-Fraktionen passen direkt, keine
+-- 1-right/1-bottom-Invertierung noetig trotz des invertierten
+-- Anzeige-Factors bei "right"/"bottom".
 
 -- WAS SET_CROP UEBER DIE EDITHISTORY ANNIMMT (13. Sep, nach Nutzer-Frage):
 -- set_crop() fuegt KEIN eigenes/zusaetzliches Crop-Modul hinzu - crop ist
@@ -483,39 +477,30 @@ local function set_crop(image, crop)
   -- oben) - pumpt dabei auch die GTK-Eventloop durch, waehrend wir warten.
   dt.control.sleep(CROP_SETTLE_MS)
 
-  -- Diagnose: dt.gui.action() gibt laut API-Doku den Status als String
-  -- zurueck. Alles mitloggen, bis in einer echten Session bestaetigt ist,
-  -- dass der Crop tatsaechlich sichtbar wird - bisherige Annahmen (Pfad
-  -- "iop/crop/left|top|right|bottom", Element "value", 0..1-Fraktion)
-  -- stammen aus einem frueheren Spike, aber ob rechts/unten als Position
-  -- oder als Rand-Prozent vom GEGENUEBERLIEGENDEN Rand erwartet werden,
-  -- ist NICHT abschliessend verifiziert.
   local ok, err = pcall(function()
     local r_switch = dt.gui.action(CROP_PATH, 0, "soft-switch", "on")
-    local r_left = dt.gui.action(CROP_PATH .. "/cx", 0, "value", "set", left)
-    local r_top = dt.gui.action(CROP_PATH .. "/cy", 0, "value", "set", top)
-    local r_right = dt.gui.action(CROP_PATH .. "/cw", 0, "value", "set", right)
-    local r_bottom = dt.gui.action(CROP_PATH .. "/ch", 0, "value", "set", bottom)
+    local r_left = dt.gui.action(CROP_PATH .. "/left", 0, "value", "set", left)
+    local r_top = dt.gui.action(CROP_PATH .. "/top", 0, "value", "set", top)
+    local r_right = dt.gui.action(CROP_PATH .. "/right", 0, "value", "set", right)
+    local r_bottom = dt.gui.action(CROP_PATH .. "/bottom", 0, "value", "set", bottom)
     log(string.format(
       "set_crop %s: frac l=%s t=%s r=%s b=%s -> status switch=%s "
-        .. "cx=%s cy=%s cw=%s ch=%s",
+        .. "left=%s top=%s right=%s bottom=%s",
       image.filename, fmt_float_c(left, 4), fmt_float_c(top, 4),
       fmt_float_c(right, 4), fmt_float_c(bottom, 4),
       tostring(r_switch), tostring(r_left), tostring(r_top),
       tostring(r_right), tostring(r_bottom)))
 
-    -- "set" liefert offenbar immer nan zurueck (evtl. normal fuer
-    -- imperative Effekte) - Rueckfrage ohne effect/speed soll laut
-    -- API-Doku nur den AKTUELLEN Wert liefern, ohne etwas zu aendern.
-    -- Zeigt der die eben gesetzten Werte, hat "set" trotz nan
-    -- funktioniert; bleibt er auf altem/default Wert, hat es nicht.
+    -- Rueckfrage ohne effect/speed liefert laut API-Doku nur den
+    -- aktuellen Wert, ohne etwas zu aendern - damit im Log sichtbar,
+    -- ob die eben gesetzten Werte tatsaechlich angekommen sind.
     local q_switch = dt.gui.action(CROP_PATH, 0, "soft-switch")
-    local q_left = dt.gui.action(CROP_PATH .. "/cx", 0, "value")
-    local q_top = dt.gui.action(CROP_PATH .. "/cy", 0, "value")
-    local q_right = dt.gui.action(CROP_PATH .. "/cw", 0, "value")
-    local q_bottom = dt.gui.action(CROP_PATH .. "/ch", 0, "value")
+    local q_left = dt.gui.action(CROP_PATH .. "/left", 0, "value")
+    local q_top = dt.gui.action(CROP_PATH .. "/top", 0, "value")
+    local q_right = dt.gui.action(CROP_PATH .. "/right", 0, "value")
+    local q_bottom = dt.gui.action(CROP_PATH .. "/bottom", 0, "value")
     log(string.format(
-      "set_crop %s: Rueckfrage switch=%s cx=%s cy=%s cw=%s ch=%s",
+      "set_crop %s: Rueckfrage switch=%s left=%s top=%s right=%s bottom=%s",
       image.filename, tostring(q_switch), tostring(q_left),
       tostring(q_top), tostring(q_right), tostring(q_bottom)))
   end)
