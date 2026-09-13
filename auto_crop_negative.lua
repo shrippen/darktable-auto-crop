@@ -392,16 +392,35 @@ end
 -- Quellcode-Check (src/iop/crop.c, dt_bauhaus_slider_from_params(self,
 -- "cx"/"cy"/"cw"/"ch")): die vier Slider werden UNTER DIESEN NAMEN als
 -- Action registriert - "left"/"top"/"right"/"bottom" sind nur die
--- Tooltip-Beschriftung, kein gueltiger Action-Pfad. Das erklaerte den
--- durchgaengigen "status=nan" bei jedem dt.gui.action-Aufruf (Pfad
--- existierte schlicht nicht). Richtig: "iop/crop/cx" etc., Element
--- "value". cx/cy sind direkte 0..1-Kantenfraktionen (Slider-Anzeige
--- linear 0-100%, factor=100). cw/ch werden laut Quellcode invertiert
--- angezeigt (dt_bauhaus_slider_set_factor(-100)/set_offset(100): Anzeige
--- = 100 - 100*roh) - ob dt.gui.action "set" die Roh- oder die Anzeige-
--- Fraktion erwartet, ist NICHT verifiziert. Erst mit den korrigierten
--- Pfaden testen; falls der Crop rechts/unten falsch sitzt, hier 1-right/
--- 1-bottom statt right/bottom versuchen.
+-- Tooltip-Beschriftung, kein gueltiger Action-Pfad. Richtig: "iop/crop/cx"
+-- etc., Element "value", Effekt "set".
+--
+-- Weiterer Quellcode-Check (src/bauhaus/bauhaus.c, _action_process_slider):
+-- Effekt "set" ruft 1:1 dt_bauhaus_slider_set(widget, speed) auf, und DAS
+-- ist die "public interface"-Funktion, die den Wert im ROHEN Parameter-
+-- Bereich (hard_min..hard_max) erwartet, NICHT im angezeigten/skalierten
+-- Bereich. Fuer cx/cy/cw/ch ist das 0..1 (Kantenfraktion) - der
+-- factor=-100/offset=100 bei cw/ch betrifft NUR die Anzeige (Prozent-Text
+-- im Slider), nicht den Wert, den "set" erwartet. Unsere Fraktionen
+-- (left/top/right/bottom) sind also schon im richtigen Bereich, KEINE
+-- 1-right/1-bottom-Invertierung noetig.
+--
+-- Trotzdem bleibt "set" bislang wirkungslos (siehe Log: cx/cy/cw/ch
+-- verharren nach dem set-Aufruf exakt auf dem Default 0/0/1/1, ueber alle
+-- 36 Bilder von Film 35 hinweg identisch - per XMP-Vergleich verifiziert).
+-- dt_bauhaus_slider_set() selbst hat nur einen einzigen Grund, sofort
+-- abzubrechen: "if(dt_isnan(pos)) return;" - d.h. entweder kommt bei der
+-- Lua->C-Uebergabe tatsaechlich NaN an (obwohl wir eine normale Zahl
+-- schicken), oder der per Pfad aufgeloeste Widget-Zeiger ist gar nicht das
+-- erwartete Bauhaus-Slider-Objekt (Pfad loest ins Leere auf, obwohl der
+-- Name laut Quellcode stimmt). Ebenfalls auffaellig: die vier Slider
+-- liegen in crop.c hinter einer eigenen einklappbaren Sektion
+-- ("plugins/darkroom/crop/expand_margins", Default zugeklappt) - das
+-- sollte laut GTK-Semantik (Sichtbarkeit != Existenz) den Datenwert nicht
+-- betreffen, ist aber nicht 100% ausgeschlossen. Naechster Test: die
+-- Sektion "margins" im Modul EINMAL manuell aufklappen (bleibt dank
+-- gespeicherter Config offen) und danach erneut "Apply all queued now"
+-- probieren - falls das etwas aendert, war die Sektion die Ursache.
 
 local function set_crop(image, crop)
   local iw, ih = image.width, image.height

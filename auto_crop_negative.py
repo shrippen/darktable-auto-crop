@@ -72,13 +72,27 @@ def export_raws_via_darktable(dt_cli, raw_paths, export_dir, total_units):
     def convert(path):
         base = os.path.splitext(os.path.basename(path))[0]
         out = os.path.join(export_dir, base + "_conv.jpg")
-        lib = out + ".db"   # eigene Library pro Aufruf
-        cfg = out + ".cfg"  # eigenes Config-Verzeichnis -> eigene data.db,
+        cfg = out + ".cfg"  # eigenes Config-Verzeichnis -> eigene library.db,
         env = dict(os.environ)  # kollidiert nicht mit der laufenden GUI
         env["XDG_CONFIG_HOME"] = cfg
+        # WICHTIG: KEIN --library hier. --library laesst darktable-cli laut
+        # "--help" die History aus der (hier leeren, frisch erzeugten)
+        # Library-DB lesen STATT aus dem XMP-Sidecar - das Bild wird dann mit
+        # dem darktable-Standard-Modulstapel importiert, nicht mit dem
+        # tatsaechlichen Bearbeitungsstand (z.B. Negadoctor). Schlimmer: die
+        # lokale darktablerc hat write_sidecar_files=on import, d.h. der
+        # Import in die frische Library loest einen Sidecar-Schreibvorgang
+        # aus, der genau diesen (falschen) Standard-Stapel in die ECHTE
+        # <raw>.xmp neben der Originaldatei zurueckschreibt und damit
+        # vorhandene manuelle Bearbeitungen ueberschreibt. Ohne --library
+        # liest darktable-cli stattdessen ganz normal die vorhandene
+        # Sidecar-XMP (das war ohnehin die Absicht laut Docstring oben).
+        # --conf write_sidecar_files=never verhindert zusaetzlich JEDEN
+        # Schreibvorgang durch diesen Wegwerf-Export, als Sicherheitsnetz
+        # falls doch einmal ein "Import" in der isolierten Library passiert.
         cmd = [dt_cli, path, out,
-               "--library", lib,
-               "--out-ext", "jpg"]
+               "--out-ext", "jpg",
+               "--core", "--conf", "write_sidecar_files=never"]
         proc = subprocess.run(cmd, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, text=True, env=env)
         if not os.path.exists(out):
