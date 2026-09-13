@@ -1,0 +1,58 @@
+{
+  "Film 27": {
+    "aspect_ratio": 1.5092,
+    "n_valid": 33,
+    "n_consensus": 33,
+    "n_total": 173,
+    "source": "measured"
+  },
+  "Film 28": {
+    "aspect_ratio": 1.5083,
+    "n_valid": 8,
+    "n_consensus": 7,
+    "n_total": 173,
+    "source": "measured"
+  },
+  "Film 29": {
+    "aspect_ratio": 1.028,
+    "n_valid": 12,
+    "n_consensus": 6,
+    "n_total": 173,
+    "source": "measured"
+  },
+  "Film 30": {
+    "aspect_ratio": 1.507,
+    "n_valid": 28,
+    "n_consensus": 21,
+    "n_total": 173,
+    "source": "measured"
+  },
+  "Film 31": {
+    "aspect_ratio": 1.0814,
+    "n_valid": 11,
+    "n_consensus": 3,
+    "n_total": 173,
+    "source": "measured"
+  },
+  "Film 32": {
+    "aspect_ratio": 1.4932,
+    "n_valid": 6,
+    "n_consensus": 4,
+    "n_total": 173,
+    "source": "measured"
+  },
+  "Film 33": {
+    "aspect_ratio": 1.5089,
+    "n_valid": 37,
+    "n_consensus": 34,
+    "n_total": 173,
+    "source": "measured"
+  },
+  "Film 34": {
+    "aspect_ratio": 1.5497,
+    "n_valid": 3,
+    "n_consensus": 2,
+    "n_total": 173,
+    "source": "measured"
+  }
+}

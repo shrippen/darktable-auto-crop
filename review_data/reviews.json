@@ -1,0 +1,814 @@
+{
+  "Film 27/20250414_0167.jpg": {
+    "manual_crop": {
+      "x": 61,
+      "y": 55,
+      "width": 1202,
+      "height": 1821
+    }
+  },
+  "Film 27/20250414_0168.jpg": {
+    "manual_crop": {
+      "x": 65,
+      "y": 74,
+      "width": 1199,
+      "height": 1817
+    }
+  },
+  "Film 27/20250414_0172.jpg": {
+    "manual_crop": {
+      "x": 70,
+      "y": 66,
+      "width": 1203,
+      "height": 1811
+    }
+  },
+  "Film 27/20250414_0175.jpg": {
+    "manual_crop": {
+      "x": 74,
+      "y": 160,
+      "width": 1186,
+      "height": 1728
+    }
+  },
+  "Film 27/20250414_0176.jpg": {
+    "manual_crop": {
+      "x": 70,
+      "y": 82,
+      "width": 1192,
+      "height": 1819
+    }
+  },
+  "Film 27/20250414_0177.jpg": {
+    "manual_crop": {
+      "x": 69,
+      "y": 90,
+      "width": 1199,
+      "height": 1813
+    }
+  },
+  "Film 27/20250414_0182.jpg": {
+    "manual_crop": {
+      "x": 52,
+      "y": 80,
+      "width": 1824,
+      "height": 1188
+    }
+  },
+  "Film 27/20250414_0183.jpg": {
+    "manual_crop": {
+      "x": 81,
+      "y": 71,
+      "width": 1820,
+      "height": 1170
+    }
+  },
+  "Film 27/20250414_0188.jpg": {
+    "manual_crop": {
+      "x": 72,
+      "y": 91,
+      "width": 1818,
+      "height": 1187
+    },
+    "is_problem": false,
+    "note": ""
+  },
+  "Film 27/20250414_0197.jpg": {
+    "manual_crop": {
+      "x": 89,
+      "y": 84,
+      "width": 1198,
+      "height": 1816
+    }
+  },
+  "Film 27/20250414_0198.jpg": {
+    "manual_crop": {
+      "x": 82,
+      "y": 88,
+      "width": 1196,
+      "height": 1821
+    }
+  },
+  "Film 28/20250414_0201.jpg": {
+    "manual_crop": {
+      "x": 123,
+      "y": 40,
+      "width": 1824,
+      "height": 1209
+    }
+  },
+  "Film 28/20250414_0203.jpg": {
+    "manual_crop": {
+      "x": 77,
+      "y": 45,
+      "width": 1825,
+      "height": 1203
+    }
+  },
+  "Film 28/20250414_0205.jpg": {
+    "manual_crop": {
+      "x": 82,
+      "y": 37,
+      "width": 1812,
+      "height": 1210
+    }
+  },
+  "Film 28/20250414_0207.jpg": {
+    "manual_crop": {
+      "x": 121,
+      "y": 31,
+      "width": 1835,
+      "height": 1222
+    }
+  },
+  "Film 28/20250414_0208.jpg": {
+    "manual_crop": {
+      "x": 74,
+      "y": 34,
+      "width": 1833,
+      "height": 1206
+    }
+  },
+  "Film 28/20250414_0209.jpg": {
+    "manual_crop": {
+      "x": 86,
+      "y": 24,
+      "width": 1825,
+      "height": 1211
+    }
+  },
+  "Film 28/20250414_0210.jpg": {
+    "manual_crop": {
+      "x": 87,
+      "y": 126,
+      "width": 1211,
+      "height": 1813
+    }
+  },
+  "Film 29/20250414_0212.jpg": {
+    "manual_crop": {
+      "x": 418,
+      "y": 44,
+      "width": 1250,
+      "height": 1178
+    }
+  },
+  "Film 29/20250414_0213.jpg": {
+    "manual_crop": {
+      "x": 397,
+      "y": 31,
+      "width": 1241,
+      "height": 1202
+    }
+  },
+  "Film 29/20250414_0214.jpg": {
+    "manual_crop": {
+      "x": 404,
+      "y": 35,
+      "width": 1249,
+      "height": 1197
+    }
+  },
+  "Film 29/20250414_0215.jpg": {
+    "manual_crop": {
+      "x": 493,
+      "y": 31,
+      "width": 1246,
+      "height": 1198
+    }
+  },
+  "Film 27/20250414_0164.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 80,
+      "y": 136,
+      "width": 1178,
+      "height": 1789
+    }
+  },
+  "Film 27/20250414_0165.jpg": {
+    "manual_crop": {
+      "x": 83,
+      "y": 101,
+      "width": 1193,
+      "height": 1819
+    }
+  },
+  "Film 27/20250414_0166.jpg": {
+    "manual_crop": {
+      "x": 67,
+      "y": 42,
+      "width": 1198,
+      "height": 1822
+    }
+  },
+  "Film 27/20250414_0169.jpg": {
+    "manual_crop": {
+      "x": 65,
+      "y": 71,
+      "width": 1216,
+      "height": 1825
+    }
+  },
+  "Film 27/20250414_0170.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 79,
+      "y": 87,
+      "width": 1179,
+      "height": 1809
+    }
+  },
+  "Film 27/20250414_0171.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 81,
+      "y": 87,
+      "width": 1177,
+      "height": 1809
+    }
+  },
+  "Film 27/20250414_0173.jpg": {
+    "manual_crop": {
+      "x": 72,
+      "y": 62,
+      "width": 1197,
+      "height": 1814
+    }
+  },
+  "Film 27/20250414_0178.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 63,
+      "y": 87,
+      "width": 1195,
+      "height": 1791
+    }
+  },
+  "Film 27/20250414_0179.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 72,
+      "y": 80,
+      "width": 1804,
+      "height": 1183
+    }
+  },
+  "Film 27/20250414_0180.jpg": {
+    "manual_crop": {
+      "x": 65,
+      "y": 75,
+      "width": 1822,
+      "height": 1206
+    }
+  },
+  "Film 27/20250414_0181.jpg": {
+    "manual_crop": {
+      "x": 88,
+      "y": 75,
+      "width": 1817,
+      "height": 1197
+    }
+  },
+  "Film 27/20250414_0184.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 68,
+      "y": 66,
+      "width": 1190,
+      "height": 1806
+    }
+  },
+  "Film 27/20250414_0185.jpg": {
+    "manual_crop": {
+      "x": 57,
+      "y": 61,
+      "width": 1202,
+      "height": 1819
+    }
+  },
+  "Film 27/20250414_0186.jpg": {
+    "manual_crop": {
+      "x": 65,
+      "y": 81,
+      "width": 1819,
+      "height": 1207
+    }
+  },
+  "Film 27/20250414_0187.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 66,
+      "y": 71,
+      "width": 1803,
+      "height": 1192
+    }
+  },
+  "Film 27/20250414_0189.jpg": {
+    "manual_crop": {
+      "x": 75,
+      "y": 80,
+      "width": 1810,
+      "height": 1194
+    }
+  },
+  "Film 27/20250414_0190.jpg": {
+    "manual_crop": {
+      "x": 49,
+      "y": 76,
+      "width": 1810,
+      "height": 1200
+    }
+  },
+  "Film 27/20250414_0191.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 55,
+      "y": 81,
+      "width": 1793,
+      "height": 1187
+    }
+  },
+  "Film 27/20250414_0192.jpg": {
+    "manual_crop": {
+      "x": 83,
+      "y": 57,
+      "width": 1811,
+      "height": 1201
+    }
+  },
+  "Film 27/20250414_0193.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 72,
+      "y": 66,
+      "width": 1800,
+      "height": 1197
+    }
+  },
+  "Film 27/20250414_0194.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 77,
+      "y": 83,
+      "width": 1812,
+      "height": 1180
+    }
+  },
+  "Film 27/20250414_0195.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 112,
+      "y": 58,
+      "width": 1802,
+      "height": 1188
+    }
+  },
+  "Film 27/20250414_0196.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 85,
+      "y": 58,
+      "width": 1804,
+      "height": 1195
+    }
+  },
+  "Film 28/20250414_0200.jpg": {
+    "manual_crop": {
+      "x": 81,
+      "y": 98,
+      "width": 1204,
+      "height": 1827
+    }
+  },
+  "Film 28/20250414_0202.jpg": {
+    "is_problem": false,
+    "note": "",
+    "manual_crop": {
+      "x": 67,
+      "y": 38,
+      "width": 1812,
+      "height": 1193
+    }
+  },
+  "Film 28/20250414_0204.jpg": {
+    "manual_crop": {
+      "x": 67,
+      "y": 39,
+      "width": 1820,
+      "height": 1208
+    }
+  },
+  "Film 29/20250414_0216.jpg": {
+    "manual_crop": {
+      "x": 594,
+      "y": 29,
+      "width": 1223,
+      "height": 1205
+    }
+  },
+  "Film 29/20250414_0217.jpg": {
+    "manual_crop": {
+      "x": 560,
+      "y": 32,
+      "width": 1225,
+      "height": 1200
+    }
+  },
+  "Film 29/20250414_0218.jpg": {
+    "manual_crop": {
+      "x": 515,
+      "y": 20,
+      "width": 1242,
+      "height": 1205
+    }
+  },
+  "Film 29/20250414_0219.jpg": {
+    "manual_crop": {
+      "x": 440,
+      "y": 30,
+      "width": 1246,
+      "height": 1202
+    }
+  },
+  "Film 29/20250414_0220.jpg": {
+    "manual_crop": {
+      "x": 427,
+      "y": 37,
+      "width": 1255,
+      "height": 1198
+    }
+  },
+  "Film 29/20250414_0221.jpg": {
+    "manual_crop": {
+      "x": 399,
+      "y": 26,
+      "width": 1252,
+      "height": 1188
+    }
+  },
+  "Film 29/20250414_0222.jpg": {
+    "manual_crop": {
+      "x": 549,
+      "y": 33,
+      "width": 1243,
+      "height": 1181
+    }
+  },
+  "Film 29/20250414_0224.jpg": {
+    "manual_crop": {
+      "x": 613,
+      "y": 29,
+      "width": 1213,
+      "height": 1192
+    }
+  },
+  "Film 29/20250414_0223.jpg": {
+    "manual_crop": {
+      "x": 624,
+      "y": 41,
+      "width": 1180,
+      "height": 1176
+    }
+  },
+  "Film 28/20250414_0206.jpg": {
+    "manual_crop": {
+      "x": 82,
+      "y": 40,
+      "width": 1802,
+      "height": 1193
+    }
+  },
+  "Film 27/20250414_0174.jpg": {
+    "manual_crop": {
+      "x": 80,
+      "y": 74,
+      "width": 1178,
+      "height": 1788
+    }
+  },
+  "Film 30/20250414_0226.jpg": {
+    "manual_crop": {
+      "x": 99,
+      "y": 91,
+      "width": 1797,
+      "height": 1182
+    }
+  },
+  "Film 30/20250414_0227.jpg": {
+    "manual_crop": {
+      "x": 74,
+      "y": 117,
+      "width": 1810,
+      "height": 1181
+    }
+  },
+  "Film 30/20250414_0228.jpg": {
+    "manual_crop": {
+      "x": 105,
+      "y": 91,
+      "width": 1798,
+      "height": 1198
+    }
+  },
+  "Film 30/20250414_0229.jpg": {
+    "manual_crop": {
+      "x": 128,
+      "y": 91,
+      "width": 1803,
+      "height": 1198
+    }
+  },
+  "Film 30/20250414_0230.jpg": {
+    "manual_crop": {
+      "x": 91,
+      "y": 94,
+      "width": 1820,
+      "height": 1199
+    }
+  },
+  "Film 30/20250414_0231.jpg": {
+    "manual_crop": {
+      "x": 115,
+      "y": 91,
+      "width": 1805,
+      "height": 1198
+    }
+  },
+  "Film 30/20250414_0233.jpg": {
+    "manual_crop": {
+      "x": 127,
+      "y": 91,
+      "width": 1806,
+      "height": 1198
+    }
+  },
+  "Film 30/20250414_0234.jpg": {
+    "manual_crop": {
+      "x": 67,
+      "y": 86,
+      "width": 1800,
+      "height": 1191
+    }
+  },
+  "Film 30/20250414_0236.jpg": {
+    "manual_crop": {
+      "x": 111,
+      "y": 116,
+      "width": 1800,
+      "height": 1191
+    }
+  },
+  "Film 30/20250414_0237.jpg": {
+    "manual_crop": {
+      "x": 91,
+      "y": 74,
+      "width": 1806,
+      "height": 1182
+    }
+  },
+  "Film 30/20250414_0238.jpg": {
+    "manual_crop": {
+      "x": 117,
+      "y": 76,
+      "width": 1802,
+      "height": 1187
+    }
+  },
+  "Film 30/20250414_0239.jpg": {
+    "manual_crop": {
+      "x": 108,
+      "y": 79,
+      "width": 1788,
+      "height": 1188
+    }
+  },
+  "Film 30/20250414_0240.jpg": {
+    "manual_crop": {
+      "x": 91,
+      "y": 68,
+      "width": 1806,
+      "height": 1190
+    }
+  },
+  "Film 30/20250414_0241.jpg": {
+    "manual_crop": {
+      "x": 91,
+      "y": 71,
+      "width": 1806,
+      "height": 1193
+    }
+  },
+  "Film 30/20250414_0242.jpg": {
+    "manual_crop": {
+      "x": 102,
+      "y": 91,
+      "width": 1794,
+      "height": 1176
+    }
+  },
+  "Film 30/20250414_0243.jpg": {
+    "manual_crop": {
+      "x": 91,
+      "y": 88,
+      "width": 1806,
+      "height": 1176
+    }
+  },
+  "Film 30/20250414_0244.jpg": {
+    "manual_crop": {
+      "x": 137,
+      "y": 72,
+      "width": 1802,
+      "height": 1188
+    }
+  },
+  "Film 30/20250414_0245.jpg": {
+    "manual_crop": {
+      "x": 100,
+      "y": 91,
+      "width": 1796,
+      "height": 1176
+    }
+  },
+  "Film 30/20250414_0246.jpg": {
+    "manual_crop": {
+      "x": 82,
+      "y": 72,
+      "width": 1800,
+      "height": 1188
+    }
+  },
+  "Film 30/20250414_0247.jpg": {
+    "manual_crop": {
+      "x": 101,
+      "y": 80,
+      "width": 1795,
+      "height": 1188
+    }
+  },
+  "Film 30/20250414_0248.jpg": {
+    "manual_crop": {
+      "x": 82,
+      "y": 80,
+      "width": 1793,
+      "height": 1177
+    }
+  },
+  "Film 30/20250414_0249.jpg": {
+    "manual_crop": {
+      "x": 78,
+      "y": 77,
+      "width": 1799,
+      "height": 1185
+    }
+  },
+  "Film 30/20250414_0250.jpg": {
+    "manual_crop": {
+      "x": 91,
+      "y": 81,
+      "width": 1806,
+      "height": 1181
+    }
+  },
+  "Film 30/20250414_0251.jpg": {
+    "manual_crop": {
+      "x": 91,
+      "y": 91,
+      "width": 1806,
+      "height": 1163
+    }
+  },
+  "Film 30/20250414_0252.jpg": {
+    "manual_crop": {
+      "x": 91,
+      "y": 78,
+      "width": 1788,
+      "height": 1178
+    }
+  },
+  "Film 30/20250414_0253.jpg": {
+    "manual_crop": {
+      "x": 75,
+      "y": 91,
+      "width": 1796,
+      "height": 1171
+    }
+  },
+  "Film 31/20250414_0255.jpg": {
+    "manual_crop": {
+      "x": 371,
+      "y": 92,
+      "width": 1233,
+      "height": 1173
+    }
+  },
+  "Film 31/20250414_0256.jpg": {
+    "manual_crop": {
+      "x": 604,
+      "y": 96,
+      "width": 1234,
+      "height": 1174
+    }
+  },
+  "Film 31/20250414_0257.jpg": {
+    "manual_crop": {
+      "x": 543,
+      "y": 80,
+      "width": 1223,
+      "height": 1173
+    }
+  },
+  "Film 31/20250414_0258.jpg": {
+    "manual_crop": {
+      "x": 571,
+      "y": 85,
+      "width": 1230,
+      "height": 1169
+    }
+  },
+  "Film 31/20250414_0259.jpg": {
+    "manual_crop": {
+      "x": 598,
+      "y": 78,
+      "width": 1222,
+      "height": 1186
+    }
+  },
+  "Film 31/20250414_0260.jpg": {
+    "manual_crop": {
+      "x": 593,
+      "y": 80,
+      "width": 1222,
+      "height": 1173
+    }
+  },
+  "Film 31/20250414_0261.jpg": {
+    "manual_crop": {
+      "x": 506,
+      "y": 59,
+      "width": 1306,
+      "height": 1193
+    }
+  },
+  "Film 31/20250414_0262.jpg": {
+    "manual_crop": {
+      "x": 521,
+      "y": 68,
+      "width": 1220,
+      "height": 1187
+    }
+  },
+  "Film 31/20250414_0263.jpg": {
+    "manual_crop": {
+      "x": 685,
+      "y": 89,
+      "width": 1228,
+      "height": 1159
+    }
+  },
+  "Film 31/20250414_0264.jpg": {
+    "manual_crop": {
+      "x": 587,
+      "y": 94,
+      "width": 1229,
+      "height": 1156
+    }
+  },
+  "Film 31/20250414_0265.jpg": {
+    "manual_crop": {
+      "x": 503,
+      "y": 81,
+      "width": 1233,
+      "height": 1186
+    }
+  },
+  "Film 31/20250414_0266.jpg": {
+    "manual_crop": {
+      "x": 573,
+      "y": 60,
+      "width": 1236,
+      "height": 1216
+    }
+  },
+  "Film 32/20250414_0268.jpg": {
+    "manual_crop": {
+      "x": 33,
+      "y": 69,
+      "width": 1838,
+      "height": 1221
+    }
+  }
+}
