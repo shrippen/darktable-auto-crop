@@ -1,6 +1,7 @@
 --[[
   Auto Crop Negative – Darktable contrib plugin
-  Detects the film frame on negatives, applies crop via dt.gui.action().
+  Detects the film frame on negatives, applies crop via dt.styles
+  (import a temporary .dtstyle, apply it to the image, delete it again).
 ]]
 
 local dt = require "darktable"
@@ -17,7 +18,6 @@ script_data.metadata = {
 }
 
 local MOD_LT = "auto_crop_negative"
-local CROP_PATH = "iop/crop"
 
 -- Preferences: Gruen/Gelb-Schwellen fuer die Konfidenz (Phase 3, siehe
 -- tools/calibrate.py). Standardwerte sind auf den 98 Referenz-Crops
@@ -388,68 +388,74 @@ local function safe_check_batch()
   end
 end
 
--- ═══ Crop application via dt.gui.action ═══════
--- KORRIGIERT (13. Sep, zweiter Anlauf): der vorherige "Fix" von
--- left/top/right/bottom auf cx/cy/cw/ch war FALSCH - ich hatte den
--- internen C-Struct-Feldnamen (fuer die Introspection-Bindung) mit dem
--- oeffentlichen Action-Pfad verwechselt. src/iop/crop.c, Zeilen 62-65:
---   float cx;  // $MIN: 0.0 $MAX: 1.0 $DESCRIPTION: "left"
---   float cy;  // $MIN: 0.0 $MAX: 1.0 $DESCRIPTION: "top"
---   float cw;  // $MIN: 0.0 $MAX: 1.0 $DESCRIPTION: "right"
---   float ch;  // $MIN: 0.0 $MAX: 1.0 $DESCRIPTION: "bottom"
--- dt_bauhaus_slider_from_params() liest dieses $DESCRIPTION-Feld aus und
--- reicht es als "label" an dt_bauhaus_widget_set_label() weiter
--- (src/develop/imageop_gui.c). DORT wird per
--- "dt_action_define(w->module, section, label, widget, ...)"
--- (src/bauhaus/bauhaus.c) genau dieser LABEL-STRING (nicht der
--- Struct-Feldname) als Action-Pfad-Segment registriert. Der oeffentliche
--- Pfad ist also tatsaechlich "iop/crop/left", "iop/crop/top",
--- "iop/crop/right", "iop/crop/bottom" - exakt wie im allerersten Spike
--- angenommen. "cx"/"cy"/"cw"/"ch" existieren als Action-Pfad schlicht
--- NICHT, was den durchgaengigen status=nan bei jedem Aufruf erklaert
--- (Pfad loest ins Leere auf, dt_bauhaus_slider_set() wird nie erreicht).
+-- ═══ Crop application via dt.styles (nicht mehr dt.gui.action) ═══════
+-- Nach langem Rumprobieren mit dt.gui.action (Pfade, Instanzen, Elemente
+-- - siehe git-Historie fuer die ganze Recherche): das Modul liess sich
+-- darueber zuverlaessig ein/ausschalten, aber KEIN einziger Slider-Wert
+-- (cx/cy/cw/ch, egal unter welchem Pfad/Instanz/Element probiert) hat
+-- sich je aendern lassen (nachgewiesen per direkter SQL-Abfrage auf
+-- library.db, nicht nur ueber die oft verzoegert geschriebene XMP).
 --
--- Wertebereich (weiterhin gueltig, unabhaengig vom Pfadnamen):
--- dt_bauhaus_slider_set(widget, value) erwartet den ROHEN Parameterwert
--- (0..1 Kantenfraktion), nicht die angezeigte/skalierte Prozentzahl -
--- unsere left/top/right/bottom-Fraktionen passen direkt, keine
--- 1-right/1-bottom-Invertierung noetig trotz des invertierten
--- Anzeige-Factors bei "right"/"bottom".
+-- Der Nutzer hat auf ein fremdes, unabhaengiges Skript hingewiesen
+-- (github.com/hmoens/darktable-lua-scripts, lighttable_exposure_controls.lua),
+-- das GENAU dasselbe Problem fuer das exposure-Modul dokumentiert:
+-- "Darktable does not allow reading or modifying module parameters from
+-- the lighttable via Lua" (dt.gui.action-Werte-Setzen ist demnach eine
+-- bekannte Einschraenkung, kein Bug unsererseits). Der dortige Workaround:
+-- einen darktable-Style (.dtstyle-XML, dieselbe Binaerkodierung wie ein
+-- History-Eintrag) per dt.styles.import() importieren und per
+-- dt.styles.apply() auf das Bild anwenden. Styles sind IMMER additiv -
+-- sie haengen sich als neuer History-Eintrag an, ohne die bestehende
+-- History zu beruehren, was auch das history_end-Risiko der alten
+-- dt.gui.action-Route umgeht (Styles sind darktables eigener,
+-- alltaeglich genutzter Mechanismus, um Bearbeitungen auf bereits
+-- editierte Bilder anzuwenden).
+--
+-- crop-Parameterformat (src/iop/crop.c, modversion 3), per SQL an einem
+-- echten crop-History-Eintrag verifiziert:
+--   typedef struct { float cx, cy, cw, ch; int ratio_n, ratio_d; }
+-- cx/cy/cw/ch sind Kantenfraktionen 0..1 (links/oben/rechts/unten,
+-- gleiches Koordinatensystem wie unsere left/top/right/bottom-Werte -
+-- keine Invertierung noetig). ratio_n/ratio_d im Default-Zustand: 0/1
+-- (kein festes Seitenverhaeltnis).
+local CROP_MODVERSION = 3
+local CROP_BLENDOP_VERSION = 14
+-- blendop_params eines echten, per obigem SQL-Check beobachteten
+-- crop-Eintrags dieser darktable-Version - das ist ein Default-Blendmode
+-- ("normal", keine Maske), fuer jedes Bild identisch gueltig.
+local CROP_BLENDOP_PARAMS =
+  "gz11eJxjYIAACQYYOOHEgAZY0QWAgBGLGANDgz0Ej1Q+dcF/IADRAGpyHQU="
 
--- WAS SET_CROP UEBER DIE EDITHISTORY ANNIMMT (13. Sep, nach Nutzer-Frage):
--- set_crop() fuegt KEIN eigenes/zusaetzliches Crop-Modul hinzu - crop ist
--- in darktable ein einzelnes, nicht-multi-instance Modul pro Bild. Der
--- "soft-switch"/"on"-Aufruf schaltet das EINE vorhandene crop-Modul ein
--- (egal ob es vorher nie, oder schon frueher mit anderen Werten in der
--- History war) und die vier "set"-Aufrufe aendern dessen Parameter.
---
--- Die stillschweigende Annahme dabei: darktable haengt eine Modul-
--- aenderung immer NACH dem aktuellen History-Ende ("history_end", quasi
--- ein Undo-Zeiger) an und verwirft dabei ALLES, was in der gespeicherten
--- History NACH diesem Zeiger lag (identisch zum bekannten "Undo, dann neu
--- editieren verwirft die Redo-Kette"-Verhalten in jeder normalen
--- Darkroom-Session). set_crop() geht implizit davon aus, dass dieser
--- Zeiger zum Zeitpunkt des dt.gui.action-Aufrufs bereits ganz am Ende
--- der ECHTEN, vollstaendigen Bearbeitung (inkl. z.B. Negadoctor) steht.
--- Wenn ein frisch in die Dunkelkammer geladenes Bild seine volle History
--- aus der Datenbank noch nicht fertig in die laufende GUI-Session
--- uebernommen hat (z.B. weil unser Aufruf sofort nach dem
--- "darkroom-image-loaded"-Event ohne jede Wartezeit feuert), koennte
--- dieser Zeiger noch auf einem frueheren/Default-Stand stehen - jede
--- Aenderung wuerde dann alles Neuere (Negadoctor eingeschlossen) beim
--- Zurueckschreiben abschneiden. Das ist die derzeit beste Erklaerung fuer
--- den vom Nutzer bestaetigten Verlust, aber NICHT abschliessend bewiesen
--- (dafuer fehlt eine direkte Lua-Moeglichkeit, history_end selbst zu
--- lesen - die dt_lua_image_t-API bietet dafuer nur reset() und
--- apply_sidecar(), keinen direkten Zugriff).
---
--- Nutzer hat Datenverlust auf den aktuellen Testbildern ausdruecklich als
--- akzeptabel erklaert ("Sie sind zum Testen da") und um Wiedereinschalten
--- gebeten. Als Gegenmassnahme (nicht als bewiesenen Fix): kurze Wartezeit
--- vor dem ersten dt.gui.action-Zugriff auf das Modul, damit die GUI Zeit
--- hat, history_end fuer das neu geladene Bild zu synchronisieren.
-local CROP_APPLY_DISABLED = false
-local CROP_SETTLE_MS = 500
+local function pack_crop_params(cx, cy, cw, ch)
+  local bin = string.pack("<ffffi4i4", cx, cy, cw, ch, 0, 1)
+  return (bin:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
+local function crop_style_xml(style_name, op_params_hex)
+  return string.format([[<?xml version="1.0" encoding="UTF-8"?>
+<darktable_style version="1.0">
+  <info>
+    <name>%s</name>
+    <description></description>
+  </info>
+  <style>
+    <plugin>
+      <num>0</num>
+      <module>%d</module>
+      <operation>crop</operation>
+      <op_params>%s</op_params>
+      <enabled>1</enabled>
+      <blendop_params>%s</blendop_params>
+      <blendop_version>%d</blendop_version>
+      <multi_priority>0</multi_priority>
+      <multi_name></multi_name>
+      <multi_name_hand_edited>0</multi_name_hand_edited>
+    </plugin>
+  </style>
+</darktable_style>
+]], style_name, CROP_MODVERSION, op_params_hex, CROP_BLENDOP_PARAMS,
+    CROP_BLENDOP_VERSION)
+end
 
 local function set_crop(image, crop)
   local iw, ih = image.width, image.height
@@ -458,73 +464,42 @@ local function set_crop(image, crop)
       image and image.filename or "?", tostring(iw), tostring(ih)))
     return false
   end
-  if CROP_APPLY_DISABLED then
-    log(string.format(
-      "set_crop %s: UEBERSPRUNGEN (CROP_APPLY_DISABLED - siehe Kommentar) "
-        .. "waere frac l=%s t=%s r=%s b=%s gewesen",
-      image.filename, fmt_float_c(math.max(0, math.min(1, crop.x / iw)), 4),
-      fmt_float_c(math.max(0, math.min(1, crop.y / ih)), 4),
-      fmt_float_c(math.max(0, math.min(1, (crop.x + crop.w) / iw)), 4),
-      fmt_float_c(math.max(0, math.min(1, (crop.y + crop.h) / ih)), 4)))
-    return false
-  end
   local left = math.max(0, math.min(1, crop.x / iw))
   local top = math.max(0, math.min(1, crop.y / ih))
   local right = math.max(left + 0.001, math.min(1, (crop.x + crop.w) / iw))
   local bottom = math.max(top + 0.001, math.min(1, (crop.y + crop.h) / ih))
 
-  -- Gegenmassnahme gegen die vermutete history_end-Race (siehe Kommentar
-  -- oben) - pumpt dabei auch die GTK-Eventloop durch, waehrend wir warten.
-  dt.control.sleep(CROP_SETTLE_MS)
-
   local ok, err = pcall(function()
-    -- Fund: der Nutzer hat "focus" abgefragt (ein per offiziellem
-    -- Beispielskript examples/x-touch.lua bestaetigt ECHTES Element) -
-    -- und bekam ebenfalls nan, sowohl vor als auch nach einem
-    -- "toggle"-Versuch. Das entwertet "nan" als Fehlersignal endgueltig
-    -- (selbst ein garantiert gueltiges Element liefert nan in unserem
-    -- Aufrufkontext) UND zeigt: das Problem liegt nicht an Element-/
-    -- Pfadnamen.
-    --
-    -- Tatsaechlicher Verdaechtiger jetzt: die INSTANZ. Die API-Doku sagt
-    -- explizit "[instance] - wenn nicht angegeben, wird 1 verwendet" -
-    -- wir haben bislang ueberall explizit 0 uebergeben. Das offizielle,
-    -- praktisch identische Beispiel official/auto_straighten.lua setzt
-    -- fuer ashift (ebenfalls ein Geometrie-Modul mit On-Canvas-Overlay
-    -- wie crop) GENAU dieses Muster erfolgreich um, OHNE Instanz-Angabe
-    -- (also automatisch 1):
-    --   dt.gui.action("iop/ashift", "enable", "", "")
-    --   dt.gui.action("iop/ashift/rotation", "value", "set", roll)
-    -- Instanz 0 koennte fuer einfache History-Mutationen (Modul an/aus)
-    -- noch "zufaellig" funktionieren, fuer eine echte Live-Widget-
-    -- Aufloesung (Wert lesen/setzen) aber schlicht ins Leere laufen.
-    -- Deshalb jetzt 1:1 auf das ashift-Muster umgestellt: "enable" statt
-    -- "soft-switch", und ueberall Instanz 1 statt 0.
-    local r_switch = dt.gui.action(CROP_PATH, 1, "enable", "", "")
-    local r_left = dt.gui.action(CROP_PATH .. "/left", 1, "value", "set", left)
-    local r_top = dt.gui.action(CROP_PATH .. "/top", 1, "value", "set", top)
-    local r_right = dt.gui.action(CROP_PATH .. "/right", 1, "value", "set", right)
-    local r_bottom = dt.gui.action(CROP_PATH .. "/bottom", 1, "value", "set", bottom)
-    log(string.format(
-      "set_crop %s: frac l=%s t=%s r=%s b=%s -> status enable=%s "
-        .. "left=%s top=%s right=%s bottom=%s",
-      image.filename, fmt_float_c(left, 4), fmt_float_c(top, 4),
-      fmt_float_c(right, 4), fmt_float_c(bottom, 4),
-      tostring(r_switch), tostring(r_left), tostring(r_top),
-      tostring(r_right), tostring(r_bottom)))
+    local style_name = "auto_crop_negative_tmp_" .. os.time() .. "_"
+      .. tostring(math.random(100000, 999999))
+    local tmp_path = os.tmpname() .. ".dtstyle"
+    local xml = crop_style_xml(style_name,
+      pack_crop_params(left, top, right, bottom))
+    local f = io.open(tmp_path, "w")
+    f:write(xml)
+    f:close()
 
-    -- Rueckfrage ohne effect/speed liefert laut API-Doku nur den
-    -- aktuellen Wert, ohne etwas zu aendern - damit im Log sichtbar,
-    -- ob die eben gesetzten Werte tatsaechlich angekommen sind.
-    local q_switch = dt.gui.action(CROP_PATH, 1, "enable")
-    local q_left = dt.gui.action(CROP_PATH .. "/left", 1, "value")
-    local q_top = dt.gui.action(CROP_PATH .. "/top", 1, "value")
-    local q_right = dt.gui.action(CROP_PATH .. "/right", 1, "value")
-    local q_bottom = dt.gui.action(CROP_PATH .. "/bottom", 1, "value")
+    dt.styles.import(tmp_path)
+    os.remove(tmp_path)
+
+    local style_obj = nil
+    for _, s in ipairs(dt.styles) do
+      if s.name == style_name then
+        style_obj = s
+        break
+      end
+    end
+    if not style_obj then
+      error("importierter Style '" .. style_name .. "' nicht gefunden")
+    end
+
+    dt.styles.apply(style_obj, image)
+    dt.styles.delete(style_obj)
+
     log(string.format(
-      "set_crop %s: Rueckfrage enable=%s left=%s top=%s right=%s bottom=%s",
-      image.filename, tostring(q_switch), tostring(q_left),
-      tostring(q_top), tostring(q_right), tostring(q_bottom)))
+      "set_crop %s: Style angewendet, frac l=%s t=%s r=%s b=%s",
+      image.filename, fmt_float_c(left, 4), fmt_float_c(top, 4),
+      fmt_float_c(right, 4), fmt_float_c(bottom, 4)))
   end)
   if not ok then
     log("set_crop " .. image.filename .. " Fehler: " .. tostring(err))
@@ -695,15 +670,12 @@ local function apply_current()
   end
 end
 
--- ═══ Darkroom: alle Crops jetzt anwenden (experimentell) ═══════
--- Variante 3, zweiter (optionaler) Teil: automatisierte Schleife statt
--- "ein Bild pro Dunkelraum-Aufruf". Laut Spike (siehe auto-memory
--- darktable-native-crop-application) lehnt darktable dt.gui.action ohne
--- vollen Lighttable<->Dunkelraum-Rundlauf pro Bild als "nicht gueltig fuer
--- aktuelle Ansicht" ab; dt.control.sleep pumpt die Event-Loop bei
--- unsichtbarem Fenster nicht ausreichend durch. Deshalb: nur mit
--- sichtbarem Fenster verwenden und Ergebnis pruefen (daher "experimentell"
--- im Label, kein automatischer Aufruf von irgendwo sonst).
+-- ═══ Alle Crops jetzt anwenden ═══════
+-- Frueher ein Lighttable<->Dunkelraum-Rundlauf pro Bild, weil
+-- dt.gui.action ohne sichtbaren, fokussierten Dunkelraum nicht
+-- funktionierte. Mit dt.styles (siehe set_crop) faellt das komplett weg -
+-- Styles lassen sich direkt aus dem Lighttable auf beliebig viele Bilder
+-- anwenden, ganz ohne View-Wechsel.
 local function apply_all_queued()
   local images = dt.gui.action_images
   if not images or #images == 0 then
@@ -719,25 +691,17 @@ local function apply_all_queued()
     dt.print(_("Auto Crop: keine wartenden Crops in der Auswahl"))
     return
   end
-  dt.print(string.format(
-    _("Auto Crop: wende %d Crops an (experimentell - Fenster sichtbar "
-      .. "lassen)"), #todo))
+  dt.print(string.format(_("Auto Crop: wende %d Crops an"), #todo))
   local n = 0
   for _, img in ipairs(todo) do
     local ok, err = pcall(function()
-      dt.gui.current_view(dt.gui.views.lighttable)
-      dt.control.sleep(150)
-      dt.gui.views.darkroom.display_image(img)
-      dt.control.sleep(400)
       if apply_crop(img) then n = n + 1 end
-      dt.control.sleep(200)
     end)
     if not ok then
       log("apply_all_queued: Fehler bei " .. img.filename .. ": "
           .. tostring(err))
     end
   end
-  pcall(function() dt.gui.current_view(dt.gui.views.lighttable) end)
   dt.print(string.format(_("Auto Crop: %d von %d Crops angewendet"),
     n, #todo))
 end
