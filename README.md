@@ -105,6 +105,7 @@ Im Plugin-Bereich von darktable zeigt eine große Statuszeile, ob der Server **s
 
 Sitzungen liegen in `~/.cache/auto-crop-negative/` und werden nach 14 Tagen aufgeräumt
 (`python -m companion cleanup`). Details und Entwurf: [`companion-ui-plan.md`](companion-ui-plan.md).
+Messen und kalibrieren (Roadmap): `tools/eval.py` (Trefferquote, Leave-One-Film-Out, Tuning/Holdout), `tools/calibrate.py --loo --from-json <eval.json>` (Formelvergleich), `tools/signal_probe.py` (Trennschärfe einzelner Signale), `tools/build_feedback_gt.py` (Companion-Sitzungen als Referenzen; die Bilder bleiben lokal).
 Feedback auswerten (Roadmap Phase 5): `.venv/bin/python tools/feedback_report.py` (vor dem Aufräumen nach 14 Tagen).
 Tests: `.venv/bin/python -m unittest discover -s tests` (Browser-Test: `tests/ui_smoke.py`, benötigt Playwright).
 

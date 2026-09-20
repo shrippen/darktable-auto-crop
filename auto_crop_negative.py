@@ -1420,7 +1420,15 @@ def apply_film_consensus(results, load_paths, report=None):
         size_dev = (abs(max(p["rw"], p["rh"]) - long_px) / max(long_px, 1)
                     + abs(min(p["rw"], p["rh"]) - short_px) / max(short_px, 1))
         size_agree = max(0.0, 1.0 - size_dev)
-        conf = 0.45 * size_agree + 0.35 * edge_score + 0.20 * p["film_trust"]
+        # Konfidenz (Roadmap Phase 3/4): nur noch Groessenuebereinstimmung mit dem Rollen-Konsens
+        # und Kantenklarheit. film_trust und der Belichtungsdeckel bleiben als Diagnosefaktoren in
+        # _conf_parts (und in der UI sichtbar), gehen aber NICHT mehr in die Zahl ein: Auf den
+        # 103 Referenzbildern (7 Filme) trennt film_trust Treffer und Fehltreffer schlechter als
+        # der Zufall (AUC 0.32: falsche Crops sind einer Rolle oft "einig falsch"), und der
+        # Belichtungsdeckel drueckte 22 richtige Crops in gelb/rot (AUC 0.58). Leave-One-Film-Out:
+        # AUC 0.885 (alt) -> 0.982, Abdeckung sicherer Treffer 84.7 % -> 99 % bei 98 % Precision.
+        # Nachvollziehbar mit: tools/calibrate.py --loo --from-json <eval-Rohdaten>
+        conf = 0.5 * size_agree + 0.5 * edge_score
 
         # Unterbelichtete/kontrastarme Aufnahmen: Pass A findet dort kaum
         # oder keine Bild/Rand-Grenze (siehe measure_image_aspect), was auch
@@ -1434,7 +1442,7 @@ def apply_film_consensus(results, load_paths, report=None):
         else:
             contrast = float(contrast)
             exposure_factor = min(1.0, max(0.45, 0.45 + 0.55 * (contrast - 8) / 22))
-        conf *= exposure_factor
+        # exposure_factor: nur noch Diagnose (siehe oben), kein Deckel mehr
 
         r["confidence"] = float(round(min(1.0, max(0.0, conf)), 3))
         # Fuer die Konfidenz-Kalibrierung (tools/calibrate.py): die
@@ -1450,7 +1458,8 @@ def apply_film_consensus(results, load_paths, report=None):
             r.setdefault("reasons", []).append(
                 f"Kontrastarm/unterbelichtet (Kontrast "
                 f"{'n/a' if contrast is None else int(contrast)}) "
-                f"- Konfidenz gedeckelt")
+                f"- Hinweis, Konfidenz nicht gedeckelt")
+        r["conf_formula"] = "size+edge-v2"
         r.setdefault("reasons", []).append(
             f"Film-Konsens {int(long_px)}x{int(short_px)} "
             f"(n={p['n']}, MAD {int(p['mad_long'])}/{int(p['mad_short'])})")

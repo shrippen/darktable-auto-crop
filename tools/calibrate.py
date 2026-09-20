@@ -25,7 +25,8 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from eval import (PROJECT_DIR, REVIEWS, TOL_PX, film_images, run_pipeline)
+from eval import (PROJECT_DIR, REVIEWS, TOL_PX, film_images, run_pipeline,
+                  collect_deltas, is_hit, load_ground_truth, load_splits)
 
 SCRIPT = os.path.join(PROJECT_DIR, "auto_crop_negative.py")
 FEATURES = ["size_agree", "edge_score", "film_trust", "exposure_factor"]
@@ -134,14 +135,132 @@ def apply_to_source(w_named, bias, mu, sigma, t_green, t_yellow):
           f"--t-yellow {t_yellow:.3f}")
 
 
+# ── Phase 4: Vergleich von Konfidenz-Formeln mit Leave-One-Film-Out ──────────────────────────
+# Alle Kandidaten werden gleich behandelt: Modell UND Schwelle entstehen ohne den gemessenen Film.
+# Fuer angepasste Modelle (LR) entstehen die Trainingsscores selbst per verschachteltem LOFO,
+# damit die Schwelle nicht auf eingepassten (zu guten) Scores gewaehlt wird.
+
+def load_rows(data):
+    """Zeilen mit Film, Treffer und den Einzelfaktoren aus einem eval-Rohdatenlauf."""
+    strong, _ = load_ground_truth()
+    by = {r["filename"]: r for r in data["results"]}
+    rows = []
+    for d in collect_deltas(data["results"], strong):
+        if d["missing"]:
+            continue
+        res = by[d["key"].split("/", 1)[1]]
+        parts = res.get("_conf_parts")
+        if not parts:
+            continue
+        rows.append({"key": d["key"], "film": d["film"], "hit": is_hit(d), "conf": res["confidence"],
+                     "x": [parts[f] for f in FEATURES]})
+    return rows
+
+
+def _lr(cols):
+    """Scorer-Fabrik: logistische Regression auf den Spalten ``cols`` der Faktoren."""
+    def fit_predict(train, test):
+        Xtr = np.array([[r["x"][c] for c in cols] for r in train])
+        ytr = np.array([1.0 if r["hit"] else 0.0 for r in train])
+        w, b, mu, sigma = fit_logistic(Xtr, ytr)
+        Xte = np.array([[r["x"][c] for c in cols] for r in test])
+        return list(score(Xte, w, b, mu, sigma))
+    return fit_predict
+
+
+def _fixed(fn):
+    return lambda train, test: [fn(r) for r in test]
+
+
+SCORERS = {
+    "aktuell (0.45/0.35/0.20 x Belichtung)": _fixed(lambda r: r["conf"]),
+    "LR alle vier Faktoren": _lr([0, 1, 2, 3]),
+    "LR ohne film_trust": _lr([0, 1, 3]),
+    "edge_score allein": _fixed(lambda r: r["x"][1]),
+    "0.5 size_agree + 0.5 edge_score": _fixed(lambda r: 0.5 * r["x"][0] + 0.5 * r["x"][1]),
+    "0.5 size + 0.5 edge, x Belichtung": _fixed(lambda r: (0.5 * r["x"][0] + 0.5 * r["x"][1]) * r["x"][3]),
+}
+
+
+def _auc(pos, neg):
+    if not pos or not neg:
+        return float("nan")
+    n = t = 0
+    for p in pos:
+        for q in neg:
+            t += 1
+            n += 1 if p > q else 0.5 if p == q else 0
+    return n / t
+
+
+def _pick(scores, hits, target, min_n=5):
+    """Kleinste Schwelle mit Precision >= target (mind. min_n Bilder), sonst None."""
+    for t in sorted({round(s_, 4) for s_ in scores}):
+        sel = [h for s_, h in zip(scores, hits) if s_ >= t]
+        if len(sel) >= min_n and sum(sel) / len(sel) >= target:
+            return t
+    return None
+
+
+def loo_compare(rows, target):
+    films = sorted({r["film"] for r in rows})
+    print(f"{len(rows)} Referenzbilder aus {len(films)} Filmen, {sum(r['hit'] for r in rows)} Treffer, "
+          f"{sum(not r['hit'] for r in rows)} Fehltreffer")
+    print(f"gruen-Schwelle je Film ohne diesen Film gewaehlt, Ziel-Precision {target:.0%}\n")
+    print(f"{'Formel':<40} {'AUC':>6} {'gruen':>6} {'Treffer':>8} {'Precision':>10} {'Abdeckung':>10}")
+    out = {}
+    for name, fp in SCORERS.items():
+        oof, tot = {}, {"green": 0, "green_hits": 0}
+        for f in films:
+            train = [r for r in rows if r["film"] != f]
+            test = [r for r in rows if r["film"] == f]
+            # OOF-Scores fuer die Trainingszeilen (verschachteltes LOFO) -> Schwelle
+            tr_scores, tr_hits = [], []
+            for g in sorted({r["film"] for r in train}):
+                inner_tr = [r for r in train if r["film"] != g]
+                inner_te = [r for r in train if r["film"] == g]
+                tr_scores += fp(inner_tr, inner_te)
+                tr_hits += [r["hit"] for r in inner_te]
+            t = _pick(tr_scores, tr_hits, target)
+            te_scores = fp(train, test)
+            for r, sc in zip(test, te_scores):
+                oof[r["key"]] = sc
+                if t is not None and sc >= t:
+                    tot["green"] += 1
+                    tot["green_hits"] += int(r["hit"])
+        pos = [oof[r["key"]] for r in rows if r["hit"]]
+        neg = [oof[r["key"]] for r in rows if not r["hit"]]
+        hits_total = sum(r["hit"] for r in rows)
+        prec = f"{tot['green_hits'] / tot['green']:.1%}" if tot["green"] else "-"
+        print(f"{name:<40} {_auc(pos, neg):6.3f} {tot['green']:>6} {tot['green_hits']:>8} {prec:>10} "
+              f"{tot['green_hits'] / max(hits_total, 1):>9.1%}")
+        out[name] = {"auc": _auc(pos, neg), **tot}
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--loo", action="store_true",
+                    help="Formeln per Leave-One-Film-Out vergleichen (Phase 4); braucht --from-json")
+    ap.add_argument("--from-json", help="Pipeline-Rohdaten (tools/eval.py --json) statt neuem Lauf")
+    ap.add_argument("--target", type=float, default=0.98, help="Ziel-Precision gruen (LOFO)")
     ap.add_argument("--apply", action="store_true",
                     help="Kalibrierte Formel in auto_crop_negative.py eintragen")
     ap.add_argument("--min-green-precision", type=float, default=0.95)
     ap.add_argument("--min-yellow-precision", type=float, default=0.80)
     args = ap.parse_args()
+
+    if args.loo:
+        if args.from_json:
+            with open(args.from_json) as f:
+                data = json.load(f)
+        else:
+            strong, weak = load_ground_truth()
+            films = sorted({k.split("/")[0] for k in {**strong, **weak}})
+            data = run_pipeline([p for f in films for p in film_images(f)])
+        loo_compare(load_rows(data), args.target)
+        return
 
     print("Sammle Feature/Treffer-Paare (voller Batch-Lauf)...")
     X, y, keys = collect_samples()

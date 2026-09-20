@@ -32,6 +32,8 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TESTPHOTOS = os.path.join(PROJECT_DIR, "Testphotos")
 SCRIPT = os.path.join(PROJECT_DIR, "auto_crop_negative.py")
 REVIEWS = os.path.join(PROJECT_DIR, "review_data", "reviews.json")
+FEEDBACK_GT = os.path.join(PROJECT_DIR, "review_data", "feedback_gt.json")   # tools/build_feedback_gt.py
+SPLITS = os.path.join(PROJECT_DIR, "tools", "splits.json")
 BASELINE = os.path.join(PROJECT_DIR, "tools", "eval_baseline.json")
 
 # Ein automatischer Crop gilt als Treffer, wenn Breite UND Hoehe weniger
@@ -289,9 +291,119 @@ def holdout_contact_sheet(out_path):
     print(f"Kontaktabzug: {out_path}")
 
 
-def _films_with_gt():
+def load_ground_truth():
+    """Referenzen: reviews.json (manuell, stark) + feedback_gt.json (Companion-Sitzungen).
+
+    Rueckgabe: (strong, weak). strong = {key: {"manual_crop": ...}}. weak = {key: {"manual_crop":
+    <akzeptierter Crop>}} - der Nutzer hat diese Crops gesehen und nicht korrigiert; das ist nur
+    so belastbar, wie er sie wirklich geprueft hat (deshalb getrennt ausgewiesen).
+    Nur Filme, deren Bilder in Testphotos/ vorhanden sind, werden verwendet."""
     with open(REVIEWS) as f:
-        return {k.split("/")[0] for k in json.load(f)}
+        strong = {k: v for k, v in json.load(f).items() if v.get("manual_crop")}
+    weak = {}
+    if os.path.exists(FEEDBACK_GT):
+        with open(FEEDBACK_GT) as f:
+            for k, v in json.load(f).items():
+                if v.get("manual_crop"):
+                    strong[k] = {"manual_crop": v["manual_crop"], "source": v.get("source")}
+                elif v.get("accepted_crop"):
+                    weak[k] = {"manual_crop": v["accepted_crop"], "source": v.get("source")}
+    have = {}
+    for d in (strong, weak):
+        for k in list(d):
+            film, fname = k.split("/", 1)
+            fdir = os.path.join(TESTPHOTOS, film)
+            if not os.path.isfile(os.path.join(fdir, fname)):
+                del d[k]
+    return strong, weak
+
+
+def load_splits():
+    if os.path.exists(SPLITS):
+        with open(SPLITS) as f:
+            return json.load(f)
+    return {"tuning": [], "holdout": []}
+
+
+def pick_threshold(rows, target=0.98, min_n=5):
+    """Kleinste gruen-Schwelle, deren Precision auf ``rows`` >= target liegt (mind. min_n Bilder).
+    None = keine Schwelle erreicht das Ziel (dann gibt es kein automatisches Gruen)."""
+    ok = [r for r in rows if not r["missing"]]
+    for t in [i / 100 for i in range(30, 101)]:
+        sel = [r for r in ok if r["conf"] >= t]
+        if len(sel) >= min_n and sum(is_hit(r) for r in sel) / len(sel) >= target:
+            return t
+    return None
+
+
+def _green_stats(rows, t):
+    ok = [r for r in rows if not r["missing"]]
+    greens = [r for r in ok if t is not None and r["conf"] >= t]
+    return {"n": len(ok), "green": len(greens), "green_hits": sum(is_hit(r) for r in greens),
+            "hits": sum(is_hit(r) for r in ok)}
+
+
+def print_loo(rows, target):
+    """Leave-One-Film-Out: die Schwelle wird ohne den Film gewaehlt, der gemessen wird."""
+    ok = [r for r in rows if not r["missing"]]
+    films = sorted({r["film"] for r in ok})
+    print(f"\n=== Leave-One-Film-Out (gruen-Schwelle aus den anderen Filmen, Ziel-Precision {target:.0%}) ===")
+    print(f"  {'Film':<10} {'t':>5} {'gruen':>6} {'davon Tr.':>10} {'Precision':>10} {'Bilder':>7}")
+    tot = {"green": 0, "green_hits": 0, "hits": 0, "n": 0}
+    for f in films:
+        train = [r for r in ok if r["film"] != f]
+        test = [r for r in ok if r["film"] == f]
+        t = pick_threshold(train, target)
+        st_ = _green_stats(test, t)
+        prec = f"{st_['green_hits'] / st_['green']:.0%}" if st_["green"] else "-"
+        print(f"  {f:<10} {('%.2f' % t) if t is not None else '  -':>5} {st_['green']:>6} "
+              f"{st_['green_hits']:>10} {prec:>10} {st_['n']:>7}")
+        for k in tot:
+            tot[k] += st_[k]
+    if tot["green"]:
+        print(f"  -> LOFO-gruen-Precision {tot['green_hits']}/{tot['green']} = "
+              f"{tot['green_hits'] / tot['green']:.1%}, Abdeckung der Treffer "
+              f"{tot['green_hits']}/{tot['hits']} = {tot['green_hits'] / max(tot['hits'], 1):.1%}")
+    else:
+        print("  -> kein Film hat automatisches Gruen")
+    return tot
+
+
+def print_split(rows, target):
+    sp = load_splits()
+    tune = [r for r in rows if r["film"] in sp["tuning"]]
+    hold = [r for r in rows if r["film"] in sp["holdout"]]
+    if not tune or not hold:
+        return None
+    t = pick_threshold(tune, target)
+    print(f"\n=== Tuning/Holdout (Split aus tools/splits.json) ===")
+    print(f"  Tuning: {', '.join(sp['tuning'])}  -> gruen-Schwelle {t if t is not None else '-'} (Ziel {target:.0%})")
+    for name, rs in (("Tuning ", tune), ("Holdout", hold)):
+        s_ = _green_stats(rs, t)
+        prec = f"{s_['green_hits'] / s_['green']:.1%}" if s_["green"] else "-"
+        print(f"  {name}: {s_['green']:>3} gruen, {s_['green_hits']:>3} Treffer  Precision {prec}  "
+              f"({s_['hits']}/{s_['n']} Treffer insgesamt)")
+    return t
+
+
+def print_weak(rows, weak_rows):
+    """Konsistenz mit den akzeptierten Crops (schwache Referenz)."""
+    if not weak_rows:
+        return
+    ok = [r for r in weak_rows if not r["missing"]]
+    hits = sum(is_hit(r) for r in ok)
+    print(f"\n=== Schwache Referenz: Uebereinstimmung mit dem akzeptierten Crop ===")
+    print(f"  {hits}/{len(ok)} innerhalb {TOL_PX}px (nur Konsistenz; kein Beleg fuer Richtigkeit)")
+    by = defaultdict(list)
+    for r in ok:
+        by[r["film"]].append(r)
+    for f, rs in sorted(by.items()):
+        print(f"  {f:<10} {sum(is_hit(r) for r in rs)}/{len(rs)}")
+
+
+def _films_with_gt():
+    strong, weak = load_ground_truth()
+    return {k.split("/")[0] for k in {**strong, **weak}}
 
 
 def main():
@@ -303,10 +415,13 @@ def main():
                     help="Schwelle gruen (Default 0.75)")
     ap.add_argument("--t-yellow", type=float, default=0.50,
                     help="Schwelle gelb (Default 0.50)")
+    ap.add_argument("--target", type=float, default=0.98,
+                    help="Ziel-Precision fuer gruen bei LOFO/Split (Default 0.98)")
     ap.add_argument("--update-baseline", action="store_true")
     ap.add_argument("--holdout", action="store_true",
                     help="Kontaktabzug fuer Filme ohne Referenz")
-    ap.add_argument("--json", help="Ergebnis-Rohdaten hierhin schreiben")
+    ap.add_argument("--json", help="Pipeline-Rohdaten hierhin schreiben")
+    ap.add_argument("--from-json", help="Pipeline-Rohdaten von hier lesen statt neu zu rechnen")
     args = ap.parse_args()
 
     if args.holdout:
@@ -314,29 +429,33 @@ def main():
                               else "/tmp/autocrop_holdout.png")
         return
 
-    with open(REVIEWS) as f:
-        reviews = json.load(f)
-
-    gt_films = sorted({k.split("/")[0] for k in reviews})
+    strong, weak = load_ground_truth()
+    gt_films = sorted({k.split("/")[0] for k in {**strong, **weak}})
     if args.films:
         want = {f"Film {n.strip()}" for n in args.films.split(",")}
         gt_films = [f for f in gt_films if f in want]
-        reviews = {k: v for k, v in reviews.items()
-                   if k.split("/")[0] in gt_films}
+        strong = {k: v for k, v in strong.items() if k.split("/")[0] in gt_films}
+        weak = {k: v for k, v in weak.items() if k.split("/")[0] in gt_films}
 
     # Ganze Filmrollen einspeisen (Film-Aspect-Konsens braucht alle Bilder),
     # bewertet werden nur die Bilder mit Referenz-Crop.
     paths = [p for f in gt_films for p in film_images(f)]
     print(f"Filme: {', '.join(gt_films)}  ({len(paths)} Bilder, "
-          f"{len(reviews)} mit Referenz)")
+          f"{len(strong)} mit starker, {len(weak)} mit schwacher Referenz)")
 
-    data = run_pipeline(paths)
-    if args.json:
-        with open(args.json, "w") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+    if args.from_json:
+        with open(args.from_json) as f:
+            data = json.load(f)
+        print(f"(Rohdaten aus {args.from_json})")
+    else:
+        data = run_pipeline(paths)
+        if args.json:
+            with open(args.json, "w") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
 
     print(f"\nFilm-Aspects: {data.get('film_aspects', {})}")
-    rows = collect_deltas(data["results"], reviews)
+    rows = collect_deltas(data["results"], strong)
+    weak_rows = collect_deltas(data["results"], weak)
 
     missing = [r["key"] for r in rows if r["missing"]]
     if missing:
@@ -347,6 +466,9 @@ def main():
     print_bias(rows)
     print_three_way(rows, args.t_green, args.t_yellow)
     print_roc(rows)
+    print_loo(rows, args.target)
+    print_split(rows, args.target)
+    print_weak(rows, weak_rows)
 
     rc = check_baseline(total_hit, len(rows), per_film, args.update_baseline)
     sys.exit(rc)

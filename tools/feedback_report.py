@@ -35,7 +35,14 @@ sys.path.insert(0, PROJECT_DIR)
 
 from companion import session as sess   # noqa: E402
 
-TOL_PX = 60                      # wie tools/eval.py
+TOL_PX = 60                      # wie tools/eval.py, gilt dort fuer Bilder mit ~2000 px langer Kante
+REF_EDGE = 2000                  # Referenzgroesse der Toleranz; die Exporte sind viel groesser
+
+
+def tolerance(size):
+    """Toleranz in Export-Pixeln: 60 px bei 2000 px langer Kante, proportional skaliert.
+    (Ohne Skalierung waere die Toleranz auf 5520x8280-Exporten viermal zu streng.)"""
+    return TOL_PX * max(size) / float(REF_EDGE) if size else TOL_PX
 PHASE_RANK = {"applied": 3, "locked": 2, "reviewing": 1}
 FACTORS = ["size_agree", "edge_score", "film_trust", "exposure_factor"]
 
@@ -89,6 +96,11 @@ def collect(sessions):
         size = img.get("export_size")
         row = {"path": key, "film": img.get("film"), "file": img.get("filename"),
                "session": s["name"], "has_detection": bool(det), "size": size,
+               "export_path": (os.path.join(s["dir"], img["export"])
+                               if img.get("export") and not os.path.isabs(img["export"])
+                               else img.get("export")),
+               "will_apply": _will_apply(s["state"], img),
+               "phase": s["state"].get("phase"),
                "auto": auto_group(s["state"], det),
                "conf": (det or {}).get("confidence"),
                "parts": (det or {}).get("conf_parts"),
@@ -103,11 +115,22 @@ def collect(sessions):
             row.update({"dx": d["x"] - m["x"], "dy": d["y"] - m["y"],
                         "dw": d["width"] - m["width"], "dh": d["height"] - m["height"],
                         "manual_px": m})
-            row["size_hit"] = abs(row["dw"]) < TOL_PX and abs(row["dh"]) < TOL_PX   # wie eval.py
-            row["strict_hit"] = row["size_hit"] and abs(row["dx"]) < TOL_PX and abs(row["dy"]) < TOL_PX
+            tol = row["tol"] = tolerance(size)
+            row["size_hit"] = abs(row["dw"]) < tol and abs(row["dh"]) < tol   # wie eval.py
+            row["strict_hit"] = row["size_hit"] and abs(row["dx"]) < tol and abs(row["dy"]) < tol
             row["symptom"] = symptom(row)
         rows.append(row)
     return rows
+
+
+def _will_apply(state, img):
+    """Wurde/wird der Crop uebernommen? (wie Session.will_apply, ohne Session-Objekt)"""
+    if img.get("decision") == "skip" or img.get("status") == "error":
+        return False
+    if not img.get("detected") and not img.get("manual"):
+        return False
+    grp = img.get("group_override") or auto_group(state, img.get("detected"))
+    return not (grp == "red" and not img.get("manual") and img.get("decision") != "accept")
 
 
 def symptom(row):
@@ -116,7 +139,7 @@ def symptom(row):
     if row.get("strict_hit"):
         return "ok"
     size_bad = not row["size_hit"]
-    pos_bad = abs(row["dx"]) >= TOL_PX or abs(row["dy"]) >= TOL_PX
+    pos_bad = abs(row["dx"]) >= row["tol"] or abs(row["dy"]) >= row["tol"]
     if size_bad and pos_bad:
         return "Groesse+Position"
     return "Groesse" if size_bad else "Position bei richtiger Groesse"
@@ -154,7 +177,8 @@ def _median(xs):
 
 def print_report(rows, summary, sessions):
     print(f"Sitzungen: {len(sessions)}  |  Bilder (dedupliziert): {summary['total']}")
-    print(f"Toleranz: {TOL_PX} px (Breite/Hoehe wie tools/eval.py; 'streng' zusaetzlich x/y)\n")
+    print(f"Toleranz: {TOL_PX} px bei {REF_EDGE} px langer Kante, auf die Exportgroesse skaliert "
+          f"(Breite/Hoehe wie tools/eval.py; 'streng' zusaetzlich x/y)\n")
     print(f"{'Gruppe':8} {'Bilder':>6} {'korrigiert':>10} {'davon zu weit':>14} {'Korrekturrate':>14} {'Median-Konf':>12}")
     for g, v in summary["groups"].items():
         rate = f"{100 * v['corrected'] / v['n']:.0f} %" if v["n"] else "-"
@@ -163,8 +187,10 @@ def print_report(rows, summary, sessions):
     fg = summary["false_green"]
     print(f"\nFalsches Gruen (gruen erkannt, Korrektur ueber Toleranz): {len(fg)}")
     for r in fg:
+        k = REF_EDGE / float(max(r["size"]))
         print(f"  {r['film']}/{r['file']}  conf={r['conf']:.2f}  dx={r['dx']:+d} dy={r['dy']:+d} "
-              f"dw={r['dw']:+d} dh={r['dh']:+d}  {r['symptom']}  methode={r['method']}")
+              f"dw={r['dw']:+d} dh={r['dh']:+d} (auf {REF_EDGE} px: {r['dx']*k:+.0f} {r['dy']*k:+.0f} "
+              f"{r['dw']*k:+.0f} {r['dh']*k:+.0f})  {r['symptom']}  methode={r['method']}")
     if summary["symptoms"]:
         print("\nSymptome beim falschen Gruen: " + ", ".join(
             f"{k} {n}x" for k, n in summary["symptoms"].most_common()))
@@ -180,9 +206,10 @@ def print_report(rows, summary, sessions):
             print(f"  {k:14} {n}x")
     corrected = [r for r in rows if r["corrected"] and "dw" in r]
     if corrected:
-        med = lambda k: _median([abs(r[k]) for r in corrected])
-        print(f"\nKorrekturen: {len(corrected)}  |  mediane Abweichung |dx|={med('dx'):.0f} |dy|={med('dy'):.0f} "
-              f"|dw|={med('dw'):.0f} |dh|={med('dh'):.0f} px")
+        def med(key):   # auf REF_EDGE normiert, damit Rollen mit verschiedenen Exportgroessen vergleichbar sind
+            return _median([abs(r[key]) * REF_EDGE / float(max(r["size"])) for r in corrected])
+        print(f"\nKorrekturen: {len(corrected)}  |  mediane Abweichung (auf {REF_EDGE} px) "
+              f"|dx|={med('dx'):.0f} |dy|={med('dy'):.0f} |dw|={med('dw'):.0f} |dh|={med('dh'):.0f} px")
 
 
 def export_gt(rows, path):

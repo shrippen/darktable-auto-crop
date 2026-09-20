@@ -8,6 +8,16 @@
 - `tools/feedback_report.py`: Auswertung des Feedbacks aus den Sitzungen (Korrekturrate je Gruppe,
   falsches Grün mit Symptom, schwächster Faktor, Gruppenwechsel, Export als Ground Truth).
 
+### Geändert (Verhalten!)
+- **Konfidenz neu:** `0.5·size_agree + 0.5·edge_score` (Version `size+edge-v2`). `film_trust` und der Belichtungsdeckel
+  gehen nicht mehr ein (bleiben als Hinweise sichtbar). Leave-One-Film-Out: AUC 0.885 → 0.982, Abdeckung sicherer
+  Treffer bei 98 % Precision 84.7 % → 99 %. Schwellen bleiben grün ≥ 0.5, gelb ≥ 0.3. Auf den Referenzdaten sind
+  jetzt 91 statt 76 Bilder grün, weiterhin ohne Fehltreffer. Die Zahlen stützen sich auf nur 5 Fehltreffer.
+- `tools/eval.py`: Leave-One-Film-Out, Tuning/Holdout (`tools/splits.json`), Referenzen aus den Companion-Sitzungen
+  (`review_data/feedback_gt.json`, erzeugt mit `tools/build_feedback_gt.py`); Baseline 98/103 über 7 Filme.
+- `tools/calibrate.py --loo`: Formelvergleich per Leave-One-Film-Out. `tools/signal_probe.py`: Trennschärfe einzelner Signale.
+- Korrektur: `tools/feedback_report.py` skaliert die Toleranz jetzt auf die Exportgröße (60 px gelten bei 2000 px langer Kante).
+
 ### Bestätigt (Praxistest)
 - Ablauf mit 36 Raw-Fotos inkl. Übergabe von Crops und Farben, erneutem Korrigieren, „Server stoppen“
   und automatischem Stopp beim Schließen von darktable.

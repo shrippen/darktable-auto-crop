@@ -1,0 +1,384 @@
+{
+ "Film 35/20250414_0346.jpg": {
+  "accepted_crop": {
+   "height": 1829,
+   "width": 1211,
+   "x": 43,
+   "y": 82
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0347.jpg": {
+  "accepted_crop": {
+   "height": 1828,
+   "width": 1210,
+   "x": 84,
+   "y": 72
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0348.jpg": {
+  "is_problem": false,
+  "manual_crop": {
+   "height": 1201,
+   "width": 1828,
+   "x": 52,
+   "y": 56
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0349.jpg": {
+  "is_problem": false,
+  "manual_crop": {
+   "height": 1210,
+   "width": 1814,
+   "x": 60,
+   "y": 37
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0350.jpg": {
+  "accepted_crop": {
+   "height": 1205,
+   "width": 1329,
+   "x": 3,
+   "y": 374
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0351.jpg": {
+  "accepted_crop": {
+   "height": 1209,
+   "width": 1828,
+   "x": 61,
+   "y": 41
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0352.jpg": {
+  "accepted_crop": {
+   "height": 1209,
+   "width": 1828,
+   "x": 83,
+   "y": 49
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0353.jpg": {
+  "accepted_crop": {
+   "height": 1210,
+   "width": 1828,
+   "x": 92,
+   "y": 40
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0354.jpg": {
+  "accepted_crop": {
+   "height": 1210,
+   "width": 1828,
+   "x": 59,
+   "y": 44
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0355.jpg": {
+  "accepted_crop": {
+   "height": 1209,
+   "width": 1820,
+   "x": 8,
+   "y": 40
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0356.jpg": {
+  "accepted_crop": {
+   "height": 1210,
+   "width": 1829,
+   "x": 64,
+   "y": 41
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0357.jpg": {
+  "accepted_crop": {
+   "height": 1210,
+   "width": 1830,
+   "x": 41,
+   "y": 41
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0358.jpg": {
+  "accepted_crop": {
+   "height": 1212,
+   "width": 1831,
+   "x": 89,
+   "y": 41
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0359.jpg": {
+  "accepted_crop": {
+   "height": 1214,
+   "width": 1831,
+   "x": 78,
+   "y": 37
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0360.jpg": {
+  "accepted_crop": {
+   "height": 1211,
+   "width": 1830,
+   "x": 66,
+   "y": 41
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0361.jpg": {
+  "accepted_crop": {
+   "height": 1214,
+   "width": 1832,
+   "x": 81,
+   "y": 34
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0362.jpg": {
+  "accepted_crop": {
+   "height": 1203,
+   "width": 1821,
+   "x": 99,
+   "y": 67
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0363.jpg": {
+  "accepted_crop": {
+   "height": 1828,
+   "width": 1207,
+   "x": 61,
+   "y": 70
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0365.jpg": {
+  "accepted_crop": {
+   "height": 1210,
+   "width": 1827,
+   "x": 96,
+   "y": 44
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0372.jpg": {
+  "accepted_crop": {
+   "height": 1208,
+   "width": 1325,
+   "x": 2,
+   "y": 382
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0373.jpg": {
+  "accepted_crop": {
+   "height": 1831,
+   "width": 1217,
+   "x": 43,
+   "y": 45
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0374.jpg": {
+  "accepted_crop": {
+   "height": 1831,
+   "width": 1211,
+   "x": 78,
+   "y": 54
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0375.jpg": {
+  "is_problem": false,
+  "manual_crop": {
+   "height": 1776,
+   "width": 1214,
+   "x": 49,
+   "y": 16
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0376.jpg": {
+  "is_problem": false,
+  "manual_crop": {
+   "height": 1203,
+   "width": 1795,
+   "x": 61,
+   "y": 64
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0377.jpg": {
+  "accepted_crop": {
+   "height": 1830,
+   "width": 1213,
+   "x": 67,
+   "y": 70
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0378.jpg": {
+  "accepted_crop": {
+   "height": 1210,
+   "width": 1826,
+   "x": 73,
+   "y": 59
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0379.jpg": {
+  "is_problem": false,
+  "manual_crop": {
+   "height": 1211,
+   "width": 1815,
+   "x": 106,
+   "y": 59
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0380.jpg": {
+  "accepted_crop": {
+   "height": 1212,
+   "width": 1822,
+   "x": 87,
+   "y": 64
+  },
+  "size": [
+   2000,
+   1333
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ },
+ "Film 35/20250414_0381.jpg": {
+  "accepted_crop": {
+   "height": 1821,
+   "width": 1213,
+   "x": 47,
+   "y": 68
+  },
+  "size": [
+   1333,
+   2000
+  ],
+  "source": "companion:2026-09-20T20-26-48-8bda"
+ }
+}

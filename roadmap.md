@@ -13,14 +13,14 @@ und schlägt eine Reihenfolge vor, in der man das angeht.
 
 | Phase | Erledigt | Offen |
 | --- | --- | --- |
-| 0 Fehlerfälle einsammeln | Werkzeug (Web-UI, `feedback_report.py`), Muster der 5 falschen Grünen | Ground Truth nach `review_data/`, Film 33/34 labeln, Baseline neu messen |
-| 1 Ground Truth verbreitern | – | mehr Rollen/Formate, Tuning/Holdout, Leave-One-Film-Out |
-| 2 Zweites Signal | Teilansatz (Helligkeit innen/außen) | Varianz/Histogramm, Perforation, unabhängige zweite Kantenmethode |
-| 3 `film_trust` | – | Plausibilität des Konsens, Position im Cross-Film-Clamp |
-| 4 Neu kalibrieren | – | LR mit Leave-One-Film-Out, Schwellen aus Holdout-ROC |
-| 5 Feedback-Schleife | Gegenmelden (Web-UI), Faktoren sichtbar, Auswertung | Feedback in `eval.py`/`calibrate.py` einspeisen |
+| 0 Fehlerfälle einsammeln | Werkzeuge; Film 35 vermessen und als Referenz übernommen (`feedback_gt.json`); Baseline neu (98/103, 7 Filme); Fehlermuster der 5 Fehltreffer | Film 33/34 labeln (Handarbeit), ursprünglich beobachtete „stark falsche Grüne“ identifizieren |
+| 1 Ground Truth verbreitern | Tuning/Holdout pro Film, Leave-One-Film-Out in `eval.py` | mehr Rollen/Formate, vor allem mehr Fehltreffer |
+| 2 Zweites Signal | Textur innen/außen und unabhängige Kantenlage getestet: kein Nutzen | Perforation als Positionsreferenz (aufwendig, erst mit mehr Fehltreffern belegbar) |
+| 3 `film_trust` | `film_trust` und Belichtungsdeckel aus der Konfidenz genommen (Daten: irreführend); Positions-Clamp geprüft, nicht nötig | – |
+| 4 Neu kalibrieren | LOFO-Formelvergleich; neue Konfidenz `0.5·size + 0.5·edge`; Schwellen 0.5/0.3 am Holdout bestätigt | Wiederholen, sobald Film 33/34 und weitere Rollen Referenzen haben |
+| 5 Feedback-Schleife | Gegenmelden, Faktoren sichtbar, Auswertung, Feedback fließt in `eval.py`/`calibrate.py` | – |
 
-Priorität bleibt: Phase 0 abschließen (Daten), dann Phase 2.
+Priorität jetzt: **mehr Referenzdaten** (Film 33/34 und neue Rollen über die Web-UI). Jede Aussage oben stützt sich auf nur 5 Fehltreffer; mit mehr Daten `tools/eval.py`, `tools/calibrate.py --loo` und `tools/signal_probe.py` erneut laufen lassen.
 
 ## Praxistest der Companion-UI (2026-09-20)
 
@@ -101,22 +101,22 @@ Maßnahme Rätselraten.
       (Filmordner + Dateiname) und mit `start_review_gui.sh` den
       *tatsächlich richtigen* Crop von Hand eintragen - genau wie die
       bestehenden 98 Referenzbilder.
-      **Stand (teilweise):** Auf der bisher unbekannten Rolle „Film 35“ sind über die Web-UI 5 falsche Grüne samt richtigem Crop erfasst (`tools/feedback_report.py`; Muster: 2× Position bei richtiger Größe, 2× Größe, 1× beides). Noch nicht nach `review_data/` übernommen (`--export-gt`); die ursprünglich beobachteten falschen Grünen sind nicht einzeln zugeordnet.
+      **Stand (teilweise):** Auf der bisher unbekannten Rolle „Film 35“ (36 Raw-Fotos) sind über die Web-UI 5 Crops von Hand korrigiert worden. Umgerechnet auf die 2000-px-Skala der Testfotos sind das Nudges von höchstens 49 px, also **innerhalb der 60-px-Toleranz: kein falsches Grün gemessen.** (Eine frühere Fassung dieser Zeile sprach von 5 falschen Grünen; das war ein Skalierungsfehler, die Toleranz war nicht auf die 8280-px-Exporte skaliert.) Die vom Nutzer ursprünglich beobachteten „stark falschen Grünen“ sind in den Daten weiterhin nicht identifiziert.
 - [ ] Dabei **auch Film 33 und 34** vervollständigen (liegen schon als
       Testfotos vor, aber ohne Review-Daten - aktuell komplett ungenutzt
       für Kalibrierung/Auswertung).
       **Stand: offen.** Film 33 (37 Bilder) und 34 (28) haben weiter keine Review-Daten, Film 32 nur 1 von 9. Erfassbar mit `python -m companion serve --folder Testphotos …`.
-- [ ] Für jeden neuen falschen Fall kurz notieren, *welches* der vier
+- [x] Für jeden neuen falschen Fall kurz notieren, *welches* der vier
       Symptome zutraf (Nachbarframe erwischt? Filmhalterkante statt
       Bildrand? Falsche Seite/Position bei richtiger Größe? Rolle mit
       wenigen Bildern?) - das entscheidet, welcher Punkt unten zuerst
       etwas bringt.
-      **Stand (teilweise):** `feedback_report.py` unterscheidet automatisch Größe, Position und beides; Nachbarframe und Filmhalterkante bleiben Handarbeit am Bild.
-- [ ] `tools/eval.py` und `tools/eval_baseline.json` mit den erweiterten
+      **Erledigt (soweit aus den Daten möglich):** `feedback_report.py` unterscheidet automatisch Größe, Position und beides. Die 5 Fehltreffer der Referenzdaten (Film 27: 0165/0166/0175, Film 29: 0223, Film 31: 0264) liegen alle in gelb/rot; Sichtprüfung von drei davon: dunkle/kontrastarme Aufnahmen (0175 mit dunkler Vignette, 0223 fast schwarz, 0264 dunkel). Nachbarframe oder Filmhalterkante wurde nicht festgestellt.
+- [x] `tools/eval.py` und `tools/eval_baseline.json` mit den erweiterten
       Referenzdaten neu laufen lassen, um eine ehrliche (niedrigere)
       Ausgangs-Precision/Recall-Zahl zu bekommen, statt sich weiter auf
       die alten, zu optimistischen 93/98 zu verlassen.
-      **Stand: offen.** `tools/eval_baseline.json` steht unverändert bei 93/98 (6 Filme).
+      **Erledigt:** Baseline neu gemessen und festgeschrieben: 98/103 Treffer über 7 Filme (Film 35 dazu, 5/5). Die alte 93/98 galt nur für die 6 Filme.
 
 ## Phase 1: Ground Truth breiter aufstellen
 
@@ -127,17 +127,17 @@ zu wissen, ob die Formel generalisiert.
       idealerweise verschiedene Kameras, Belichtungssituationen,
       Filmformate (nicht nur Kleinbild), Farb- und S/W-Negative.
       **Stand: offen.** Bisher Kleinbild und ein Aufbau; Film 35 liegt nur als Feedback aus Sitzungen vor, nicht in der Kalibrierbasis.
-- [ ] Datensatz in **Tuning-Set** und **Holdout-Set** aufteilen (z. B. pro
+- [x] Datensatz in **Tuning-Set** und **Holdout-Set** aufteilen (z. B. pro
       Film, nicht zufällig gemischt - sonst leckt Wissen über eine Rolle
       zwischen Tuning und Test). Schwellen/Gewichte nur auf dem
       Tuning-Set anpassen, Erfolg nur auf dem Holdout-Set berichten.
-      **Stand: offen.** Film 33/34 wären Holdout-Kandidaten, haben aber keine Labels; `eval.py --holdout` erzeugt nur einen Kontaktabzug.
-- [ ] `tools/eval.py` um eine **Leave-One-Film-Out-Auswertung** erweitern:
+      **Erledigt:** `tools/splits.json` teilt pro Film in Tuning (28, 29, 30, 32, 35) und Holdout (27, 31); `eval.py` wählt die Schwelle nur auf dem Tuning-Set und berichtet den Holdout getrennt. Der Holdout enthält bewusst Film 27/31, weil alle 5 Fehltreffer in Film 27/29/31 liegen (sonst gäbe es im Holdout nichts zu prüfen).
+- [x] `tools/eval.py` um eine **Leave-One-Film-Out-Auswertung** erweitern:
       für jeden Film einmal so tun, als wäre er unbekannt (nicht Teil der
       film_trust/Cross-Film-Pools), und Precision/Recall nur auf diesem
       Film messen. Das deckt genau die Art von Überanpassung auf, die
       hier vermutlich vorliegt.
-      **Stand: offen.** `tools/eval.py` hat keine Leave-One-Film-Out-Auswertung.
+      **Erledigt:** `python tools/eval.py` gibt die LOFO-Auswertung aus (Schwelle ohne den gemessenen Film gewählt).
 
 ## Phase 2: Eine echte zweite Signalquelle einbauen
 
@@ -148,7 +148,7 @@ Grundlage.
 Kandidaten (nicht exklusiv, nach vermutetem Aufwand/Nutzen-Verhältnis
 sortiert):
 
-- [ ] **Inhalts-Plausibilität der Crop-Region.** Ein echtes Foto hat
+- [x] **Inhalts-Plausibilität der Crop-Region.** Ein echtes Foto hat
       innerhalb des Rahmens typischerweise eine andere
       Helligkeits-/Varianzverteilung als Filmbasis, Sprocket-Löcher oder
       der Tisch drumherum (oft sehr gleichmäßig hell/dunkel oder mit
@@ -157,7 +157,7 @@ sortiert):
       billig zu berechnen und bestraft z. B. einen Crop, der zur Hälfte
       auf dem Filmträger sitzt, unabhängig davon, wie "einträchtig" die
       restliche Rolle ist.
-      **Stand (teilweise):** `measure_crop_evidence()` vergleicht Helligkeit innen/außen. Kein Varianz-/Histogramm-Vergleich, und die Konsens-Konfidenz hat dafür keinen eigenen Faktor.
+      **Getestet, kein Nutzen:** Textur (lokale Standardabweichung) direkt innen vs. außen am Crop-Rand trennt Treffer und Fehltreffer schlechter als der Zufall (AUC 0.32): der Filmrand mit Perforation und Korn ist selbst stark texturiert. Nicht integriert. Reproduzierbar mit `tools/signal_probe.py`.
 - [ ] **Perforation/Sprocket-Löcher als physische Referenz**, sofern auf
       den Aufnahmen sichtbar (je nach Digitalisier-Rig). Perforationen
       haben einen bekannten, extrem konstanten Rasterabstand - wenn
@@ -165,32 +165,32 @@ sortiert):
       Positionsreferenz und würde die "einträchtig falsch"-Schwäche
       strukturell auflösen. Aufwand deutlich höher, aber potenziell die
       robusteste Lösung.
-      **Stand: offen.** Sprossenlöcher dienen nur zum Ausschließen in der Verfeinerung, nicht als Positionsreferenz.
-- [ ] **Zweite, andersartige Kantendetektion** (z. B. ein anderer
+      **Offen, bewusst nicht angegangen.** Die Löcher sind auf den Scans sichtbar (Film 27 links, Film 29/31 oben), aber ein robuster Detektor mit Rasterphase ist aufwendig, und die Referenzdaten enthalten nur 5 Fehltreffer, an denen sich ein Nutzen nicht belegen ließe. Sinnvoll erst mit mehr Fehltreffern (Phase 1).
+- [x] **Zweite, andersartige Kantendetektion** (z. B. ein anderer
       Gradient-/Schwellwert-Ansatz oder ein auf Kontrast statt Gradient
       basierendes Verfahren) und deren *Übereinstimmung* mit der
       bestehenden Methode als Signal nutzen, statt nur die Sicherheit der
       einen Methode zu betrachten. Zwei unabhängige Verfahren, die sich
       einig sind, sind ein deutlich stärkeres Signal als eine Methode, die
       sich selbst sehr sicher ist.
-      **Stand: offen.** Die vier Detektoren werden zusammengeführt („n Strategien stimmen überein“), aber ein unabhängiges Zweitverfahren als Konfidenzfaktor fehlt.
+      **Getestet, kein ausreichender Nutzen:** Eine unabhängig aus dem Texturprofil bestimmte Kantenlage stimmt mit dem Crop kaum besser bei Treffern überein (AUC 0.58); die Zahl übereinstimmender Detektoren trennt mäßig (AUC 0.72), deutlich schwächer als `edge_score` (0.98). Nicht integriert.
 
 ## Phase 3: film_trust von "einträchtig" zu "einträchtig UND plausibel" machen
 
-- [ ] `film_trust` sollte nicht nur geringe Streuung *innerhalb* der Rolle
+- [x] `film_trust` sollte nicht nur geringe Streuung *innerhalb* der Rolle
       belohnen, sondern zusätzlich prüfen, ob der Rollen-Konsens selbst
       plausibel ist (z. B. via Phase-2-Signal, oder indem auffällt, wie
       viele Bilder der Rolle `size_ok=false` waren - viele Ausreißer
       deuten eher auf einen falschen Konsens als auf viele falsche
       Einzelbilder hin).
-      **Stand: offen.** `film_trust` unverändert.
-- [ ] Cross-Film-Clamp (aktuell nur "nach oben" gedeckelt, siehe
+      **Erledigt, anders als vermutet:** `film_trust` trennt Treffer und Fehltreffer schlechter als der Zufall (AUC 0.32; falsche Crops sind oft „einig falsch“). Ein Anteil von Ausreißern pro Rolle als Plausibilitätsmaß hat kein Signal (AUC 0.52). Deshalb geht `film_trust` nicht mehr in die Konfidenz ein (bleibt als Diagnosefaktor sichtbar).
+- [x] Cross-Film-Clamp (aktuell nur "nach oben" gedeckelt, siehe
       `MIN_POOL_SUPPORT`/`CLAMP_TOL` in `apply_film_consensus()`) auf
       Plausibilität für *Position*, nicht nur Größe, prüfen - aktuell wird
       nur eine zu große Konsens-Größe korrigiert, eine falsche Position
       (z. B. konstant zu weit links) auf der ganzen Rolle würde nicht
       auffallen.
-      **Stand: offen.** Der Cross-Film-Clamp (`CLAMP_TOL`) korrigiert weiter nur zu große Größen.
+      **Geprüft, keine Änderung nötig:** Die Rollen-Zentren der Crops liegen alle zwischen 0.47 und 0.53 (kein systematischer Positionsversatz einer Rolle), und die Abweichung vom Rollen-Zentrum sagt Fehltreffer nicht voraus. Ein Positions-Clamp wäre ohne Datenbasis Spekulation.
 
 ## Phase 4: Erst danach neu kalibrieren
 
@@ -201,15 +201,15 @@ mehrere Filme/Kameras umfassenden Datensatz (Phase 1) und einem echten
 zweiten Signal als zusätzlichem Feature (Phase 2) wird ein Neuversuch
 sinnvoll:
 
-- [ ] Logistische Regression erneut versuchen, diesmal mit
+- [x] Logistische Regression erneut versuchen, diesmal mit
       Leave-One-Film-Out-Kreuzvalidierung statt einer einzigen
       Train/Test-Zahl, um Überanpassung sofort sichtbar zu machen.
-      **Stand: offen** (setzt Phase 1 und 2 voraus).
-- [ ] Schwellen (grün/gelb) danach separat aus der ROC-Kurve auf dem
+      **Erledigt:** `python tools/calibrate.py --loo --from-json <eval.json>` vergleicht Formeln per Leave-One-Film-Out (mit verschachteltem LOFO für die Schwelle). Ergebnis: eine logistische Regression über die vier Faktoren ist schlechter (AUC 0.93) als die einfache Formel `0.5·size_agree + 0.5·edge_score` (AUC 0.98); Abdeckung sicherer Treffer bei 98 % Precision 86.7 % vs. 99 %. Die alte Formel: AUC 0.885, 84.7 %. Die einfache Formel ist jetzt in `auto_crop_negative.py` (Version `size+edge-v2`).
+- [x] Schwellen (grün/gelb) danach separat aus der ROC-Kurve auf dem
       Holdout-Set ableiten, mit einer bewusst konservativen
       Ziel-Precision für grün (z. B. >= 98 % auf dem Holdout, nicht nur
       auf den Trainingsdaten).
-      **Stand: offen** (setzt Phase 1 und 4a voraus).
+      **Erledigt:** Auf dem Tuning-Set erreicht ein Ziel von 100 % Precision die Schwelle 0.49; der Holdout (Film 27, 31) hat dort 40/40 (100 %). Die Produktionsschwellen bleiben daher **grün ≥ 0.5, gelb ≥ 0.3**. Auf allen 103 Referenzen: grün 91 Treffer / 0 Fehltreffer (vorher 76 / 0), gelb 6 / 3. Grenze: nur 5 Fehltreffer insgesamt, die Zahlen sind grob.
 
 ## Phase 5: Feedback-Schleife aus echter Nutzung
 
@@ -231,8 +231,9 @@ auffällt:
 - [x] Auswertung des gesammelten Feedbacks: `tools/feedback_report.py` (Korrekturrate je
       Gruppe, falsches Grün mit Symptom, schwächster Faktor, Gruppenwechsel, Export als
       Ground Truth). Erster Lauf auf den 4 Testsitzungen (36 Bilder): 22 grün, davon
-      5 korrigiert und alle 5 über der Toleranz, 6 gelb und 8 rot ohne Korrektur.
-- [ ] Feedback in `tools/eval.py` und `tools/calibrate.py` einspeisen (Ground Truth aus
+      5 leicht nachkorrigiert (alle innerhalb der Toleranz), 6 gelb und 8 rot ohne Korrektur;
+      ein rot eingestuftes Bild hat der Nutzer nach grün verschoben.
+- [x] Feedback in `tools/eval.py` und `tools/calibrate.py` einspeisen (Ground Truth aus
       `--export-gt` zusammen mit `reviews.json` auswerten; die Bilder liegen als Raw
       außerhalb von `Testphotos/`).
 
