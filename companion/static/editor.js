@@ -119,12 +119,15 @@ function build() {
         <span class="toolbar-sep"></span>
         <button type="button" class="btn btn-outline btn-sm" data-act="cands">${T('candidates_load')}</button>
         <span id="ed-cand-chips" class="chips"></span>
+        <span class="toolbar-sep"></span>
+        <button type="button" class="btn btn-outline btn-sm" data-act="lines" aria-pressed="true" title="${esc(S('lines_h'))}">${T('lines')}</button>
       </div>
       <div class="stage" id="ed-stage" aria-label="Crop">
         <div class="stage-frame" id="ed-frame">
           <img alt="" id="ed-img" draggable="false">
           <div class="cand" id="ed-det" hidden><span class="cand-tag"></span></div>
           <div class="cand cand-prop" id="ed-prop" hidden><span class="cand-tag"></span></div>
+          <svg class="skewlines" id="ed-skewlines" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"></svg>
           <div id="ed-cands"></div>
           <div class="cropbox" id="ed-crop">${HANDLES.map((h) => `<i class="handle" data-h="${h}"></i>`).join('')}</div>
           <span class="readout" id="ed-readout"></span>
@@ -282,8 +285,25 @@ function setBox(node, c) {
   node.style.setProperty('--b', `${(1 - c[3]) * 100}%`);
 }
 
+// Gemessene Rahmenkanten als Linien ueber dem Bild: zeigen die Schraeglage; nach dem Geradestellen
+// muessen sie waagerecht/senkrecht verlaufen.
+let showLines = true;
+function drawSkewLines() {
+  const svg = el().querySelector('#ed-skewlines');
+  if (!svg) return;
+  const img = cur();
+  const L = img.skew_lines;
+  const btn = el().querySelector('[data-act="lines"]');
+  if (btn) { btn.setAttribute('aria-pressed', String(showLines)); btn.disabled = !L; }
+  const seg = (cls, a, b) => `<line class="${cls}" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" vector-effect="non-scaling-stroke"/>`;
+  svg.innerHTML = showLines && L
+    ? Object.values(L).map(([a, b]) => seg('case', a, b)).join('') + Object.values(L).map(([a, b]) => seg('core', a, b)).join('')
+    : '';
+}
+
 function syncCrop() {
   const img = cur();
+  drawSkewLines();
   if (!ed.drag) ed.crop = img.crop ? img.crop.slice() : [0.05, 0.05, 0.95, 0.95];
   drawCrop();
   const det = el().querySelector('#ed-det');
@@ -462,6 +482,7 @@ function onClick(e) {
     else if (a === 'prev') go(-1);
     else if (a === 'next') go(1);
     else if (a === 'cands') loadCandidates();
+    else if (a === 'lines') { showLines = !showLines; drawSkewLines(); }
     else if (a === 'reset') patch({ crop: null });
     else if (a === 'straighten-on') patch({ straighten: { deg: cur().skew.deg } });
     else if (a === 'straighten-off') patch({ straighten: null });

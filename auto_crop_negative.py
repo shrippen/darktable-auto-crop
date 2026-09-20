@@ -1002,22 +1002,22 @@ SKEW_MAX_DEG = 9.0      # Suchbereich +/- Grad (erwartet werden bis ca. 7)
 
 
 def _line_fit_theil_sen(us, vs, tol):
-    """Robuste Gerade v = a + s*u (Theil-Sen). Liefert (slope, inlier_ratio)."""
+    """Robuste Gerade v = a + s*u (Theil-Sen). Liefert (slope, inlier_ratio, intercept)."""
     us = np.asarray(us, float)
     vs = np.asarray(vs, float)
     n = len(us)
     if n < 6:
-        return None, 0.0
+        return None, 0.0, 0.0
     iu, ju = np.triu_indices(n, 1)
     du = us[ju] - us[iu]
     ok = np.abs(du) > 1e-6
     slopes = (vs[ju] - vs[iu])[ok] / du[ok]
     if len(slopes) == 0:
-        return None, 0.0
+        return None, 0.0, 0.0
     s = float(np.median(slopes))
     a = float(np.median(vs - s * us))
     res = np.abs(vs - (a + s * us))
-    return s, float(np.mean(res < tol))
+    return s, float(np.mean(res < tol)), a
 
 
 def _edge_points(gray, x, y, w, h, side, n=36, strip=7):
@@ -1062,17 +1062,24 @@ def measure_skew(gray, x, y, w, h):
     werden gewichtet gemittelt. 'conf' ist der Anteil uebereinstimmender
     Kantenpunkte, 'spread' die Streuung der Seitenwinkel (Grad)."""
     g = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), 1.5)
-    sides = {}
+    sides, lines = {}, {}
+    ih, iw = gray.shape
     for side in ("top", "bottom", "left", "right"):
         us, vs = _edge_points(g, x, y, w, h, side)
         length = w if side in ("top", "bottom") else h
-        slope, inl = _line_fit_theil_sen(us, vs, tol=max(2.0, length * 0.004))
+        slope, inl, icpt = _line_fit_theil_sen(us, vs, tol=max(2.0, length * 0.004))
         if slope is None or inl < 0.5 or abs(slope) > math.tan(math.radians(SKEW_MAX_DEG + 3)):
             continue
         ang = math.degrees(math.atan(slope))
         sides[side] = (ang if side in ("top", "bottom") else -ang, inl)
+        # angepasste Kante als Strecke (normiert auf das Bild), ueber die Seitenlaenge des Crops
+        u0, u1 = (x, x + w) if side in ("top", "bottom") else (y, y + h)
+        p0, p1 = (u0, icpt + slope * u0), (u1, icpt + slope * u1)
+        pts = ([[p0[0], p0[1]], [p1[0], p1[1]]] if side in ("top", "bottom")
+               else [[p0[1], p0[0]], [p1[1], p1[0]]])
+        lines[side] = [[round(px / iw, 5), round(py / ih, 5)] for px, py in pts]
     if len(sides) < 2:
-        return {"deg": None, "conf": 0.0, "spread": None, "sides": {}}
+        return {"deg": None, "conf": 0.0, "spread": None, "sides": {}, "lines": {}}
     angs = np.array([a for a, _ in sides.values()])
     wts = np.array([i for _, i in sides.values()])
     order = np.argsort(angs)
@@ -1081,7 +1088,7 @@ def measure_skew(gray, x, y, w, h):
     spread = float(np.max(np.abs(angs - deg)))
     return {"deg": round(deg, 2), "conf": round(float(wts.mean()) * len(sides) / 4, 3),
             "spread": round(spread, 2),
-            "sides": {k: round(v[0], 2) for k, v in sides.items()}}
+            "sides": {k: round(v[0], 2) for k, v in sides.items()}, "lines": lines}
 
 
 def _median(xs):

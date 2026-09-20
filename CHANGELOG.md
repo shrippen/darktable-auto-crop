@@ -11,6 +11,8 @@
   (`ashift`, Rotation = Messwert, ohne automatischen Zuschnitt) und danach den Crop auf das gedrehte Bild. Editor und
   Kacheln zeigen dann das geradegestellte Bild; der Winkel ist von Hand änderbar (±10°). Nur im darktable-Modus, der
   Ordnermodus zeigt den Messwert nur an. „Zurücksetzen“ und ein erneuter Plan schalten die Drehung wieder aus.
+- Die gemessenen Rahmenkanten werden als Linien über dem Bild im Editor gezeichnet (Schalter „Rahmenlinien“); nach dem
+  Geradestellen liegen sie waagerecht bzw. senkrecht und zeigen so, ob die Korrektur passt.
 - Plan (`plan.json`) hat pro Bild `angle`, `was_angle`; der Ordner-Speichern-Dialog nennt jetzt `reviews.json`.
 
 ### Neu

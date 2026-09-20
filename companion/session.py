@@ -163,6 +163,14 @@ def crop_from_straight(crop, size, deg):
     return _fit_box(w / 2 + dx, h / 2 + dy, cw, ch, w, h)
 
 
+def point_to_straight(pt, size, deg):
+    """Punkt [x, y] (normiert im Original) -> normiert im geradegestellten Bild."""
+    w, h = size
+    W, H = straight_size(size, deg)
+    dx, dy = _rot(pt[0] * w - w / 2, pt[1] * h - h / 2, -deg)
+    return [round((W / 2 + dx) / W, 5), round((H / 2 + dy) / H, 5)]
+
+
 def _fit_box(cx, cy, cw, ch, W, H):
     cw, ch = min(cw, W), min(ch, H)
     x0 = min(max(cx - cw / 2, 0.0), W - cw)
@@ -342,6 +350,7 @@ class Session:
             "detected_crop": self.detected_crop(img),
             "straighten": self.straight_deg(img),
             "view_size": self._view_size(img),
+            "skew_lines": self._skew_lines(img),
             "manual_crop": (img.get("manual") or {}).get("crop"),
             "crop": self.effective_crop(img),
             "decision": img.get("decision"),
@@ -352,6 +361,16 @@ class Session:
             "has_export": bool(self.export_path(img)
                                and os.path.exists(self.export_path(img))),
         }
+
+    def _skew_lines(self, img):
+        """Gemessene Rahmenkanten im aktuellen Bezugsrahmen (nach dem Geradestellen also gedreht)."""
+        lines = ((img.get("detected") or {}).get("skew") or {}).get("lines")
+        if not lines:
+            return None
+        deg, size = self.straight_deg(img), img.get("export_size")
+        if deg and size:
+            return {k: [point_to_straight(p, size, deg) for p in v] for k, v in lines.items()}
+        return lines
 
     def _view_size(self, img):
         size, deg = img.get("export_size"), self.straight_deg(img)
