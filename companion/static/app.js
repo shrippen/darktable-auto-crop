@@ -50,7 +50,11 @@ function renderHeader() {
 
 function renderFlow() {
   const p = store.s.phase;
-  const step = (key, hl, done) => `<div class="flow-node${hl ? ' hl' : ''}${done ? ' is-done' : ''}"><b>${T('step_' + key)}</b><span>${T('step_' + key + '_d')}</span></div>`;
+  const folder = store.s.mode === 'folder';
+  const step = (key, hl, done) => {
+    const k = folder && (key === 'done' || key === 'apply') ? key + '_folder' : key;
+    return `<div class="flow-node${hl ? ' hl' : ''}${done ? ' is-done' : ''}"><b>${T('step_' + k)}</b><span>${T('step_' + k + '_d')}</span></div>`;
+  };
   const arrow = '<span class="flow-arrow"></span>';
   const analyzed = p !== 'analyzing';
   $('flow').innerHTML = `<div class="flow">${step('analyze', p === 'analyzing', analyzed)}${arrow}${step('review', p === 'reviewing', ['locked', 'applied', 'apply_failed'].includes(p))}${arrow}${step('done', p === 'locked', p === 'applied')}${arrow}${step('apply', p === 'applied' || p === 'apply_failed', p === 'applied')}</div>`;
@@ -71,14 +75,14 @@ function renderNotice() {
   }
   const reopen = `<button type="button" class="btn btn-outline btn-sm" data-act="reopen">${T('reopen')}</button>`;
   if (s.phase === 'locked') {
-    host.innerHTML = `<div class="callout callout-ok notice"><div><strong>${T('locked_msg')}</strong></div>${reopen}</div>`;
+    host.innerHTML = `<div class="callout callout-ok notice"><div><strong>${T(s.mode === 'folder' ? 'locked_msg_folder' : 'locked_msg')}</strong></div>${reopen}</div>`;
   } else if (s.phase === 'applied' || s.phase === 'apply_failed') {
     const res = store.result || {};
     const imgs = Object.values(res.images || {});
     const cnt = (k) => imgs.filter((i) => i.status === k).length;
     const errs = Object.entries(res.images || {}).filter(([, v]) => v.status === 'error');
     const ok = s.phase === 'applied';
-    host.innerHTML = `<div class="callout ${ok ? 'callout-ok' : 'callout-danger'} notice"><div><strong>${T(ok ? 'applied_msg' : 'failed_msg')}</strong>
+    host.innerHTML = `<div class="callout ${ok ? 'callout-ok' : 'callout-danger'} notice"><div><strong>${T(ok ? (s.mode === 'folder' ? 'applied_msg_folder' : 'applied_msg') : 'failed_msg')}</strong>
       ${imgs.length ? `<div class="notice-list">${T('result_ok')}: ${cnt('ok')} · ${T('result_skipped')}: ${cnt('skipped')} · ${T('result_error')}: ${cnt('error')}</div>` : ''}
       ${errs.length ? `<ul class="notice-list">${errs.slice(0, 8).map(([id, v]) => `<li>${esc((byId(id) || {}).filename || id)}: ${esc(v.message || '')}</li>`).join('')}</ul>` : ''}
       </div>${reopen}</div>`;
@@ -182,7 +186,7 @@ function renderActionbar() {
   const n = s.summary;
   const canFinish = s.phase === 'reviewing' && !store.analysis.busy && n.pending === 0;
   const right = editable
-    ? `<button type="button" class="btn btn-accent" data-act="finish"${canFinish ? '' : ' disabled'}>${T('finish')}</button>`
+    ? `<button type="button" class="btn btn-accent" data-act="finish"${canFinish ? '' : ' disabled'}>${T(s.mode === 'folder' ? 'finish_folder' : 'finish')}</button>`
     : `<button type="button" class="btn btn-outline" data-act="reopen">${T('reopen')}</button>`;
   $('actionbar').innerHTML = `<div class="actionbar-inner"><div class="group">
       <button type="button" class="btn btn-outline btn-sm" data-act="undo"${editable && s.can_undo ? '' : ' disabled'}>${T('undo')} · Z</button>
@@ -199,10 +203,18 @@ async function finish() {
   const notes = [];
   if (sum.changed && store.s.applied_revision) notes.push(esc(S('finish_changed', sum.changed)));
   if (sum.warnings.length) notes.push(esc(S('finish_stale', sum.warnings.length)));
+  const folder = store.s.mode === 'folder';
+  const imgs = store.s.images;
+  const facts = folder
+    ? [{ value: imgs.filter((i) => i.manual_crop).length, label: 'facts_corrected' },
+       { value: imgs.filter((i) => !i.manual_crop && i.decision === 'accept').length, label: 'facts_accepted' },
+       { value: sum.summary.red, label: 'facts_flagged', color: 'red' }]
+    : [{ value: sum.summary.apply, label: 'apply_n' }, { value: sum.summary.red, label: 'flagged_red', color: 'red' },
+       { value: sum.summary.skipped, label: 'skipped', color: 'fg3' }];
+  if (folder) notes.push(T('finish_folder_note'));
   const ok = await dialog({
-    title: 'finish_title', body: 'finish_body', confirm: 'finish', cancel: 'back', notes,
-    facts: [{ value: sum.summary.apply, label: 'apply_n' }, { value: sum.summary.red, label: 'flagged_red', color: 'red' },
-      { value: sum.summary.skipped, label: 'skipped', color: 'fg3' }],
+    title: folder ? 'finish_title_folder' : 'finish_title', body: folder ? 'finish_body_folder' : 'finish_body',
+    confirm: folder ? 'finish_folder' : 'finish', cancel: 'back', notes, facts,
   });
   if (!ok) return;
   const res = await guard(() => api('POST', 'finish', {}), refresh);
@@ -212,7 +224,8 @@ async function finish() {
 }
 
 async function reopen() {
-  const ok = await dialog({ title: 'reopen_title', body: 'reopen_body', confirm: 'reopen', cancel: 'cancel' });
+  const ok = await dialog({ title: 'reopen_title', body: store.s.mode === 'folder' ? 'reopen_body_folder' : 'reopen_body',
+    confirm: 'reopen', cancel: 'cancel' });
   if (!ok) return;
   await guard(() => api('POST', 'reopen', {}), refresh);
   await refresh();
