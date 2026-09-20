@@ -243,6 +243,24 @@ Auf den 209 Referenzen ausprobiert, **keine übernommen** (Stand 194/209; Rohdat
 - **Farbkanäle statt Graubild beim Einpassen** (max, min, R, G, B, Sättigung, Grau+Sättigung): 194–196 Treffer,
   Film 34 bleibt unverändert. Kein belastbarer Gewinn.
 
+Zweite Runde (alle sechs Ideen, ebenfalls nicht übernommen; Bezug 194/209):
+
+- **Kontrastnormalisierung vor dem Einpassen** (log, sqrt, Gamma, Dehnung, CLAHE, lokale Normierung): 192–195 Treffer.
+  Nur CLAHE hebt die Leave-One-Film-Out-Abdeckung leicht (159 statt 151 Grüne bei gleicher Präzision, 96,4 %), Treffer
+  unverändert. Im Rauschen.
+- **Gelerntes Kanten-Offset-Modell** (lineares Filter auf dem 1D-Profil quer zur Kante, Softmax über Kandidaten,
+  Leave-One-Film-Out): Kantenfehler gleich (77,6 % ≤ 10 px gegen 77,3 % heute), Treffer 186–193. Kein Gewinn.
+- **Perforation als Anker:** Die Lochreihe beginnt bei den meisten Rollen am Bildrand (Median +1 px), bei Film 34 aber
+  18 px darunter. Nur Unterkante bei Querformat: +2 Treffer, 0 verloren; auf alle vier Seiten verallgemeinert: 0 gewonnen,
+  1 verloren (falsche Löcher im dunklen Bildinhalt). Zu fragil.
+- **Lücke/Nachbarbild als zweite Seitenkante** (gleichmäßiges Band außerhalb): 177 Treffer, schlechter.
+- **Korrekturen im Betrieb lernen** (mittlerer Kantenversatz der ersten k korrigierten Bilder einer Rolle auf den Rest):
+  k=2 −1,1 Punkte, k=3 +0,2, k=5 +0,2, k=8 +1,4 Punkte Trefferquote. Erst ab etwa 8 Korrekturen ein kleiner Gewinn.
+- **Pixelklassifikator statt Kantensuche** (Gradient Boosting auf 20 Merkmalen je Pixel, Box aus der Maske,
+  Leave-One-Film-Out): 138 von 209 Treffer. Bei nur 9 Rollen zu wenig Vielfalt (Film 29/31 mit anderem Format: 0 Treffer).
+- Beobachtung zur Auswertung: Das Treffer-Kriterium prüft nur Breite und Höhe, nicht die Position. Versätze ohne
+  Größenfehler (z. B. Film 29, 0222) zählen als Treffer.
+
 Fazit: Die verbleibenden Fehltreffer (Film 34, Film 29) sind keine Frage des Kantensignals, sondern der Vorgabe
 (Crop auf oder innerhalb der Rahmenkante) bzw. fehlender sichtbarer Kante.
 
