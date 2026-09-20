@@ -39,7 +39,10 @@ def main():
     files = sorted(os.listdir(film))
     no_ref = files[1]                      # dieses Bild hat bewusst KEINE Referenz (fuer "Akzeptieren")
     keep = {f"Film 27/{f}" for f in files} - {f"Film 27/{no_ref}"}
-    json.dump({k: v for k, v in real.items() if k in keep}, open(reviews_path, "w"))
+    # nur die Crops, ohne is_problem/confirmed: der Test soll nicht von den Markierungen abhaengen, die
+    # jemand spaeter in reviews.json speichert (sonst starten Bilder schon als "rot" und der Ablauf kippt)
+    json.dump({k: {"manual_crop": v["manual_crop"]} for k, v in real.items()
+               if k in keep and v.get("manual_crop")}, open(reviews_path, "w"))
     n_refs = len(json.load(open(reviews_path)))
     env = dict(os.environ, AUTOCROP_CACHE=os.path.join(tmp, "cache"))
     srv = subprocess.Popen([PY, "-m", "companion", "serve", "--folder", os.path.join(tmp, "photos"),
