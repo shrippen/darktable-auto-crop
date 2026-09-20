@@ -20,7 +20,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from . import export as exp          # noqa: E402
-from .session import SessionError, crop_from_pixels   # noqa: E402
+from .session import SessionError, crop_from_pixels, crop_to_straight   # noqa: E402
 from .thumbs import image_size       # noqa: E402
 
 
@@ -46,13 +46,47 @@ def _single_worker(item):
     return r
 
 
+CORRECT_MIN_DEG = 0.3      # darunter lohnt die korrigierte Erkennung nicht
+
+
+def straighten_gray(gray, deg):
+    """Bild um ``deg`` gegen den Uhrzeigersinn drehen, Flaeche = Bounding-Box (wie darktables
+    ashift ohne Zuschnitt). Liefert (bild, breite, hoehe)."""
+    import math
+    import cv2
+    h, w = gray.shape
+    t = math.radians(abs(deg))
+    W, H = int(w * math.cos(t) + h * math.sin(t)), int(h * math.cos(t) + w * math.sin(t))
+    M = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), deg, 1.0)
+    M[0, 2] += W / 2.0 - w / 2.0
+    M[1, 2] += H / 2.0 - h / 2.0
+    return cv2.warpAffine(gray, M, (W, H), flags=cv2.INTER_LINEAR, borderValue=0), W, H
+
+
 def _skew_worker(item):
-    """Schraeglage des Filmrahmens am erkannten Crop messen (Grad, + = im Uhrzeigersinn)."""
+    """Pipeline-Schritte 2 und 3 fuer ein Bild:
+    Tilt-Erkennung (Schraeglage am erkannten Crop messen, Grad, + = im Uhrzeigersinn) und, wenn
+    das Bild merklich schief ist, korrigierte Erkennung: Bild geradestellen, den umgerechneten
+    Crop dort lokal an die Kanten einpassen (``_refine_box`` wie beim Film-Konsens)."""
     path, x, y, w, h = item
     acn = _acn()
     _, small, scale = acn._prepare_detect_gray(acn.load_image(path))
-    return acn.measure_skew(small, int(x * scale), int(y * scale),
-                            max(8, int(w * scale)), max(8, int(h * scale)))
+    sx, sy, sw, sh = int(x * scale), int(y * scale), max(8, int(w * scale)), max(8, int(h * scale))
+    out = acn.measure_skew(small, sx, sy, sw, sh)
+    deg = out.get("deg")
+    if deg is None or abs(deg) < CORRECT_MIN_DEG:
+        return out
+    ih, iw = small.shape
+    start = crop_to_straight([sx / iw, sy / ih, (sx + sw) / iw, (sy + sh) / ih], (iw, ih), deg)
+    rot, W, H = straighten_gray(small, deg)
+    box = (int(start[0] * W), int(start[1] * H), max(8, int((start[2] - start[0]) * W)),
+           max(8, int((start[3] - start[1]) * H)))
+    box = (max(0, min(W - box[2], box[0])), max(0, min(H - box[3], box[1])), box[2], box[3])
+    nx, ny, nw, nh, score = acn._refine_box(rot, *box)
+    out["straight"] = {"deg": deg, "crop": [round(nx / W, 5), round(ny / H, 5),
+                                            round((nx + nw) / W, 5), round((ny + nh) / H, 5)],
+                       "edge": round(float(score), 3)}
+    return out
 
 
 def measure_skews(results, paths, workers=None):
@@ -236,7 +270,7 @@ class Analyzer:
         for path, iid in paths.items():
             results.setdefault(iid, {"error": "Erkennung lieferte kein Ergebnis"})
         aspects = {k: v["aspect_ratio"] for k, v in batch["film_aspects"].items()}
-        self._stage("skew", 0, 0)
+        self._stage("skew", 0, 0)          # Tilt-Erkennung und korrigierte Erkennung
         measure_skews(results, paths)
         s.apply_detection(results, aspects)
         s.mark_analysis_done()

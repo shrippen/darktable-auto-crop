@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Neu: Schräglage
+- **Pipeline:** Erkennung → **Tilt-Erkennung** → **korrigierte Erkennung**. Ist das Bild merklich schief (≥ 0.3°), wird es
+  geradegestellt und der umgerechnete Crop dort lokal an die Kanten eingepasst; diese „korrigierte Erkennung“ ist der
+  Start-Crop, sobald der Tilt angewendet wird.
+- **Tilt-Messung sucht nur nahe am Crop:** je Seite werden nur Geraden geprüft, die in Reichweite der Crop-Kante liegen
+  (3 % der kurzen Seite), Winkel frei bis ±9°. Filmhalter und andere weiter entfernte Kanten kommen nicht mehr in Frage;
+  uneinige Seiten werden verworfen (dann „nicht messbar“). Mediane Abweichung an künstlich gedrehten Bildern 0.03°,
+  größter Fehler 0.5° (vorher 0.1° / 2.3°), dafür in ~20 % der künstlich gedrehten Fälle keine Messung.
+- **Schalter „Tilt anwenden“ (Taste T)** in der Editor-Leiste, auch im Ordnermodus: zeigt das Bild mit angewendetem Tilt,
+  der Crop wird auf dem geraden Bild gesetzt. Referenzen im Ordnermodus werden im Originalrahmen gespeichert, dazu
+  `tilt_deg` und `manual_crop_straight`.
 - Die Schräglage des Filmrahmens wird gemessen (Geradenanpassung an den vier Crop-Kanten, Suchbereich ±9°, Ergebnis
   in Grad plus Sicherheit und Winkel je Seite) und in der Web-UI gezeigt: Kachelmarke „Schräg +1.2°“, Abschnitt im
   Editor, Sortierung „Schräglage, größte zuerst“. Auf den 98 Referenzbildern liegt der Betrag bei höchstens 0.53°

@@ -59,7 +59,7 @@ function filmImages() {
 export function openEditor(id) {
   const img = byId(id);
   if (!img) return;
-  ed = { id: String(id), crop: null, ratio: 'free', drag: null, cands: null, saveTimer: null };
+  ed = { id: String(id), crop: null, ratio: 'free', drag: null, cands: null, saveTimer: null, lastDeg: null };
   el().hidden = false;
   document.body.style.overflow = 'hidden';
   build();
@@ -116,6 +116,8 @@ function build() {
           <button type="button" data-ratio="film" aria-pressed="false">${T('ratio_film')}</button>
           <button type="button" data-ratio="image" aria-pressed="false">${T('ratio_image')}</button>
         </div>
+        <span class="toolbar-sep"></span>
+        <button type="button" class="btn btn-outline btn-sm" data-act="tilt-toggle" aria-pressed="false" title="${esc(S('tilt_apply_h'))}">${T('tilt_apply')} · T</button>
         <span class="toolbar-sep"></span>
         <button type="button" class="btn btn-outline btn-sm" data-act="cands">${T('candidates_load')}</button>
         <span id="ed-cand-chips" class="chips"></span>
@@ -221,18 +223,19 @@ function skewHtml(img) {
     <dt>${T('skew_sure')}</dt><dd>${sk.conf.toFixed(2)}${sk.conf < 0.4 ? ' · ' + T('skew_unsure') : ''}</dd></dl>
     <p class="field-hint">${esc(sides)}</p>`;
   let ctl;
-  if (store.s.mode !== 'darktable') {
-    ctl = `<p class="field-hint">${T('skew_folder')}</p>`;
-  } else if (img.straighten != null) {
-    ctl = `<div class="callout callout-ok"><strong>${T('skew_on')} ${fmtDeg(img.straighten)}</strong>
+  const corrected = img.straighten != null && sk.straight && Math.abs(sk.straight.deg - img.straighten) < 0.15;
+  const target = store.s.mode === 'darktable' ? 'skew_on_h' : 'skew_on_folder_h';
+  if (img.straighten != null) {
+    ctl = `<div class="callout callout-ok"><strong>${T(store.s.mode === 'darktable' ? 'skew_on' : 'skew_on_folder')} ${fmtDeg(img.straighten)}</strong>
       <div class="chips" style="margin-top:.5rem;align-items:center">
         <label class="toolbar-label" for="ed-deg">${T('skew_angle')}</label>
         <input class="input" id="ed-deg" data-deg type="number" step="0.1" min="-10" max="10" value="${img.straighten}" style="width:6rem"${locked ? ' disabled' : ''}>
         <button type="button" class="btn btn-outline btn-sm" data-act="straighten-off"${locked ? ' disabled' : ''}>${T('skew_off')}</button></div>
-      <p class="field-hint" style="margin-top:.5rem">${T('skew_on_h')}</p></div>`;
+      <p class="field-hint" style="margin-top:.5rem">${T(target)}</p>
+      ${!img.manual_crop ? `<p class="field-hint">${T(corrected ? 'skew_corrected' : 'skew_transformed')}</p>` : ''}</div>`;
   } else {
     ctl = `<button type="button" class="btn ${strong ? 'btn-accent' : 'btn-outline'} btn-sm" data-act="straighten-on"${locked ? ' disabled' : ''}>${S('skew_do', fmtDeg(sk.deg))}</button>
-      <p class="field-hint">${T('skew_off_h')}</p>`;
+      <p class="field-hint">${T(store.s.mode === 'darktable' ? 'skew_off_h' : 'skew_off_folder_h')}</p>`;
   }
   return `<div><h3>${T('skew')}</h3>${rows}${ctl}</div>`;
 }
@@ -301,9 +304,29 @@ function drawSkewLines() {
     : '';
 }
 
+// Schalter "Tilt anwenden": zeigt das Bild geradegestellt (Crop dann im geraden Bild setzen).
+function syncTiltToggle() {
+  const btn = el().querySelector('[data-act="tilt-toggle"]');
+  if (!btn) return;
+  const img = cur();
+  const on = img.straighten != null;
+  btn.setAttribute('aria-pressed', String(on));
+  btn.disabled = !isEditable() || (!on && !(img.skew && img.skew.deg != null) && ed.lastDeg == null);
+}
+
+function toggleTilt() {
+  const img = cur();
+  if (!isEditable()) return;
+  if (img.straighten != null) { ed.lastDeg = img.straighten; return patch({ straighten: null }); }
+  const deg = ed.lastDeg != null ? ed.lastDeg : (img.skew && img.skew.deg);
+  if (deg == null) return toast(T('skew_none'), 'error');
+  return patch({ straighten: { deg } });
+}
+
 function syncCrop() {
   const img = cur();
   drawSkewLines();
+  syncTiltToggle();
   if (!ed.drag) ed.crop = img.crop ? img.crop.slice() : [0.05, 0.05, 0.95, 0.95];
   drawCrop();
   const det = el().querySelector('#ed-det');
@@ -483,6 +506,7 @@ function onClick(e) {
     else if (a === 'next') go(1);
     else if (a === 'cands') loadCandidates();
     else if (a === 'lines') { showLines = !showLines; drawSkewLines(); }
+    else if (a === 'tilt-toggle') toggleTilt();
     else if (a === 'reset') patch({ crop: null });
     else if (a === 'straighten-on') patch({ straighten: { deg: cur().skew.deg } });
     else if (a === 'straighten-off') patch({ straighten: null });
@@ -523,6 +547,7 @@ function onKey(e) {
   if (!isEditable()) return;
   const lower = k.length === 1 ? k.toLowerCase() : k;
   if (lower === 'z' && !e.ctrlKey) { e.preventDefault(); guard(() => api('POST', 'undo', { scope: 'session' })).then(hooks.refresh); return; }
+  if (lower === 't') { e.preventDefault(); toggleTilt(); return; }
   if (lower === 'r') { e.preventDefault(); patch({ crop: null }); return; }
   if (lower === '1' || lower === '2' || lower === '3') { e.preventDefault(); const g = ['green', 'yellow', 'red'][+lower - 1]; patch({ group: g === cur().auto_group ? null : g }); return; }
   if (lower === 'a') { e.preventDefault(); patch({ decision: 'accept' }); return; }

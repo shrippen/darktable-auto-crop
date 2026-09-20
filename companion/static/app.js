@@ -192,7 +192,7 @@ function renderActionbar() {
   $('actionbar').innerHTML = `<div class="actionbar-inner"><div class="group">
       <button type="button" class="btn btn-outline btn-sm" data-act="undo"${editable && s.can_undo ? '' : ' disabled'}>${T('undo')} · Z</button>
       <button type="button" class="btn btn-outline btn-sm" data-act="undo-sel"${editable && selectedIds().length ? '' : ' disabled'}>${T('undo_sel')}</button>
-      ${s.mode === 'darktable' ? `<button type="button" class="btn btn-outline btn-sm" data-act="straighten-sel" title="${esc(S('straighten_sel_h'))}"${editable && selectedIds().length ? '' : ' disabled'}>${T('straighten_sel')}</button>` : ''}
+      <button type="button" class="btn btn-outline btn-sm" data-act="straighten-sel" title="${esc(S('straighten_sel_h'))}"${editable && selectedIds().length ? '' : ' disabled'}>${T('straighten_sel')}</button>
       <span class="selcount">${T('to_apply')}: ${n.apply} · ${T('band_red')}: ${n.red}</span></div>
       <div class="group">${right}</div></div>`;
 }

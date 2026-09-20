@@ -288,9 +288,9 @@ class Session:
         return exp if os.path.isabs(exp) else self.path(exp)
 
     def straight_deg(self, img):
-        """Winkel, um den in darktable geradegestellt wird (None = aus). Nur im darktable-Modus."""
+        """Winkel, um den geradegestellt wird (None = aus): Vorschau hier, Drehung in darktable."""
         st = img.get("straighten")
-        if not st or self.mode != "darktable":
+        if not st:
             return None
         deg = float(st.get("deg") or 0.0)
         return deg if abs(deg) >= 0.01 else None
@@ -307,8 +307,19 @@ class Session:
             return None
         deg, size = self.straight_deg(img), img.get("export_size")
         if deg and size:
+            # korrigierte Erkennung (Pipeline-Schritt 3), sofern fuer diesen Winkel gerechnet
+            st = (det.get("skew") or {}).get("straight")
+            if st and abs(st["deg"] - deg) < 0.15:
+                return st["crop"]
             return crop_to_straight(det["crop"], size, deg)
         return det["crop"]
+
+    def orig_crop(self, img):
+        """Aktueller Crop im Originalrahmen (fuer Referenzen: dort liegt die Erkennung)."""
+        crop, deg, size = self.effective_crop(img), self.straight_deg(img), img.get("export_size")
+        if crop and deg and size:
+            return crop_from_straight(crop, size, deg)
+        return crop
 
     def group_of(self, img):
         """Gruppe: Nutzerentscheid, sonst aus der Konfidenz (Schwellen aus den Einstellungen)."""
@@ -400,7 +411,7 @@ class Session:
         if not (det and man and size):
             return None
         d = crop_to_pixels(det["crop"], *size)
-        m = crop_to_pixels(man["crop"], *size)
+        m = crop_to_pixels(self.orig_crop(img), *size)
         tol = REF_TOL_PX * max(size) / float(REF_TOL_EDGE)
         dev = {"dx": d["x"] - m["x"], "dy": d["y"] - m["y"],
                "dw": d["width"] - m["width"], "dh": d["height"] - m["height"], "tol": round(tol, 1)}
@@ -499,8 +510,6 @@ class Session:
             if patch.get("decision") not in (None, "accept", "skip"):
                 raise SessionError("ungueltige Entscheidung")
             if patch.get("straighten") is not None:
-                if self.mode != "darktable":
-                    raise SessionError("Geradestellen gibt es nur mit darktable")
                 if patch["straighten"].get("deg") != "auto":     # "auto" = je Bild der gemessene Wert
                     try:
                         deg = float(patch["straighten"].get("deg"))
@@ -828,6 +837,16 @@ class Session:
         except OSError:
             pass
 
+    def _tilt_fields(self, rev, img, deg, size):
+        """Schraeglage in den Referenzeintrag schreiben (oder alte Angaben entfernen)."""
+        if deg:
+            crop = self.effective_crop(img)
+            rev["tilt_deg"] = deg
+            rev["manual_crop_straight"] = {"crop": crop, "size": [round(v) for v in straight_size(size, deg)]}
+        else:
+            rev.pop("tilt_deg", None)
+            rev.pop("manual_crop_straight", None)
+
     def _finish_folder(self):
         """Ordnermodus (Kalibrierung ohne darktable): Korrekturen im Format von
         review_data/reviews.json ablegen und die Sitzung als angewendet fuehren."""
@@ -840,9 +859,13 @@ class Session:
                 key = f"{img['film']}/{img['filename']}"
                 man = img.get("manual")
                 det = img.get("detected")
+                deg = self.straight_deg(img)
                 if man and size:
                     rev = reviews.get(key, {})
-                    rev["manual_crop"] = crop_to_pixels(man["crop"], *size)
+                    # Referenz im Originalrahmen (wie die Erkennung); bei Geradestellen zusaetzlich
+                    # Winkel und der Crop im geraden Bild
+                    rev["manual_crop"] = crop_to_pixels(self.orig_crop(img), *size)
+                    self._tilt_fields(rev, img, deg, size)
                     if self.group_of(img) == "red":
                         rev["is_problem"] = True
                     reviews[key] = rev
@@ -850,7 +873,8 @@ class Session:
                     # "Akzeptieren" = der Nutzer hat den erkannten Crop gesehen und bestaetigt ihn als
                     # Referenz (Ground Truth); ohne das gingen richtige Crops fuer die Kalibrierung verloren.
                     rev = reviews.get(key, {})
-                    rev["manual_crop"] = crop_to_pixels(det["crop"], *size)
+                    rev["manual_crop"] = crop_to_pixels(self.orig_crop(img), *size)
+                    self._tilt_fields(rev, img, deg, size)
                     rev["confirmed"] = True
                     reviews[key] = rev
                 elif self.group_of(img) == "red" and img.get("group_override") == "red":

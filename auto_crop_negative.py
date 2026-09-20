@@ -1020,75 +1020,138 @@ def _line_fit_theil_sen(us, vs, tol):
     return s, float(np.mean(res < tol)), a
 
 
-def _edge_points(gray, x, y, w, h, side, n=36, strip=7):
-    """Sucht entlang einer Crop-Kante an n Stellen die staerkste Hell/Dunkel-
-    Grenze quer zur Kante. Fenster: +/- SKEW_MAX_DEG ueber die Kantenlaenge.
-    Liefert (u, v) = (Position entlang, Position quer)."""
-    ih, iw = gray.shape
+SKEW_NEAR_FRAC = 0.03    # Kante darf hoechstens so weit (Anteil der kurzen Crop-Seite) vom Crop entfernt liegen
+SKEW_NEAR_MIN_PX = 10
+
+
+def _search_side_line(edge_map, x, y, w, h, side):
+    """Sucht die staerkste gerade Kante *in der Naehe der Crop-Kante* (Hough-artig):
+    Geraden durch die Kantenmitte +/- ``near`` Pixel, Winkel +/- SKEW_MAX_DEG. Weiter
+    entfernte Kanten (Filmhalter, Rahmen der Aufnahmevorrichtung) kommen so gar nicht erst
+    in Frage. Liefert (u, v, score, dominance) der besten Geraden oder None.
+
+    u = Position entlang der Kante, v = Position quer dazu; edge_map = Betrag des Gradienten
+    quer zur Kante (fuer waagerechte Seiten in y, fuer senkrechte in x)."""
     horizontal = side in ("top", "bottom")
-    length = w if horizontal else h
-    band = int(length * 0.5 * math.tan(math.radians(SKEW_MAX_DEG))) + 10
+    ih, iw = edge_map.shape
+    length, start = (w, x) if horizontal else (h, y)
+    c = (y if side == "top" else y + h) if horizontal else (x if side == "left" else x + w)
+    near = max(SKEW_NEAR_MIN_PX, int(SKEW_NEAR_FRAC * min(w, h)))
+    angles = np.arange(-SKEW_MAX_DEG, SKEW_MAX_DEG + 1e-6, 0.25)
+    offs = np.arange(-near, near + 1, 2)
+    us = start + np.linspace(0.06, 0.94, 48) * length
+    umid = start + length / 2.0
+    slopes = np.tan(np.radians(angles))
+    v = c + offs[None, :, None] + slopes[:, None, None] * (us[None, None, :] - umid)
+    ui = np.broadcast_to(np.rint(us).astype(int)[None, None, :], v.shape)
+    vi = np.rint(v).astype(int)
+    hi_v, hi_u = (ih, iw) if horizontal else (iw, ih)
+    ok = (vi >= 0) & (vi < hi_v) & (ui >= 0) & (ui < hi_u)
+    vi_c, ui_c = np.clip(vi, 0, hi_v - 1), np.clip(ui, 0, hi_u - 1)
+    vals = edge_map[vi_c, ui_c] if horizontal else edge_map[ui_c, vi_c]
+    vals = np.where(ok, np.minimum(vals, 60.0), 0.0)
+    score = vals.sum(axis=2) / np.maximum(ok.sum(axis=2), 1)
+    ai, oi = np.unravel_index(int(np.argmax(score)), score.shape)
+    best = float(score[ai, oi])
+    base = float(np.median(score))
+    if best < 5.0:
+        return None
+    return {"slope": float(slopes[ai]), "off": float(offs[oi]), "c": c, "umid": umid,
+            "score": best, "dominance": best / max(base, 1e-6), "near": near}
+
+
+def _refine_side_line(edge_map, x, y, w, h, side, found, band=4):
+    """Feinanpassung: entlang der gefundenen Geraden je Stuetzstelle die staerkste Kante in
+    +/- band Pixel nehmen und robust (Theil-Sen) anpassen. Liefert (slope, intercept, inlier)."""
+    horizontal = side in ("top", "bottom")
+    ih, iw = edge_map.shape
+    length, start = (w, x) if horizontal else (h, y)
     us, vs = [], []
-    for t in np.linspace(0.1, 0.9, n):
+    for u in np.linspace(start + 0.06 * length, start + 0.94 * length, 40):
+        v0 = found["c"] + found["off"] + found["slope"] * (u - found["umid"])
+        lo, hi = int(round(v0)) - band, int(round(v0)) + band + 1
+        ui = int(round(u))
         if horizontal:
-            u = int(x + t * w)
-            c = y if side == "top" else y + h
-            lo, hi = max(0, c - band), min(ih, c + band)
-            x0, x1 = max(0, u - strip), min(iw, u + strip + 1)
-            if hi - lo < 8 or x1 <= x0:
+            if not (0 <= ui < iw) or lo < 0 or hi > ih:
                 continue
-            prof = gray[lo:hi, x0:x1].mean(axis=1)
+            col = edge_map[lo:hi, ui]
         else:
-            u = int(y + t * h)
-            c = x if side == "left" else x + w
-            lo, hi = max(0, c - band), min(iw, c + band)
-            y0, y1 = max(0, u - strip), min(ih, u + strip + 1)
-            if hi - lo < 8 or y1 <= y0:
+            if not (0 <= ui < ih) or lo < 0 or hi > iw:
                 continue
-            prof = gray[y0:y1, lo:hi].mean(axis=0)
-        g = np.abs(np.convolve(prof, [-1, -1, -1, 0, 1, 1, 1], mode="valid"))
-        if g.max() < 6:          # keine erkennbare Kante
+            col = edge_map[ui, lo:hi]
+        if col.max() < 4:
             continue
         us.append(u)
-        vs.append(lo + 3 + int(np.argmax(g)))
-    return us, vs
+        vs.append(lo + int(np.argmax(col)))
+    slope, inl, icpt = _line_fit_theil_sen(us, vs, tol=2.5)
+    if slope is None:
+        return None
+    return slope, icpt, inl
 
 
 def measure_skew(gray, x, y, w, h):
     """Schaetzt die Schraeglage des Filmrahmens in Grad aus den vier Kanten des
     (ungefaehren) Crops. Positiv = Bildinhalt im Uhrzeigersinn verdreht.
 
-    Jede Kante liefert eine robuste Geradenanpassung; die Winkel der Seiten
-    werden gewichtet gemittelt. 'conf' ist der Anteil uebereinstimmender
-    Kantenpunkte, 'spread' die Streuung der Seitenwinkel (Grad)."""
+    Jede Seite: erst Suche nach der staerksten geraden Kante *in der Naehe der Crop-Kante*
+    (siehe _search_side_line), dann Feinanpassung. Die Winkel der Seiten werden gewichtet
+    gemittelt. 'conf' ist der Anteil uebereinstimmender Kantenpunkte, 'spread' die Streuung der
+    Seitenwinkel (Grad), 'lines' die angepassten Kanten (normiert auf das Bild)."""
     g = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), 1.5)
-    sides, lines = {}, {}
+    gy = cv2.blur(np.abs(cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3)) / 4.0, (5, 5))
+    gx = cv2.blur(np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3)) / 4.0, (5, 5))
     ih, iw = gray.shape
+    sides, lines = {}, {}
     for side in ("top", "bottom", "left", "right"):
-        us, vs = _edge_points(g, x, y, w, h, side)
-        length = w if side in ("top", "bottom") else h
-        slope, inl, icpt = _line_fit_theil_sen(us, vs, tol=max(2.0, length * 0.004))
-        if slope is None or inl < 0.5 or abs(slope) > math.tan(math.radians(SKEW_MAX_DEG + 3)):
+        horizontal = side in ("top", "bottom")
+        emap = gy if horizontal else gx
+        found = _search_side_line(emap, x, y, w, h, side)
+        if not found or found["dominance"] < 1.8:
+            continue
+        fit = _refine_side_line(emap, x, y, w, h, side, found)
+        if not fit:
+            continue
+        slope, icpt, inl = fit
+        if inl < 0.5 or abs(slope) > math.tan(math.radians(SKEW_MAX_DEG + 1)):
+            continue
+        # muss weiterhin nahe der Crop-Kante liegen (Mitte der Kante)
+        umid = found["umid"]
+        if abs(icpt + slope * umid - found["c"]) > found["near"] + 4:
             continue
         ang = math.degrees(math.atan(slope))
-        sides[side] = (ang if side in ("top", "bottom") else -ang, inl)
-        # angepasste Kante als Strecke (normiert auf das Bild), ueber die Seitenlaenge des Crops
-        u0, u1 = (x, x + w) if side in ("top", "bottom") else (y, y + h)
+        sides[side] = (ang if horizontal else -ang, inl)
+        u0, u1 = (x, x + w) if horizontal else (y, y + h)
         p0, p1 = (u0, icpt + slope * u0), (u1, icpt + slope * u1)
-        pts = ([[p0[0], p0[1]], [p1[0], p1[1]]] if side in ("top", "bottom")
+        pts = ([[p0[0], p0[1]], [p1[0], p1[1]]] if horizontal
                else [[p0[1], p0[0]], [p1[1], p1[0]]])
         lines[side] = [[round(px / iw, 5), round(py / ih, 5)] for px, py in pts]
     if len(sides) < 2:
         return {"deg": None, "conf": 0.0, "spread": None, "sides": {}, "lines": {}}
-    angs = np.array([a for a, _ in sides.values()])
-    wts = np.array([i for _, i in sides.values()])
-    order = np.argsort(angs)
-    cw = np.cumsum(wts[order])
-    deg = float(angs[order][np.searchsorted(cw, cw[-1] / 2)])
+    def wmedian(items):
+        angs = np.array([v[0] for v in items])
+        wts = np.array([v[1] for v in items])
+        order = np.argsort(angs)
+        cw = np.cumsum(wts[order])
+        return float(angs[order][np.searchsorted(cw, cw[-1] / 2)])
+
+    # Ausreisser-Seiten (eine Kante hat etwas anderes erwischt) verwerfen: nur Seiten, die mit dem
+    # Median uebereinstimmen, zaehlen; mindestens zwei muessen sich einig sein
+    deg = wmedian(list(sides.values()))
+    kept = {k: v for k, v in sides.items() if abs(v[0] - deg) <= 0.8}
+    if len(kept) < 2:
+        return {"deg": None, "conf": 0.0, "spread": None,
+                "sides": {k: round(v[0], 2) for k, v in sides.items()}, "lines": {}}
+    deg = wmedian(list(kept.values()))
+    angs = np.array([v[0] for v in kept.values()])
     spread = float(np.max(np.abs(angs - deg)))
-    return {"deg": round(deg, 2), "conf": round(float(wts.mean()) * len(sides) / 4, 3),
+    if len(kept) == 2 and spread > 0.35:      # zwei uneinige Seiten: lieber nichts melden
+        return {"deg": None, "conf": 0.0, "spread": round(spread, 2),
+                "sides": {k: round(v[0], 2) for k, v in sides.items()}, "lines": {}}
+    wts = np.array([v[1] for v in kept.values()])
+    return {"deg": round(deg, 2), "conf": round(float(wts.mean()) * len(kept) / 4, 3),
             "spread": round(spread, 2),
-            "sides": {k: round(v[0], 2) for k, v in sides.items()}, "lines": lines}
+            "sides": {k: round(v[0], 2) for k, v in kept.items()},
+            "lines": {k: lines[k] for k in kept}}
 
 
 def _median(xs):

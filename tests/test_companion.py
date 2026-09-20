@@ -124,11 +124,6 @@ class SessionTest(unittest.TestCase):
         with self.assertRaises(sess.SessionError):
             self.s.patch_images([101], {"straighten": {"deg": "x"}})
 
-    def test_straighten_not_available_in_folder_mode(self):
-        f = make_session(os.path.join(self.tmp, "f"), mode="folder")
-        with self.assertRaises(sess.SessionError):
-            f.patch_images([101], {"straighten": {"deg": 1.0}})
-
     def test_manual_crop_makes_red_applicable(self):
         self.s.patch_images([103], {"crop": [0.2, 0.2, 0.8, 0.8]})
         self.assertTrue(self.s.will_apply(self.s.image(103)))
@@ -696,6 +691,34 @@ class FolderReferenceTest(unittest.TestCase):
         self.assertEqual((ref["n"], ref["hits"]), (3, 2))
         self.assertEqual(ref["by_group"]["green"], {"n": 2, "hits": 1})
         self.assertEqual(ref["by_group"]["yellow"], {"n": 1, "hits": 1})
+
+    def test_straightened_reference_is_written_in_original_frame_with_tilt(self):
+        rp = os.path.join(self.tmp, "reviews.json")
+        s = self.session([(0.9, None)], rp)
+        s.patch_images([1], {"straighten": {"deg": 4.0}})
+        crop_straight = s.effective_crop(s.image(1))                      # Vorgabe im geraden Bild
+        s.patch_images([1], {"crop": crop_straight})
+        s.finish()
+        rv = json.load(open(rp))["Film 9/i1.jpg"]
+        self.assertEqual(rv["tilt_deg"], 4.0)
+        self.assertEqual(rv["manual_crop_straight"]["crop"], crop_straight)
+        # Rueckrechnung ins Original: Mitte und Groesse des erkannten Crops (0.1..0.9)
+        self.assertAlmostEqual(rv["manual_crop"]["x"], 200, delta=4)
+        self.assertAlmostEqual(rv["manual_crop"]["width"], 1600, delta=4)
+        # ohne Geradestellen: keine Tilt-Felder
+        s2 = self.session([(0.9, None)], os.path.join(self.tmp, "r2.json"))
+        s2.patch_images([1], {"decision": "accept"})
+        s2.finish()
+        self.assertNotIn("tilt_deg", json.load(open(os.path.join(self.tmp, "r2.json")))["Film 9/i1.jpg"])
+
+    def test_corrected_detection_is_used_when_straightened(self):
+        s = self.session([(0.9, None)])
+        s.image(1)["detected"]["skew"] = {"deg": 3.0, "conf": 0.9,
+                                          "straight": {"deg": 3.0, "crop": [0.2, 0.2, 0.8, 0.8], "edge": 0.9}}
+        s.patch_images([1], {"straighten": {"deg": "auto"}})
+        self.assertEqual(s.effective_crop(s.image(1)), [0.2, 0.2, 0.8, 0.8])
+        s.patch_images([1], {"straighten": {"deg": 3.5}})                # anderer Winkel: nur umgerechnet
+        self.assertNotEqual(s.effective_crop(s.image(1)), [0.2, 0.2, 0.8, 0.8])
 
     def test_finish_writes_corrections_and_confirmed_crops(self):
         rp = os.path.join(self.tmp, "reviews.json")

@@ -139,8 +139,14 @@ def main():
             # Schraeglage: Messwert und (im Ordnermodus) nur Anzeige, kein Geradestellen-Knopf
             side = pg.inner_text("#ed-side").lower()
             assert ("tilt" in side or "schräglage" in side), "Schraeglage fehlt im Editor"
-            assert pg.locator("#ed-side [data-act='straighten-on']").count() == 0
-            assert pg.locator("#actionbar [data-act='straighten-sel']").count() == 0
+            assert pg.locator("#ed-toolbar [data-act='tilt-toggle']").count() == 1, "Tilt-Schalter fehlt"
+            # Tilt anwenden (Taste T): Vorschau wird geradegestellt, Kachel/Bild bekommen den Winkel
+            if not pg.locator("#ed-toolbar [data-act='tilt-toggle']").is_disabled():
+                pg.keyboard.press("t")
+                pg.wait_for_function("document.querySelector('#ed-toolbar [data-act=tilt-toggle]').getAttribute('aria-pressed')==='true'", timeout=8000)
+                assert "s=0" not in pg.get_attribute("#ed-img", "src"), "Bild nicht geradegestellt"
+                pg.keyboard.press("t")
+                pg.wait_for_function("document.querySelector('#ed-toolbar [data-act=tilt-toggle]').getAttribute('aria-pressed')==='false'", timeout=8000)
             shot("2-editor.png")
             h = pg.locator("#ed-crop .handle[data-h='se']")
             box = h.bounding_box()
