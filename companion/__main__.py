@@ -27,8 +27,11 @@ def main(argv=None):
     g.add_argument("--job")
     g.add_argument("--session")
     g.add_argument("--folder")
+    g.add_argument("--latest-folder", action="store_true",
+                   help="neueste Ordner-Sitzung fortsetzen (keine Neuanalyse)")
+    sp.add_argument("--films", nargs="+", help="Ordnermodus: nur diese Rollen (z. B. 33 34)")
     sp.add_argument("--results")
-    sp.add_argument("--reviews")
+    sp.add_argument("--reviews", nargs="+", help="Referenzdateien; die erste wird von \"Fertig\" geschrieben")
     sp.add_argument("--root", default=sess.DEFAULT_ROOT)
     sp.add_argument("--port", type=int, default=0)
     sp.add_argument("--open", action="store_true", help="Browser oeffnen")
@@ -46,14 +49,21 @@ def main(argv=None):
         print(f"{len(removed)} Sitzung(en) geloescht")
         return 0
 
-    if args.session:
+    if args.latest_folder:
+        folders = [d for d in sess.list_sessions(args.root)
+                   if (sess.read_json(os.path.join(d, "state.json"), {}) or {}).get("mode") == "folder"]
+        if not folders:
+            print("keine Ordner-Sitzung gefunden; erst ohne --latest-folder starten", file=sys.stderr)
+            return 1
+        s = sess.Session(folders[-1])
+    elif args.session:
         s = sess.Session(os.path.abspath(args.session))
     elif args.job:
         with open(args.job, encoding="utf-8") as f:
             job = json.load(f)
         s = sess.Session.create(job, args.root)
     else:
-        job = folder_job(args.folder, args.results, args.reviews)
+        job = folder_job(args.folder, args.results, args.reviews, films=args.films)
         s = sess.Session.create(job, args.root)
     sess.cleanup_old(args.root)                  # 14-Tage-Regel, nebenbei
     app = make_server(s, args.port, watch_pid=args.watch_pid,

@@ -105,7 +105,7 @@ Maßnahme Rätselraten.
 - [ ] Dabei **auch Film 33 und 34** vervollständigen (liegen schon als
       Testfotos vor, aber ohne Review-Daten - aktuell komplett ungenutzt
       für Kalibrierung/Auswertung).
-      **Stand: offen.** Film 33 (37 Bilder) und 34 (28) haben weiter keine Review-Daten, Film 32 nur 1 von 9. Erfassbar mit `python -m companion serve --folder Testphotos …`.
+      **Stand: offen (Handarbeit).** Film 33 (37 Bilder) und 34 (28) haben weiter keine Review-Daten, Film 32 nur 1 von 9. Werkzeug steht: `./start_review_gui.sh --films 33 34`; korrigieren oder mit „Akzeptieren“ bestätigen, „Fertig“ schreibt nach `reviews.json`.
 - [x] Für jeden neuen falschen Fall kurz notieren, *welches* der vier
       Symptome zutraf (Nachbarframe erwischt? Filmhalterkante statt
       Bildrand? Falsche Seite/Position bei richtiger Größe? Rolle mit

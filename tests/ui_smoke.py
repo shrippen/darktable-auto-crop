@@ -33,9 +33,17 @@ def main():
     src = os.path.join(ROOT, "Testphotos", "Film 27")
     for f in sorted(os.listdir(src))[:a.n]:
         os.symlink(os.path.join(src, f), os.path.join(film, f))
+    # Referenzen (aus review_data/reviews.json) fuer die verwendeten Bilder als Schreibdatei der Sitzung
+    reviews_path = os.path.join(tmp, "reviews.json")
+    real = json.load(open(os.path.join(ROOT, "review_data", "reviews.json")))
+    files = sorted(os.listdir(film))
+    no_ref = files[1]                      # dieses Bild hat bewusst KEINE Referenz (fuer "Akzeptieren")
+    keep = {f"Film 27/{f}" for f in files} - {f"Film 27/{no_ref}"}
+    json.dump({k: v for k, v in real.items() if k in keep}, open(reviews_path, "w"))
+    n_refs = len(json.load(open(reviews_path)))
     env = dict(os.environ, AUTOCROP_CACHE=os.path.join(tmp, "cache"))
     srv = subprocess.Popen([PY, "-m", "companion", "serve", "--folder", os.path.join(tmp, "photos"),
-                            "--root", os.path.join(tmp, "cache")],
+                            "--root", os.path.join(tmp, "cache"), "--reviews", reviews_path],
                            cwd=ROOT, env=env, stdout=subprocess.PIPE, text=True)
     url = srv.stdout.readline().strip()
     print("server", url)
@@ -64,6 +72,13 @@ def main():
             n = pg.locator("#bands .tile").count()
             assert n == a.n, f"{n} Kacheln statt {a.n}"
             print('galerie ok', flush=True)
+            # Ordnermodus als Algorithmus-Test: Referenz-Test-Hinweis mit Trefferzahl und Kachel-Marken
+            assert n_refs > 0, "keine Referenzen fuer die Testbilder"
+            notice = pg.locator("#notice").inner_text()
+            assert "reference test" in notice.lower(), notice
+            assert f"of {n_refs}" in notice, notice
+            assert pg.locator("#bands .tile .tile-badge").count() >= 1
+            assert pg.locator("#tb-sort option[value='ref_desc']").count() == 1
             shot = lambda name: pg.screenshot(path=os.path.join(a.shots, name), full_page=False) if a.shots else None
             if a.shots:
                 os.makedirs(a.shots, exist_ok=True)
@@ -93,6 +108,12 @@ def main():
             t2.drag_to(pg.locator("#bands .band[data-tier='red']"))
             pg.wait_for_function(f"document.querySelector('#bands .tile[data-id=\"{id2}\"]').closest('.band').dataset.tier==='red'", timeout=8000)
 
+            # Akzeptieren bestaetigt den erkannten Crop als Referenz (Taste A)
+            acc = pg.locator("#bands .tile", has=pg.locator(f".tile-name:text-is('{no_ref}')")).first
+            acc_id = acc.get_attribute("data-id")
+            acc.click()
+            pg.keyboard.press("a")
+            pg.wait_for_function(f"[...document.querySelectorAll('#bands .tile[data-id=\"{acc_id}\"] .tile-badge')].some(b => b.textContent.toLowerCase().includes('accept'))", timeout=8000)
             print('Editor', flush=True)
             # Editor: oeffnen, Griff ziehen
             pg.locator(f'#bands .tile[data-id="{id2}"]').dblclick()
@@ -141,6 +162,11 @@ def main():
             assert code == 409, f"erwartet 409, war {code}"
 
             print('Zurueck zur Pruefung', flush=True)
+            # Ordnermodus: "Fertig" hat Korrekturen UND bestaetigte Crops nach reviews.json geschrieben
+            rv = json.load(open(reviews_path))
+            key = f"Film 27/{no_ref}"
+            assert rv.get(key, {}).get("confirmed") is True, f"{key} nicht als bestaetigt gespeichert: {rv.get(key)}"
+            assert len(rv) >= n_refs
             # Zurueck zur Pruefung
             pg.locator("#actionbar [data-act='reopen']").click()
             pg.wait_for_selector("#dialog-host .dialog")
@@ -149,7 +175,7 @@ def main():
             assert "r2" in pg.locator("#phase-pill").inner_text().lower()
             assert pg.locator("#bands .tile").first.get_attribute("draggable") == "true"
             # Korrektur blieb erhalten
-            assert pg.locator(f'#bands .tile[data-id="{id2}"] .tile-badge.is-hl').count() == 1
+            assert pg.locator(f'#bands .tile[data-id="{id2}"] .tile-badge.is-hl').count() >= 1
 
             print('helles Theme', flush=True)
             # helles Theme + Deutsch

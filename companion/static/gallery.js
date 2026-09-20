@@ -49,7 +49,8 @@ function tileMarkup(img) {
 function updateTile(el, img) {
   const sig = JSON.stringify([img.group, img.confidence, img.crop, img.decision, img.status, img.error,
     img.proposal && (img.proposal.crop || img.proposal.error), img.manual_crop, img.export_size,
-    img.has_export, img.apply, store.selected.has(String(img.id)), store.s.phase]);
+    img.has_export, img.apply, img.ref && [img.ref.hit, img.ref.score], store.s.mode,
+    store.selected.has(String(img.id)), store.s.phase]);
   if (el._sig === sig) return;
   el._sig = sig;
   const sel = store.selected.has(String(img.id));
@@ -83,6 +84,11 @@ function updateTile(el, img) {
   const badges = [];
   if (img.manual_crop) badges.push(`<span class="tile-badge is-hl">${T('manual')}</span>`);
   if (img.proposal && img.proposal.crop) badges.push(`<span class="tile-badge is-hl">${T('proposal')}</span>`);
+  if (img.ref && store.s.mode === 'folder') {
+    badges.push(img.ref.hit
+      ? `<span class="tile-badge">${T('ref_hit')}</span>`
+      : `<span class="tile-badge is-hl">${T('ref_miss')} ${img.ref.score.toFixed(1)}×</span>`);
+  }
   if (img.decision === 'skip') badges.push(`<span class="tile-badge is-off">${T('skip')}</span>`);
   if (img.decision === 'accept') badges.push(`<span class="tile-badge">${T('accept')}</span>`);
   el.querySelector('.tile-badges').innerHTML = badges.join('');

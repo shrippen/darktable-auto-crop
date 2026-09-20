@@ -188,6 +188,13 @@ function confPartsHtml(img) {
   return `<div><h3>${T('conf_parts')}</h3><div class="cp">${rows}</div><p class="field-hint">${T('conf_parts_h')}</p></div>`;
 }
 
+function refDevHtml(img) {
+  if (!img.ref || store.s.mode !== 'folder') return '';
+  const r = img.ref, f = (v) => (v > 0 ? '+' : '') + v;
+  return `<div class="callout ${r.hit ? 'callout-ok' : 'callout-warn'}"><strong>${T('ref_dev')}: ${T(r.hit ? 'ref_hit' : 'ref_miss')}</strong>
+    <div class="notice-list">${T('ref_dev_v', f(r.dx), f(r.dy), f(r.dw), f(r.dh), r.tol)}</div></div>`;
+}
+
 function renderSide() {
   const img = cur();
   const list = filmImages();
@@ -218,6 +225,7 @@ function renderSide() {
       <button type="button" class="btn btn-outline btn-sm" data-act="reset"${locked || !img.manual_crop ? ' disabled' : ''}>${T('reset_crop')} · R</button>
       <button type="button" class="btn btn-outline btn-sm" data-act="undo"${locked ? ' disabled' : ''}>${T('undo')} · Z</button>
     </div>
+    ${refDevHtml(img)}
     ${confPartsHtml(img)}
     ${reasons ? `<div><h3>${T('reasons')}</h3><ul class="reasons">${reasons}</ul></div>` : ''}
     <p class="keyhint">${T('k_move')}<br>${T('k_group')}<br>${T('k_accept')}</p>`;

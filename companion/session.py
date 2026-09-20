@@ -43,6 +43,10 @@ DEFAULT_SETTINGS = {
 }
 
 
+REF_TOL_PX = 60          # wie tools/eval.py
+REF_TOL_EDGE = 2000      # ... bei dieser langen Bildkante; auf andere Groessen proportional skaliert
+
+
 class SessionError(Exception):
     """Fachlicher Fehler mit HTTP-Status (409 gesperrt, 400 ungueltig, 404)."""
 
@@ -274,6 +278,7 @@ class Session:
             "crop": self.effective_crop(img),
             "decision": img.get("decision"),
             "proposal": self._public_proposal(img),
+            "ref": self.ref_deviation(img),
             "apply": self.will_apply(img),
             "export_size": img.get("export_size"),
             "has_export": bool(self.export_path(img)
@@ -289,6 +294,24 @@ class Session:
             return {"error": p["error"]}
         return {"crop": p["crop"], "confidence": p.get("confidence"),
                 "method": p.get("method"), "reasons": p.get("reasons", [])}
+
+    def ref_deviation(self, img):
+        """Abweichung der automatischen Erkennung von der Referenz (manueller/bestaetigter Crop).
+
+        Liefert None ohne beides. Pixel beziehen sich auf das analysierte Bild; ``hit`` wie in
+        tools/eval.py (|dW|,|dH| < Toleranz), ``strict`` zusaetzlich |dX|,|dY|."""
+        det, man, size = img.get("detected"), img.get("manual"), img.get("export_size")
+        if not (det and man and size):
+            return None
+        d = crop_to_pixels(det["crop"], *size)
+        m = crop_to_pixels(man["crop"], *size)
+        tol = REF_TOL_PX * max(size) / float(REF_TOL_EDGE)
+        dev = {"dx": d["x"] - m["x"], "dy": d["y"] - m["y"],
+               "dw": d["width"] - m["width"], "dh": d["height"] - m["height"], "tol": round(tol, 1)}
+        dev["hit"] = abs(dev["dw"]) < tol and abs(dev["dh"]) < tol
+        dev["strict"] = dev["hit"] and abs(dev["dx"]) < tol and abs(dev["dy"]) < tol
+        dev["score"] = round(max(abs(dev[k]) for k in ("dx", "dy", "dw", "dh")) / tol, 2)
+        return dev
 
     def _auto_group(self, img):
         keep = img.get("group_override")
@@ -316,7 +339,15 @@ class Session:
         n = {"total": 0, "apply": 0, "red": 0, "skipped": 0, "yellow": 0,
              "green": 0, "pending": 0, "error": 0, "changed": 0}
         applied = (read_json(self.path("applied.json"), {}) or {}).get("images", {})
+        ref = {"n": 0, "hits": 0, "by_group": {g: {"n": 0, "hits": 0} for g in GROUPS}}
         for img in self.state["images"].values():
+            dev = self.ref_deviation(img)
+            if dev:
+                g0 = self._auto_group(img)
+                ref["n"] += 1
+                ref["hits"] += int(dev["hit"])
+                ref["by_group"][g0]["n"] += 1
+                ref["by_group"][g0]["hits"] += int(dev["hit"])
             n["total"] += 1
             g = self.group_of(img)
             n[g] += 1
@@ -330,6 +361,7 @@ class Session:
                 n["apply"] += 1
             if self._entry_changed(img, applied.get(str(img["id"]))):
                 n["changed"] += 1
+        n["ref"] = ref
         return n
 
     # -- Mutationen (nur in editierbaren Phasen) -----------------------------
@@ -667,11 +699,19 @@ class Session:
                 size = img.get("export_size")
                 key = f"{img['film']}/{img['filename']}"
                 man = img.get("manual")
+                det = img.get("detected")
                 if man and size:
                     rev = reviews.get(key, {})
                     rev["manual_crop"] = crop_to_pixels(man["crop"], *size)
                     if self.group_of(img) == "red":
                         rev["is_problem"] = True
+                    reviews[key] = rev
+                elif img.get("decision") == "accept" and det and size:
+                    # "Akzeptieren" = der Nutzer hat den erkannten Crop gesehen und bestaetigt ihn als
+                    # Referenz (Ground Truth); ohne das gingen richtige Crops fuer die Kalibrierung verloren.
+                    rev = reviews.get(key, {})
+                    rev["manual_crop"] = crop_to_pixels(det["crop"], *size)
+                    rev["confirmed"] = True
                     reviews[key] = rev
                 elif self.group_of(img) == "red" and img.get("group_override") == "red":
                     rev = reviews.get(key, {"manual_crop": None})

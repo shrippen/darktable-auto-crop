@@ -22,7 +22,12 @@ def _images_in(folder):
     return found
 
 
-def folder_job(folder, results=None, reviews=None, settings=None):
+def _film_matches(film, wanted):
+    """'33' passt auf 'Film 33'; ein voller Name passt exakt."""
+    return any(film == w or film.endswith(" " + w) for w in wanted)
+
+
+def folder_job(folder, results=None, reviews=None, settings=None, films=None):
     """Baut einen Job aus einem Bilderordner. ``results`` (review_data/results.json)
     liefert vorhandene Erkennungen, ``reviews`` (review_data/reviews.json) die
     manuellen Referenz-Crops und Problemmarkierungen."""
@@ -35,9 +40,22 @@ def folder_job(folder, results=None, reviews=None, settings=None):
             p = r.get("full_path") or r.get("input_file")
             if p:
                 res_by_path[os.path.abspath(p)] = r
-    revs = read_json(reviews, {}) if reviews and os.path.exists(reviews) else {}
+    # ``reviews``: eine Datei oder eine Liste. Die ERSTE ist die Schreib-Datei ("Fertig" schreibt dorthin);
+    # weitere (z. B. feedback_gt.json) werden nur gelesen. Bei doppelten Bildern gewinnt die erste.
+    review_files = [reviews] if isinstance(reviews, str) else list(reviews or [])
+    revs = {}
+    for rf in reversed(review_files):
+        if os.path.exists(rf):
+            for k, v in (read_json(rf, {}) or {}).items():
+                if isinstance(v, dict) and (v.get("manual_crop") or v.get("is_problem")):
+                    revs[k] = v
     images = []
-    for i, path in enumerate(_images_in(folder), start=1):
+    paths = _images_in(folder)
+    if films:
+        paths = [p for p in paths if _film_matches(os.path.basename(os.path.dirname(p)), films)]
+        if not paths:
+            raise SessionError(f"keine Bilder fuer Rollen {films} in {folder}", 404)
+    for i, path in enumerate(paths, start=1):
         film = os.path.basename(os.path.dirname(path))
         item = {"id": i, "path": path, "film": film, "export": path}
         r = res_by_path.get(os.path.abspath(path))
@@ -59,4 +77,5 @@ def folder_job(folder, results=None, reviews=None, settings=None):
                 item["group_override"] = "red"
         images.append(item)
     return {"mode": "folder", "folder": folder, "results": results,
-            "reviews": reviews, "settings": settings or {}, "images": images}
+            "reviews": review_files[0] if review_files else None,
+            "settings": settings or {}, "images": images}

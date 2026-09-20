@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 
@@ -578,6 +579,85 @@ class FeedbackReportTest(unittest.TestCase):
         gt = json.load(open(out))["Film X/img1.arw"]
         self.assertEqual(gt["manual_crop"], {"x": 300, "y": 600, "width": 2400, "height": 1200})
         self.assertEqual(gt["export_size"], [3000, 2000])
+
+
+class FolderReferenceTest(unittest.TestCase):
+    """Ordnermodus als Algorithmus-Test: Referenz-Abweichung, bestaetigte Crops, Rollenfilter."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def session(self, items, reviews_path=None):
+        imgs = []
+        for i, (conf, manual) in enumerate(items, start=1):
+            p = os.path.join(self.tmp, "Film 9", f"i{i}.jpg")
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            open(p, "wb").write(b"x")
+            it = {"id": i, "path": p, "export": p, "export_size": [2000, 3000],
+                  "detected": detected(conf, (0.1, 0.1, 0.9, 0.9))}
+            if manual:
+                it["manual"] = {"crop": manual}
+            imgs.append(it)
+        job = {"mode": "folder", "images": imgs, "reviews": reviews_path}
+        s = sess.Session.create(job, os.path.join(self.tmp, "root"))
+        s.mark_analysis_done()
+        return s
+
+    def test_reference_deviation_and_summary_by_group(self):
+        # detected 0.1..0.9 -> 1600x2400 px; Toleranz bei 3000 px langer Kante = 90 px
+        s = self.session([
+            (0.9, [0.1, 0.1, 0.9, 0.9]),                 # gruen, exakt -> Treffer
+            (0.9, [0.1, 0.1, 0.9, 0.7]),                 # gruen, Hoehe 600 px zu klein -> Abweichung
+            (0.4, [0.1, 0.1, 0.895, 0.9]),               # gelb, ~10 px -> Treffer
+            (0.1, None)])                                # rot, keine Referenz
+        pub = {i["id"]: i for i in s.public_state()["images"]}
+        self.assertTrue(pub[1]["ref"]["hit"])
+        self.assertFalse(pub[2]["ref"]["hit"])
+        self.assertEqual(pub[2]["ref"]["dh"], 600)
+        self.assertGreater(pub[2]["ref"]["score"], 1)
+        self.assertIsNone(pub[4]["ref"])
+        ref = s.public_state()["summary"]["ref"]
+        self.assertEqual((ref["n"], ref["hits"]), (3, 2))
+        self.assertEqual(ref["by_group"]["green"], {"n": 2, "hits": 1})
+        self.assertEqual(ref["by_group"]["yellow"], {"n": 1, "hits": 1})
+
+    def test_finish_writes_corrections_and_confirmed_crops(self):
+        rp = os.path.join(self.tmp, "reviews.json")
+        json.dump({"Film 9/i9.jpg": {"manual_crop": {"x": 1, "y": 2, "width": 3, "height": 4}}}, open(rp, "w"))
+        s = self.session([(0.9, None), (0.9, None), (0.9, None)], rp)
+        s.patch_images([1], {"decision": "accept"})                     # bestaetigt
+        s.patch_images([2], {"crop": [0.2, 0.2, 0.8, 0.8]})            # korrigiert
+        s.finish()
+        rv = json.load(open(rp))
+        self.assertEqual(rv["Film 9/i1.jpg"]["manual_crop"], {"x": 200, "y": 300, "width": 1600, "height": 2400})
+        self.assertTrue(rv["Film 9/i1.jpg"]["confirmed"])               # aus dem erkannten Crop
+        self.assertEqual(rv["Film 9/i2.jpg"]["manual_crop"], {"x": 400, "y": 600, "width": 1200, "height": 1800})
+        self.assertNotIn("confirmed", rv["Film 9/i2.jpg"])
+        self.assertNotIn("Film 9/i3.jpg", rv)                           # weder geprueft noch korrigiert
+        self.assertIn("Film 9/i9.jpg", rv)                              # bestehende Eintraege bleiben
+
+    def test_folder_job_films_filter_and_multiple_review_files(self):
+        root = os.path.join(self.tmp, "photos")
+        for film in ("Film 1", "Film 33", "Film 34"):
+            os.makedirs(os.path.join(root, film))
+            for n in ("a.jpg", "b.jpg"):
+                open(os.path.join(root, film, n), "wb").write(b"x")
+        job = folder_job(root, films=["33", "34"])
+        self.assertEqual({i["film"] for i in job["images"]}, {"Film 33", "Film 34"})
+        with self.assertRaises(sess.SessionError):
+            folder_job(root, films=["99"])
+        # zwei Referenzdateien: die erste gewinnt, die zweite ergaenzt
+        a, b = os.path.join(self.tmp, "a.json"), os.path.join(self.tmp, "b.json")
+        m = lambda x: {"manual_crop": {"x": x, "y": 0, "width": 10, "height": 10}}
+        json.dump({"Film 1/a.jpg": m(1)}, open(a, "w"))
+        json.dump({"Film 1/a.jpg": m(2), "Film 1/b.jpg": m(3)}, open(b, "w"))
+        with unittest.mock.patch("companion.sources.image_size", return_value=[100, 100]):
+            job = folder_job(root, reviews=[a, b], films=["1"])
+        by = {os.path.basename(i["path"]): i for i in job["images"]}
+        self.assertEqual(job["reviews"], a)
+        self.assertEqual(by["a.jpg"]["manual"]["crop"][0], 0.01)        # x=1 aus der ersten Datei
+        self.assertEqual(by["b.jpg"]["manual"]["crop"][0], 0.03)        # nur in der zweiten
 
 
 LUA = shutil.which("lua5.4") or shutil.which("lua")

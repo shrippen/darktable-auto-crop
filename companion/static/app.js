@@ -83,7 +83,13 @@ function renderNotice() {
       ${errs.length ? `<ul class="notice-list">${errs.slice(0, 8).map(([id, v]) => `<li>${esc((byId(id) || {}).filename || id)}: ${esc(v.message || '')}</li>`).join('')}</ul>` : ''}
       </div>${reopen}</div>`;
   } else if (s.mode === 'folder') {
-    host.innerHTML = `<div class="callout notice"><div>${T('phase_hint_folder')}</div></div>`;
+    const ref = s.summary.ref;
+    const pct = ref.n ? Math.round((100 * ref.hits) / ref.n) : 0;
+    const groups = ['green', 'yellow', 'red'].filter((g) => ref.by_group[g].n)
+      .map((g) => T('ref_group', S('band_' + g), ref.by_group[g].hits, ref.by_group[g].n)).join(' · ');
+    host.innerHTML = `<div class="callout notice"><div><strong>${T('ref_test')}</strong>
+      ${ref.n ? `<div class="notice-list">${T('ref_hits', ref.hits, ref.n, pct)}${groups ? ' · ' + groups : ''}</div>` : ''}
+      <div class="field-hint" style="margin-top:.4rem">${T('ref_hint')}</div></div></div>`;
   } else host.innerHTML = '';
 }
 
@@ -104,7 +110,8 @@ function renderToolbar() {
   const dis = editable ? '' : ' disabled';
   const sel = selectedIds();
   const proposals = s.images.filter((i) => i.proposal && i.proposal.crop).length;
-  const sortOpts = [['name', 'sort_name'], ['conf_asc', 'sort_conf_asc'], ['conf_desc', 'sort_conf_desc']]
+  const sortOpts = [['name', 'sort_name'], ['conf_asc', 'sort_conf_asc'], ['conf_desc', 'sort_conf_desc'],
+    ...(s.mode === 'folder' ? [['ref_desc', 'sort_ref_desc']] : [])]
     .map(([v, k]) => `<option value="${v}"${store.sort === v ? ' selected' : ''}>${esc(S(k))}</option>`).join('');
   $('toolbar').innerHTML = `<div class="toolbar">
     <div class="group">

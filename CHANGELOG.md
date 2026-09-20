@@ -18,6 +18,13 @@
 - `tools/calibrate.py --loo`: Formelvergleich per Leave-One-Film-Out. `tools/signal_probe.py`: Trennschärfe einzelner Signale.
 - Korrektur: `tools/feedback_report.py` skaliert die Toleranz jetzt auf die Exportgröße (60 px gelten bei 2000 px langer Kante).
 
+### Neu: Algorithmus-Testlauf
+- `./start_review_gui.sh` startet jetzt die Web-UI im Ordnermodus auf `Testphotos/` und analysiert mit derselben Pipeline
+  wie in darktable (`--films`, `--resume`; das alte Tk-GUI mit eigener Pipeline nur noch mit `--tk`).
+- **Referenz-Test** in der UI: Treffer gegen die Referenz (gesamt und je Gruppe), Marken auf den Kacheln, Sortierung
+  nach Abweichung. „Akzeptieren“ speichert den erkannten Crop als bestätigte Referenz (`confirmed`), „Fertig“ schreibt
+  Korrekturen und Bestätigungen nach `review_data/reviews.json`. Mehrere Referenzdateien möglich (`--reviews a.json b.json`).
+
 ### Bestätigt (Praxistest)
 - Ablauf mit 36 Raw-Fotos inkl. Übergabe von Crops und Farben, erneutem Korrigieren, „Server stoppen“
   und automatischem Stopp beim Schließen von darktable.

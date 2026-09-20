@@ -92,12 +92,19 @@ Danach Darktable neu starten. Das Plugin erscheint als Panel "Auto Crop Negative
 4. In darktable **Plan anwenden** (wirkt erst nach „Fertig“). Nicht zufrieden? **Prüfung öffnen** und in der
    Web-UI **Zurück zur Prüfung**; erneutes Anwenden ändert nur, was sich geändert hat.
 
-Ohne darktable (Kalibrieren auf einem Bilderordner, ersetzt langfristig `review_gui.py`):
+**Algorithmus testen und Ground Truth erzeugen (ohne darktable):**
 
 ```bash
-.venv/bin/python -m companion serve --folder Testphotos \
-    --results review_data/results.json --reviews review_data/reviews.json --open
+./start_review_gui.sh                 # analysiert Testphotos/ mit derselben Pipeline wie in darktable
+./start_review_gui.sh --films 33 34   # nur diese Rollen (z. B. noch ungelabelte)
+./start_review_gui.sh --resume        # letzte Ordner-Sitzung fortsetzen (keine Neuanalyse)
 ```
+
+In der Web-UI zeigt der **Referenz-Test**, wie viele erkannte Crops innerhalb der Toleranz (60 px bei 2000 px langer
+Kante) von deiner Referenz liegen (gesamt und je Gruppe), und Kacheln tragen die Marke *Treffer*/*Abweichung*
+(sortierbar nach Abweichung). Korrigiere falsche Crops im Editor oder bestätige richtige mit **Akzeptieren** (Taste `A`;
+nur akzeptieren, was du gesehen hast). **Fertig** schreibt Korrekturen und bestätigte Crops nach `review_data/reviews.json`
+(`git diff` zeigt die Änderungen). Danach messen: `tools/eval.py`. Das alte Tk-GUI läuft nur noch als `./start_review_gui.sh --tk`.
 
 Im Plugin-Bereich von darktable zeigt eine große Statuszeile, ob der Server **startet**, **läuft** oder **gestoppt** ist. Die URL steht als Knopf darunter (Klick öffnet den Browser), dazu ein **Server stoppen**-Knopf. Der Server beendet sich außerdem selbst, wenn darktable geschlossen wird oder 30 Minuten lang keine Aktivität in der Web-UI war (die UI warnt fünf Minuten vorher). Die Sitzung bleibt dabei erhalten: **Prüfung öffnen** startet ihn wieder.
 
