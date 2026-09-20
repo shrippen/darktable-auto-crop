@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 crop_queue.json
 *.log
+Testphotos/
