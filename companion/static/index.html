@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auto Crop Negative</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/vendor/styles.css">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/vendor/shrippen.js"></script>
+<script src="/static/theme.js"></script>
+</head>
+<body>
+<nav class="nav brand-on">
+  <div class="nav-inner">
+    <a class="nav-brand" href="#"><img src="/static/icon.svg" alt="" width="24" height="24"><span>Auto Crop Negative</span></a>
+    <div class="nav-links">
+      <span id="phase-pill"></span>
+      <span class="nav-session" id="session-label"></span>
+      <div class="seg" id="theme-seg" role="group" aria-label="Theme">
+        <button type="button" data-theme-set="dark" aria-pressed="true">◐</button>
+        <button type="button" data-theme-set="light" aria-pressed="false">○</button>
+      </div>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en" aria-pressed="true">EN</button>
+        <button type="button" data-lang="de" aria-pressed="false">DE</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<main class="app" id="main">
+  <section id="flow" class="app-block"></section>
+  <section id="summary" class="summary app-block"></section>
+  <div id="notice" class="app-block"></div>
+  <div id="progress" class="app-block"></div>
+  <div id="toolbar" class="app-block"></div>
+  <details id="settings" class="app-block settings" data-lockable-group>
+    <summary id="settings-summary"></summary>
+    <div id="settings-body"></div>
+  </details>
+  <div id="bands" class="bands app-block"></div>
+  <details id="logbox" class="app-block">
+    <summary id="log-summary"></summary>
+    <pre class="codeblock" id="log"></pre>
+  </details>
+  <p class="keyhint app-block" id="keyhint"></p>
+</main>
+
+<div class="actionbar" id="actionbar"></div>
+<div id="editor" class="editor" hidden></div>
+<div id="dialog-host"></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
