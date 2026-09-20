@@ -481,10 +481,14 @@ Abweichungen vom Entwurf:
 - **Lua-Statuszeile:** Der bisherige Zugriff `lt_widget.children[10]` traf in Wahrheit den Undo-Knopf; die Statuszeile ist jetzt ein benanntes Widget.
 - Neu im Plan: `was_applied` je Plan-Eintrag, damit ein nach der Rückkehr nicht mehr gewollter Crop wieder ausgeschaltet wird.
 
-Noch nicht geprüft (braucht die darktable-GUI bzw. echte Raws):
-1. Ob `dt.styles.apply()` in der GUI denselben Historieneintrag erzeugt wie im `darktable-cli`-Test.
-2. Was `image.width/height` bei gedrehten Raws liefert (das neue Anwenden nutzt sie nicht mehr).
-3. Ende-zu-Ende-Lauf mit echten Raws und Fingerprint-Verhalten in einer echten Bibliothek.
+Praxistest 2026-09-20 (36 Raw-Fotos, echte darktable-Bibliothek): Import, Analyse, Korrigieren,
+Übergabe von Crops **und** Farblabels und erneutes Korrigieren (Revision 2, Differenz-Anwenden)
+funktionieren. Damit bestätigt: `dt.styles.apply()` in der GUI, „Plan anwenden“, Rückkehr in die Prüfung.
+
+Weiterhin nicht gezielt geprüft:
+1. Was `image.width/height` bei gedrehten Raws liefert (das Anwenden nutzt sie nicht mehr).
+2. Ob das `exit`-Ereignis beim Schließen von darktable den Server stoppt (PID-Überwachung ist das zweite Netz).
+3. Der Knopf „Crop & Farben zurücksetzen“ und „Server stoppen“ in der GUI.
 4. Der Lua-Test läuft gegen einen Stub der darktable-API, nicht gegen darktable selbst.
 
 ### Nachtrag: Serverlebensdauer und Anzeige in darktable

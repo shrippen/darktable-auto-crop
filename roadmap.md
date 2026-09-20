@@ -9,6 +9,30 @@ Konfidenzwert, dem man nicht vertrauen kann, ist schlimmer als gar keiner,
 weil er falsches Vertrauen erzeugt. Diese Roadmap sortiert die Ursachen
 und schlägt eine Reihenfolge vor, in der man das angeht.
 
+## Praxistest der Companion-UI (2026-09-20)
+
+Erster Durchlauf in einer echten darktable-Bibliothek: **36 Raw-Fotos** wurden
+importiert, analysiert, in der Web-UI eingestellt und korrigiert und dann an darktable
+übergeben, **Crops und Farblabels**. Auch das **nochmalige Korrigieren** (Zurück zur
+Prüfung, zweite Revision, erneutes Anwenden) hat funktioniert.
+
+Bestätigt damit (vorher offene Integrationsrisiken, siehe `companion-ui-plan.md`
+Abschnitt 13): Export aus darktable, Übergabe per `plan.json`, Anwenden über
+`dt.styles` in der GUI, Differenz-Anwenden nach Revision 2.
+
+Folgen für diese Roadmap:
+- Die **technische** Integration ist kein Engpass mehr; die fachlichen Phasen unten
+  (Trefferrate, Konfidenz) bleiben der Kern.
+- Erstmals gibt es **Ground Truth aus echter Nutzung** auf einer bisher unbekannten Rolle
+  (Phase 0/1/5): Die Sitzung schreibt jede Korrektur nach `feedback.jsonl`
+  (Crop-Korrekturen, Gruppenwechsel, mit erkanntem Crop und Konfidenz). Beim Test
+  fielen je Sitzung etwa fünf manuelle Crops und rund zwanzig Gruppenwechsel an.
+  **Achtung:** Sitzungen werden nach 14 Tagen aus `~/.cache/auto-crop-negative/`
+  gelöscht. Vorher die wertvollen `feedback.jsonl`/`state.json` in
+  `review_data/` sichern oder nach `reviews.json` übernehmen.
+- Phase 5 (Feedback-Schleife): das Werkzeug steht, es fehlt die **Auswertung**
+  (Feedback → `tools/eval.py`/`tools/calibrate.py`).
+
 ## Ausgangslage: warum "grün" trotzdem falsch sein kann
 
 Die aktuelle Konfidenzformel (`apply_film_consensus()` in
