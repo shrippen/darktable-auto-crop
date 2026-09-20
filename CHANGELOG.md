@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Neu
+- Editor zeigt die vier Faktoren der Konfidenz (Größenübereinstimmung, Kantenklarheit, Film-Vertrauen,
+  Belichtung) mit dem schwächsten hervorgehoben; sie stehen auch im `feedback.jsonl`.
+- `tools/feedback_report.py`: Auswertung des Feedbacks aus den Sitzungen (Korrekturrate je Gruppe,
+  falsches Grün mit Symptom, schwächster Faktor, Gruppenwechsel, Export als Ground Truth).
+
+### Bestätigt (Praxistest)
+- Ablauf mit 36 Raw-Fotos inkl. Übergabe von Crops und Farben, erneutem Korrigieren, „Server stoppen“
+  und automatischem Stopp beim Schließen von darktable.
+
 ## 0.1 (2026-09-20)
 
 Erste Version mit Companion-UI (Web-Oberfläche) vor der Übergabe an darktable.

@@ -485,11 +485,12 @@ Praxistest 2026-09-20 (36 Raw-Fotos, echte darktable-Bibliothek): Import, Analys
 Übergabe von Crops **und** Farblabels und erneutes Korrigieren (Revision 2, Differenz-Anwenden)
 funktionieren. Damit bestätigt: `dt.styles.apply()` in der GUI, „Plan anwenden“, Rückkehr in die Prüfung.
 
+Ebenfalls bestätigt: der Stopp des Servers über den Knopf „Server stoppen“ und automatisch beim Schließen von darktable.
+
 Weiterhin nicht gezielt geprüft:
 1. Was `image.width/height` bei gedrehten Raws liefert (das Anwenden nutzt sie nicht mehr).
-2. Ob das `exit`-Ereignis beim Schließen von darktable den Server stoppt (PID-Überwachung ist das zweite Netz).
-3. Der Knopf „Crop & Farben zurücksetzen“ und „Server stoppen“ in der GUI.
-4. Der Lua-Test läuft gegen einen Stub der darktable-API, nicht gegen darktable selbst.
+2. Der Knopf „Crop & Farben zurücksetzen“ in der GUI.
+3. Der Lua-Test läuft gegen einen Stub der darktable-API, nicht gegen darktable selbst.
 
 ### Nachtrag: Serverlebensdauer und Anzeige in darktable
 - Im Plugin-Bereich: Statuszeile als `section_label` (`◐ SERVER STARTET …` / `▶ SERVER LÄUFT` / `■ Server gestoppt`; Label-Widgets in darktables Lua-GUI kennen kein Markup, also keine Farben oder Größen), URL als Knopf, Stop-Knopf, Hinweis auf die Auto-Stopp-Regeln.

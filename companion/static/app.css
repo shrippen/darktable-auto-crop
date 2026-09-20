@@ -112,3 +112,10 @@ button:disabled, .btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Nav auch im hellen Theme lesbar (das System setzt hier einen festen dunklen Grund) */
 .nav { background: var(--bg-void); }
+
+/* Konfidenz-Faktoren im Editor */
+.cp { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .4rem; }
+.cp-row { display: grid; grid-template-columns: 1fr auto; gap: .15rem .6rem; font-family: var(--font-mono); font-size: .72rem; color: var(--fg2); }
+.cp-row b { font-weight: 500; color: var(--fg0); font-variant-numeric: tabular-nums; }
+.cp-row em { color: var(--hl); font-style: normal; letter-spacing: .06em; }
+.cp-row .progress-bar { grid-column: 1 / -1; height: 5px; }

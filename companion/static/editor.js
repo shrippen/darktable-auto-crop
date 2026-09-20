@@ -171,6 +171,23 @@ function renderStrip() {
   if (active && active.scrollIntoView) active.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 
+// Die vier Faktoren der Konfidenz (siehe roadmap.md): zeigt bei einem falschen "gruenen"
+// Ergebnis sofort, welcher Faktor die Fehleinschaetzung verursacht hat.
+const PARTS = ['size_agree', 'edge_score', 'film_trust', 'exposure_factor'];
+function confPartsHtml(img) {
+  const cp = img.conf_parts;
+  if (!cp) return `<div><h3>${T('conf_parts')}</h3><p class="field-hint">${T('cp_none')}</p></div>`;
+  const vals = PARTS.filter((k) => typeof cp[k] === 'number');
+  const min = Math.min(...vals.map((k) => cp[k]));
+  const rows = vals.map((k) => {
+    const v = cp[k];
+    const weak = v === min && vals.length > 1;
+    return `<div class="cp-row"><span>${T('cp_' + k)}${weak ? ` <em>· ${T('cp_weakest')}</em>` : ''}</span><b>${v.toFixed(2)}</b>
+      <div class="progress-bar"><i data-tier="${v >= 0.7 ? 'green' : v >= 0.4 ? 'yellow' : 'red'}" style="--p:${Math.round(clamp(v) * 100)}%"></i></div></div>`;
+  }).join('');
+  return `<div><h3>${T('conf_parts')}</h3><div class="cp">${rows}</div><p class="field-hint">${T('conf_parts_h')}</p></div>`;
+}
+
 function renderSide() {
   const img = cur();
   const list = filmImages();
@@ -201,6 +218,7 @@ function renderSide() {
       <button type="button" class="btn btn-outline btn-sm" data-act="reset"${locked || !img.manual_crop ? ' disabled' : ''}>${T('reset_crop')} · R</button>
       <button type="button" class="btn btn-outline btn-sm" data-act="undo"${locked ? ' disabled' : ''}>${T('undo')} · Z</button>
     </div>
+    ${confPartsHtml(img)}
     ${reasons ? `<div><h3>${T('reasons')}</h3><ul class="reasons">${reasons}</ul></div>` : ''}
     <p class="keyhint">${T('k_move')}<br>${T('k_group')}<br>${T('k_accept')}</p>`;
   const film = store.s.film_aspects && store.s.film_aspects[img.film];

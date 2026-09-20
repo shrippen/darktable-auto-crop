@@ -49,7 +49,8 @@ def folder_job(folder, results=None, reviews=None, settings=None):
                 item["detected"] = {
                     "crop": crop_from_pixels(r["x"], r["y"], r["width"], r["height"], *size),
                     "confidence": r.get("confidence", 0.0), "method": r.get("method"),
-                    "reasons": r.get("reasons", []), "orientation": r.get("orientation")}
+                    "reasons": r.get("reasons", []), "orientation": r.get("orientation"),
+                    "conf_parts": r.get("_conf_parts")}
             mc = (rev or {}).get("manual_crop")
             if mc:
                 item["manual"] = {"crop": crop_from_pixels(

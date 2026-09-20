@@ -9,6 +9,19 @@ Konfidenzwert, dem man nicht vertrauen kann, ist schlimmer als gar keiner,
 weil er falsches Vertrauen erzeugt. Diese Roadmap sortiert die Ursachen
 und schlägt eine Reihenfolge vor, in der man das angeht.
 
+## Stand der Umsetzung (2026-09-20)
+
+| Phase | Erledigt | Offen |
+| --- | --- | --- |
+| 0 Fehlerfälle einsammeln | Werkzeug (Web-UI, `feedback_report.py`), Muster der 5 falschen Grünen | Ground Truth nach `review_data/`, Film 33/34 labeln, Baseline neu messen |
+| 1 Ground Truth verbreitern | – | mehr Rollen/Formate, Tuning/Holdout, Leave-One-Film-Out |
+| 2 Zweites Signal | Teilansatz (Helligkeit innen/außen) | Varianz/Histogramm, Perforation, unabhängige zweite Kantenmethode |
+| 3 `film_trust` | – | Plausibilität des Konsens, Position im Cross-Film-Clamp |
+| 4 Neu kalibrieren | – | LR mit Leave-One-Film-Out, Schwellen aus Holdout-ROC |
+| 5 Feedback-Schleife | Gegenmelden (Web-UI), Faktoren sichtbar, Auswertung | Feedback in `eval.py`/`calibrate.py` einspeisen |
+
+Priorität bleibt: Phase 0 abschließen (Daten), dann Phase 2.
+
 ## Praxistest der Companion-UI (2026-09-20)
 
 Erster Durchlauf in einer echten darktable-Bibliothek: **36 Raw-Fotos** wurden
@@ -18,7 +31,8 @@ Prüfung, zweite Revision, erneutes Anwenden) hat funktioniert.
 
 Bestätigt damit (vorher offene Integrationsrisiken, siehe `companion-ui-plan.md`
 Abschnitt 13): Export aus darktable, Übergabe per `plan.json`, Anwenden über
-`dt.styles` in der GUI, Differenz-Anwenden nach Revision 2.
+`dt.styles` in der GUI, Differenz-Anwenden nach Revision 2, Stopp des Servers
+(Knopf und automatisch beim Schließen von darktable).
 
 Folgen für diese Roadmap:
 - Die **technische** Integration ist kein Engpass mehr; die fachlichen Phasen unten
@@ -87,18 +101,22 @@ Maßnahme Rätselraten.
       (Filmordner + Dateiname) und mit `start_review_gui.sh` den
       *tatsächlich richtigen* Crop von Hand eintragen - genau wie die
       bestehenden 98 Referenzbilder.
+      **Stand (teilweise):** Auf der bisher unbekannten Rolle „Film 35“ sind über die Web-UI 5 falsche Grüne samt richtigem Crop erfasst (`tools/feedback_report.py`; Muster: 2× Position bei richtiger Größe, 2× Größe, 1× beides). Noch nicht nach `review_data/` übernommen (`--export-gt`); die ursprünglich beobachteten falschen Grünen sind nicht einzeln zugeordnet.
 - [ ] Dabei **auch Film 33 und 34** vervollständigen (liegen schon als
       Testfotos vor, aber ohne Review-Daten - aktuell komplett ungenutzt
       für Kalibrierung/Auswertung).
+      **Stand: offen.** Film 33 (37 Bilder) und 34 (28) haben weiter keine Review-Daten, Film 32 nur 1 von 9. Erfassbar mit `python -m companion serve --folder Testphotos …`.
 - [ ] Für jeden neuen falschen Fall kurz notieren, *welches* der vier
       Symptome zutraf (Nachbarframe erwischt? Filmhalterkante statt
       Bildrand? Falsche Seite/Position bei richtiger Größe? Rolle mit
       wenigen Bildern?) - das entscheidet, welcher Punkt unten zuerst
       etwas bringt.
+      **Stand (teilweise):** `feedback_report.py` unterscheidet automatisch Größe, Position und beides; Nachbarframe und Filmhalterkante bleiben Handarbeit am Bild.
 - [ ] `tools/eval.py` und `tools/eval_baseline.json` mit den erweiterten
       Referenzdaten neu laufen lassen, um eine ehrliche (niedrigere)
       Ausgangs-Precision/Recall-Zahl zu bekommen, statt sich weiter auf
       die alten, zu optimistischen 93/98 zu verlassen.
+      **Stand: offen.** `tools/eval_baseline.json` steht unverändert bei 93/98 (6 Filme).
 
 ## Phase 1: Ground Truth breiter aufstellen
 
@@ -108,15 +126,18 @@ zu wissen, ob die Formel generalisiert.
 - [ ] Ground Truth auf **mehr, unterschiedliche Rollen** ausweiten -
       idealerweise verschiedene Kameras, Belichtungssituationen,
       Filmformate (nicht nur Kleinbild), Farb- und S/W-Negative.
+      **Stand: offen.** Bisher Kleinbild und ein Aufbau; Film 35 liegt nur als Feedback aus Sitzungen vor, nicht in der Kalibrierbasis.
 - [ ] Datensatz in **Tuning-Set** und **Holdout-Set** aufteilen (z. B. pro
       Film, nicht zufällig gemischt - sonst leckt Wissen über eine Rolle
       zwischen Tuning und Test). Schwellen/Gewichte nur auf dem
       Tuning-Set anpassen, Erfolg nur auf dem Holdout-Set berichten.
+      **Stand: offen.** Film 33/34 wären Holdout-Kandidaten, haben aber keine Labels; `eval.py --holdout` erzeugt nur einen Kontaktabzug.
 - [ ] `tools/eval.py` um eine **Leave-One-Film-Out-Auswertung** erweitern:
       für jeden Film einmal so tun, als wäre er unbekannt (nicht Teil der
       film_trust/Cross-Film-Pools), und Precision/Recall nur auf diesem
       Film messen. Das deckt genau die Art von Überanpassung auf, die
       hier vermutlich vorliegt.
+      **Stand: offen.** `tools/eval.py` hat keine Leave-One-Film-Out-Auswertung.
 
 ## Phase 2: Eine echte zweite Signalquelle einbauen
 
@@ -136,6 +157,7 @@ sortiert):
       billig zu berechnen und bestraft z. B. einen Crop, der zur Hälfte
       auf dem Filmträger sitzt, unabhängig davon, wie "einträchtig" die
       restliche Rolle ist.
+      **Stand (teilweise):** `measure_crop_evidence()` vergleicht Helligkeit innen/außen. Kein Varianz-/Histogramm-Vergleich, und die Konsens-Konfidenz hat dafür keinen eigenen Faktor.
 - [ ] **Perforation/Sprocket-Löcher als physische Referenz**, sofern auf
       den Aufnahmen sichtbar (je nach Digitalisier-Rig). Perforationen
       haben einen bekannten, extrem konstanten Rasterabstand - wenn
@@ -143,6 +165,7 @@ sortiert):
       Positionsreferenz und würde die "einträchtig falsch"-Schwäche
       strukturell auflösen. Aufwand deutlich höher, aber potenziell die
       robusteste Lösung.
+      **Stand: offen.** Sprossenlöcher dienen nur zum Ausschließen in der Verfeinerung, nicht als Positionsreferenz.
 - [ ] **Zweite, andersartige Kantendetektion** (z. B. ein anderer
       Gradient-/Schwellwert-Ansatz oder ein auf Kontrast statt Gradient
       basierendes Verfahren) und deren *Übereinstimmung* mit der
@@ -150,6 +173,7 @@ sortiert):
       einen Methode zu betrachten. Zwei unabhängige Verfahren, die sich
       einig sind, sind ein deutlich stärkeres Signal als eine Methode, die
       sich selbst sehr sicher ist.
+      **Stand: offen.** Die vier Detektoren werden zusammengeführt („n Strategien stimmen überein“), aber ein unabhängiges Zweitverfahren als Konfidenzfaktor fehlt.
 
 ## Phase 3: film_trust von "einträchtig" zu "einträchtig UND plausibel" machen
 
@@ -159,12 +183,14 @@ sortiert):
       viele Bilder der Rolle `size_ok=false` waren - viele Ausreißer
       deuten eher auf einen falschen Konsens als auf viele falsche
       Einzelbilder hin).
+      **Stand: offen.** `film_trust` unverändert.
 - [ ] Cross-Film-Clamp (aktuell nur "nach oben" gedeckelt, siehe
       `MIN_POOL_SUPPORT`/`CLAMP_TOL` in `apply_film_consensus()`) auf
       Plausibilität für *Position*, nicht nur Größe, prüfen - aktuell wird
       nur eine zu große Konsens-Größe korrigiert, eine falsche Position
       (z. B. konstant zu weit links) auf der ganzen Rolle würde nicht
       auffallen.
+      **Stand: offen.** Der Cross-Film-Clamp (`CLAMP_TOL`) korrigiert weiter nur zu große Größen.
 
 ## Phase 4: Erst danach neu kalibrieren
 
@@ -178,25 +204,37 @@ sinnvoll:
 - [ ] Logistische Regression erneut versuchen, diesmal mit
       Leave-One-Film-Out-Kreuzvalidierung statt einer einzigen
       Train/Test-Zahl, um Überanpassung sofort sichtbar zu machen.
+      **Stand: offen** (setzt Phase 1 und 2 voraus).
 - [ ] Schwellen (grün/gelb) danach separat aus der ROC-Kurve auf dem
       Holdout-Set ableiten, mit einer bewusst konservativen
       Ziel-Precision für grün (z. B. >= 98 % auf dem Holdout, nicht nur
       auf den Trainingsdaten).
+      **Stand: offen** (setzt Phase 1 und 4a voraus).
 
 ## Phase 5: Feedback-Schleife aus echter Nutzung
 
 Damit sich das Problem "grün war falsch" nicht wiederholt, ohne dass es
 auffällt:
 
-- [ ] Einen leichten Weg schaffen, ein falsches automatisches Crop direkt
+- [x] Einen leichten Weg schaffen, ein falsches automatisches Crop direkt
       aus darktable heraus gegenzumelden (z. B. ein Button "als falsch
       markieren", der Dateiname + berechnete Werte in eine Log-/Review-
       Datei schreibt) statt den Umweg über manuelles Wiederfinden im
       Review-GUI.
-- [ ] `_conf_parts` (bereits im Python-Code vorhanden) im Lua-Log oder in
+      **Erledigt (anders gelöst):** In der Web-UI genügt eine Korrektur oder die Rot-Markierung; jede Änderung geht mit erkanntem Crop und Konfidenz in `feedback.jsonl`, der Ordnermodus schreibt `reviews.json`. Kein Knopf in darktable nötig.
+- [x] `_conf_parts` (bereits im Python-Code vorhanden) im Lua-Log oder in
       der GUI sichtbar machen, damit bei einem falschen grünen Ergebnis
       sofort erkennbar ist, welcher der vier Faktoren die Fehleinschätzung
       verursacht hat, ohne erst manuell nachrechnen zu müssen.
+      **Erledigt:** Der Crop-Editor zeigt die vier Faktoren mit Balken und markiert den schwächsten; sie stehen auch im `feedback.jsonl`. Gilt für Analysen ab diesem Stand (ältere Sitzungen haben keine Faktoren gespeichert).
+
+- [x] Auswertung des gesammelten Feedbacks: `tools/feedback_report.py` (Korrekturrate je
+      Gruppe, falsches Grün mit Symptom, schwächster Faktor, Gruppenwechsel, Export als
+      Ground Truth). Erster Lauf auf den 4 Testsitzungen (36 Bilder): 22 grün, davon
+      5 korrigiert und alle 5 über der Toleranz, 6 gelb und 8 rot ohne Korrektur.
+- [ ] Feedback in `tools/eval.py` und `tools/calibrate.py` einspeisen (Ground Truth aus
+      `--export-gt` zusammen mit `reviews.json` auswerten; die Bilder liegen als Raw
+      außerhalb von `Testphotos/`).
 
 ## Priorisierung
 

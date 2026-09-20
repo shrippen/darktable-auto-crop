@@ -268,6 +268,7 @@ class Session:
             "auto_group": self._auto_group(img),
             "confidence": det.get("confidence"),
             "method": det.get("method"), "reasons": det.get("reasons", []),
+            "conf_parts": det.get("conf_parts"),
             "detected_crop": det.get("crop"),
             "manual_crop": (img.get("manual") or {}).get("crop"),
             "crop": self.effective_crop(img),
@@ -449,6 +450,7 @@ class Session:
                     "method": r.get("method"),
                     "reasons": r.get("reasons", []),
                     "orientation": r.get("orientation"),
+                    "conf_parts": r.get("_conf_parts"),
                     "at": now_iso(),
                 }
                 img["status"] = "done"
@@ -474,6 +476,7 @@ class Session:
                     "confidence": round(float(r.get("confidence", 0.0)), 3),
                     "method": r.get("method"), "reasons": r.get("reasons", []),
                     "orientation": r.get("orientation"),
+                    "conf_parts": r.get("_conf_parts"),
                     "settings": settings or {}, "at": now_iso(),
                 }
                 img["export_size"] = [w, h]
@@ -644,6 +647,8 @@ class Session:
                 "from": old, "to": new,
                 "detected_crop": det.get("crop"),
                 "confidence": det.get("confidence"),
+                "conf_parts": det.get("conf_parts"),
+                "export_size": img.get("export_size"),
                 "method": det.get("method")}
         try:
             with open(self.path("feedback.jsonl"), "a", encoding="utf-8") as f:

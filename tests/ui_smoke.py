@@ -110,6 +110,8 @@ def main():
             pg.wait_for_timeout(1500)
             got = {u.split("/api/thumb/")[1].split("?")[0] for u in big}
             assert expect <= got, f"nicht vorgeladen: {expect - got}"
+            # Phase 5: die vier Konfidenz-Faktoren sind im Editor sichtbar
+            assert pg.locator("#ed-side .cp-row").count() == 4, "Konfidenz-Faktoren fehlen im Editor"
             shot("2-editor.png")
             h = pg.locator("#ed-crop .handle[data-h='se']")
             box = h.bounding_box()

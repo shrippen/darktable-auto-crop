@@ -476,6 +476,106 @@ class ServerLifecycleTest(unittest.TestCase):
         self.assertIn({"type": "bye", "reason": "quit"}, self.drain())
 
 
+class ConfPartsTest(unittest.TestCase):
+    """Roadmap Phase 5: die Einzelfaktoren der Konfidenz sind in der UI-API sichtbar."""
+
+    def test_parts_are_stored_and_exposed(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        s = make_session(tmp)
+        parts = {"size_agree": 0.9, "edge_score": 0.3, "film_trust": 0.8, "exposure_factor": 1.0}
+        s.apply_detection({101: {"x": 300, "y": 200, "width": 2400, "height": 1600, "_img_w": 3000,
+                                 "_img_h": 2000, "confidence": 0.8, "method": "m", "_conf_parts": parts}})
+        self.assertEqual(s.public_state()["images"][0]["conf_parts"], parts)
+        s.patch_images([101], {"crop": [0.2, 0.2, 0.8, 0.8]})
+        line = json.loads(open(s.path("feedback.jsonl")).read().splitlines()[-1])
+        self.assertEqual(line["conf_parts"], parts)              # Faktoren stehen im Feedback-Log
+        self.assertEqual(line["export_size"], [3000, 2000])
+
+
+class FeedbackReportTest(unittest.TestCase):
+    """tools/feedback_report.py: Korrekturrate je Gruppe, falsches Gruen, Ground-Truth-Export."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import feedback_report
+        self.fr = feedback_report
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.root = os.path.join(self.tmp, "root")
+
+    def session(self, confs, phase="applied", corrections=None, parts=None):
+        imgs = []
+        for i, c in enumerate(confs, start=1):
+            p = os.path.join(self.tmp, "Film X", f"img{i}.arw")
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            open(p, "wb").write(b"x")
+            det = detected(c)
+            if parts:
+                det["conf_parts"] = parts
+            imgs.append({"id": i, "path": p, "detected": det, "export_size": [3000, 2000]})
+        s = sess.Session.create({"images": imgs}, self.root)
+        s.mark_analysis_done()
+        for iid, crop in (corrections or {}).items():
+            s.patch_images([iid], {"crop": crop})
+        s.state["phase"] = phase
+        s.save()
+        return s
+
+    def report(self):
+        sessions = self.fr.load_sessions(sess.list_sessions(self.root))
+        rows = self.fr.collect(sessions)
+        return rows, self.fr.summarize(rows), sessions
+
+    def test_rates_and_false_green(self):
+        # detected = (0.1,0.1,0.9,0.9) -> 2400x1600 px. Korrekturen: 1 winzig (Treffer), 2 stark (zu weit)
+        parts = {"size_agree": 0.9, "edge_score": 0.2, "film_trust": 0.8, "exposure_factor": 1.0}
+        self.session([0.9, 0.8, 0.7, 0.4, 0.1], corrections={
+            1: [0.1, 0.1, 0.905, 0.9],          # ~15 px Unterschied: innerhalb der Toleranz
+            2: [0.1, 0.25, 0.9, 0.9]}, parts=parts)   # 300 px in der Hoehe: falsches Gruen
+        rows, summ, _ = self.report()
+        g = summ["groups"]["green"]
+        self.assertEqual((g["n"], g["corrected"], g["bad"]), (3, 2, 1))
+        self.assertEqual(summ["groups"]["yellow"]["n"], 1)
+        self.assertEqual(summ["groups"]["red"]["n"], 1)
+        self.assertEqual([r["file"] for r in summ["false_green"]], ["img2.arw"])
+        self.assertEqual(summ["weak_factor"], {"edge_score": 1})
+        self.assertEqual(dict(summ["symptoms"]), {"Groesse+Position": 1})   # Oberkante 300 px versetzt und Hoehe falsch
+
+    def test_shifted_crop_is_caught_by_strict_check(self):
+        # gleiche Groesse, aber 200 px verschoben: eval.py-Kriterium (nur Breite/Hoehe) sagt "Treffer"
+        self.session([0.9], corrections={1: [0.1 + 200 / 3000, 0.1, 0.9 + 200 / 3000, 0.9]})
+        rows, summ, _ = self.report()
+        self.assertTrue(rows[0]["size_hit"])
+        self.assertFalse(rows[0]["strict_hit"])
+        self.assertEqual(rows[0]["symptom"], "Position bei richtiger Groesse")
+        self.assertEqual(len(summ["false_green"]), 1)
+
+    def test_dedupe_prefers_finished_session(self):
+        first = self.session([0.9], phase="applied", corrections={1: [0.1, 0.3, 0.9, 0.9]})
+        time.sleep(1.1)                                   # spaetere, aber unfertige Sitzung
+        self.session([0.9], phase="reviewing")
+        rows, summ, sessions = self.report()
+        self.assertEqual(len(sessions), 2)
+        self.assertEqual(summ["total"], 1)
+        self.assertEqual(rows[0]["session"], first.state["session"])
+        self.assertTrue(rows[0]["corrected"])
+
+    def test_group_moves_and_export_gt(self):
+        s = self.session([0.9, 0.1], corrections={1: [0.1, 0.3, 0.9, 0.9]})
+        s.state["phase"] = "reviewing"
+        s.patch_images([2], {"group": "green"})
+        s.state["phase"] = "applied"
+        s.save()
+        rows, summ, _ = self.report()
+        self.assertEqual(dict(summ["moves"]), {"red->green": 1})
+        out = os.path.join(self.tmp, "gt.json")
+        self.assertEqual(self.fr.export_gt(rows, out), 1)
+        gt = json.load(open(out))["Film X/img1.arw"]
+        self.assertEqual(gt["manual_crop"], {"x": 300, "y": 600, "width": 2400, "height": 1200})
+        self.assertEqual(gt["export_size"], [3000, 2000])
+
+
 LUA = shutil.which("lua5.4") or shutil.which("lua")
 
 
