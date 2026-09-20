@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auto Crop Negative — Darktable plugin</title>
+<meta name="description" content="A Darktable plugin that automatically crops camera scans of film negatives to the analog film frame and flags uncertain detections for review.">
+<meta property="og:title" content="Auto Crop Negative — Darktable plugin">
+<meta property="og:description" content="A Darktable plugin that automatically crops camera scans of film negatives to the analog film frame and flags uncertain detections for review.">
+<meta property="og:image" content="https://shrippen.github.io/darktable-auto-crop/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:url" content="https://shrippen.github.io/darktable-auto-crop/">
+<link rel="icon" href="icon.svg">
+<script defer src="https://um.arianw.de/script.js" data-website-id="056d39ee-6a9d-4b14-9902-5a1ac399df08"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://shrippen.github.io/DesignDefault/v1/shrippen.css">
+<script src="https://shrippen.github.io/DesignDefault/v1/shrippen.js"></script>
+</head>
+<body>
+
+<nav class="nav"><div class="nav-inner">
+  <a class="nav-brand" href="#"><img src="icon.svg" alt="">Auto Crop Negative</a>
+  <div class="nav-links">
+    <a href="#features"><span lang="en">Features</span><span lang="de">Funktionen</span></a><a href="#usage"><span lang="en">Usage</span><span lang="de">Nutzung</span></a><a href="#install"><span lang="en">Install</span><span lang="de">Installation</span></a><a class="nav-hl" href="https://github.com/shrippen/darktable-auto-crop">GitHub</a>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="de" aria-pressed="false">DE</button>
+    </div>
+  </div>
+</div></nav>
+
+<header class="hero">
+  <img class="hero-wm" src="icon-mono.svg" alt="" aria-hidden="true">
+  <div class="hero-main">
+    <h1 style="--title-size:clamp(3rem,10.5vw,8.25rem);--title-size-narrow:clamp(2.5rem,19.2vw,13.1rem)">Auto Crop <br class="split">Negative</h1>
+    <p class="tagline" lang="en">A Darktable plugin that crops camera scans of film negatives to the analog film frame. Uncertain detections get a red color label for manual review.</p><p class="tagline" lang="de">Ein Darktable-Plugin, das digitalisierte Filmnegative automatisch auf den analogen Filmrahmen zuschneidet. Unsichere Erkennungen bekommen ein rotes Farblabel zur Kontrolle.</p>
+  </div>
+  <div class="hero-side">
+    <div class="install-card">
+      <label><span lang="en">Install</span><span lang="de">Installation</span></label><div class="cmd-row"><div class="cmd-box">git clone https://github.com/shrippen/darktable-auto-crop.git &amp;&amp; cd darktable-auto-crop &amp;&amp; chmod +x install.sh &amp;&amp; ./install.sh</div><button class="copy-btn" type="button" title="Copy" aria-label="Copy"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
+      <p class="install-note" lang="en">Requires Darktable 4.0+ with Lua, Python 3.8+, OpenCV and NumPy. Restart Darktable afterwards.</p><p class="install-note" lang="de">Benötigt Darktable 4.0+ mit Lua, Python 3.8+, OpenCV und NumPy. Danach Darktable neu starten.</p>
+      <div class="install-links"><a class="btn btn-primary" href="https://github.com/shrippen/darktable-auto-crop">GitHub</a></div>
+    </div>
+    
+  </div>
+</header>
+
+<main>
+
+
+<section class="features" id="features">
+  <div class="feat" data-tier="red">
+    <span class="feat-tag"><span lang="en">Detection</span><span lang="de">Erkennung</span></span>
+    <h3 lang="en">Finds the film frame</h3><h3 lang="de">Findet den Filmrahmen</h3>
+    <p lang="en">When you digitize negatives with a camera, the film strip and table stay in the picture. The plugin detects the frame and crops it exactly.</p><p lang="de">Beim Abfotografieren von Negativen bleiben Filmstreifen und Tisch im Bild. Das Plugin erkennt den Rahmen und schneidet ihn passgenau zu.</p>
+  </div>
+  <div class="feat" data-tier="yellow">
+    <span class="feat-tag"><span lang="en">Strategies</span><span lang="de">Strategien</span></span>
+    <h3 lang="en">Four detection strategies</h3><h3 lang="de">Vier Erkennungsstrategien</h3>
+    <p lang="en">Contour analysis, Canny + Hough, gradient transitions and a brightness mask run in parallel. Agreement between them boosts confidence.</p><p lang="de">Konturenanalyse, Canny + Hough, Gradienten-Übergänge und eine Helligkeitsmaske laufen parallel. Übereinstimmungen erhöhen die Konfidenz.</p>
+  </div>
+  <div class="feat" data-tier="blue">
+    <span class="feat-tag"><span lang="en">Confidence</span><span lang="de">Konfidenz</span></span>
+    <h3 lang="en">Confidence scoring</h3><h3 lang="de">Konfidenz-Bewertung</h3>
+    <p lang="en">A value from 0.0 to 1.0 per candidate, based on aspect ratio, area, border distance, edge contrast and strategy agreement.</p><p lang="de">Ein Wert von 0,0 bis 1,0 pro Kandidat, berechnet aus Seitenverhältnis, Fläche, Randabstand, Rand-Kontrast und Strategie-Übereinstimmung.</p>
+  </div>
+  <div class="feat" data-tier="red">
+    <span class="feat-tag"><span lang="en">Review</span><span lang="de">Kontrolle</span></span>
+    <h3 lang="en">Color labels for review</h3><h3 lang="de">Farblabels zur Kontrolle</h3>
+    <p lang="en">Below the threshold (default 0.7) the crop is still applied, but the image gets a <strong>red</strong> label. At or above it the image gets a <strong>green</strong> label.</p><p lang="de">Unter der Schwelle (Standard 0,7) wird trotzdem zugeschnitten, das Bild bekommt aber ein <strong>rotes</strong> Label. Ab der Schwelle bekommt es ein <strong>grünes</strong> Label.</p>
+  </div>
+  <div class="feat" data-tier="yellow">
+    <span class="feat-tag"><span lang="en">Formats</span><span lang="de">Formate</span></span>
+    <h3 lang="en">Film formats</h3><h3 lang="de">Filmformate</h3>
+    <p lang="en">35 mm (135) by default, plus medium format 6×6, 6×4.5, 6×7 and 6×9.</p><p lang="de">Standardmäßig Kleinbild (135), dazu Mittelformat 6×6, 6×4,5, 6×7 und 6×9.</p>
+  </div>
+  <div class="feat" data-tier="blue">
+    <span class="feat-tag"><span lang="en">Batch</span><span lang="de">Stapel</span></span>
+    <h3 lang="en">Lua frontend, Python backend</h3><h3 lang="de">Lua-Frontend, Python-Backend</h3>
+    <p lang="en">Crop one image or all selected images from the darkroom. Darktable talks to an OpenCV and NumPy backend via JSON.</p><p lang="de">Ein Bild oder alle ausgewählten Bilder direkt aus der Dunkelkammer zuschneiden. Darktable spricht per JSON mit einem OpenCV- und NumPy-Backend.</p>
+  </div>
+</section>
+<section class="section" id="usage">
+  <h2 lang="en">Usage</h2><h2 lang="de">Nutzung</h2>
+  <ol class="steps" lang="en"><li>Open an image in the darkroom and click <strong>Crop single image</strong>. The plugin appears as the panel “Auto Crop Negative” in the right sidebar.</li><li>For several images, select them in the lighttable, then click <strong>Crop all selected</strong> in the darkroom.</li><li>Check the result: red label means review needed, green label means OK.</li></ol><ol class="steps" lang="de"><li>Öffne ein Bild in der Dunkelkammer und klicke auf <strong>Einzelbild zuschneiden</strong>. Das Plugin erscheint als Panel „Auto Crop Negative“ in der rechten Seitenleiste.</li><li>Für mehrere Bilder wählst du sie in der Leuchttisch-Ansicht aus und klickst in der Dunkelkammer auf <strong>Alle ausgewählten zuschneiden</strong>.</li><li>Prüfe das Ergebnis: rotes Label bedeutet Kontrolle nötig, grünes Label bedeutet in Ordnung.</li></ol>
+</section>
+<section class="section">
+  <h2 lang="en">Settings</h2><h2 lang="de">Einstellungen</h2>
+  <p lang="en">Under <strong>Preferences → Lua → Auto Crop Negative</strong>:</p><p lang="de">Unter <strong>Voreinstellungen → Lua → Auto Crop Negative</strong>:</p>
+  <div class="table-wrap"><table class="table"><thead><tr><th><span lang="en">Setting</span><span lang="de">Einstellung</span></th><th><span lang="en">Description</span><span lang="de">Beschreibung</span></th><th><span lang="en">Default</span><span lang="de">Standard</span></th></tr></thead><tbody><tr><td><span lang="en">Path to Python script</span><span lang="de">Pfad zum Python-Skript</span></td><td><span lang="en">Path to <code>auto_crop_negative.py</code></span><span lang="de">Pfad zu <code>auto_crop_negative.py</code></span></td><td><code>auto_crop_negative.py</code></td></tr><tr><td><span lang="en">Confidence threshold</span><span lang="de">Konfidenz-Schwelle</span></td><td><span lang="en">Threshold for flagging (0.0–1.0)</span><span lang="de">Schwelle für die Markierung (0,0–1,0)</span></td><td><code>0.7</code></td></tr><tr><td><span lang="en">Film format</span><span lang="de">Filmformat</span></td><td>35mm, 6x6, 6x4.5, 6x7, 6x9</td><td><code>35mm</code></td></tr></tbody></table></div>
+</section>
+<section class="section" id="formats">
+  <h2 lang="en">Detected film formats</h2><h2 lang="de">Erkannte Filmformate</h2>
+  <div class="table-wrap"><table class="table"><thead><tr><th><span lang="en">Format</span><span lang="de">Format</span></th><th><span lang="en">Aspect ratio</span><span lang="de">Seitenverhältnis</span></th></tr></thead><tbody><tr><td><span lang="en">35 mm 135 (default)</span><span lang="de">Kleinbild 135 (Standard)</span></td><td>2:3</td></tr><tr><td><span lang="en">Medium format 6×6</span><span lang="de">Mittelformat 6×6</span></td><td>1:1</td></tr><tr><td><span lang="en">Medium format 6×4.5</span><span lang="de">Mittelformat 6×4,5</span></td><td>4:5</td></tr><tr><td><span lang="en">Medium format 6×7</span><span lang="de">Mittelformat 6×7</span></td><td>6:7</td></tr><tr><td><span lang="en">Medium format 6×9</span><span lang="de">Mittelformat 6×9</span></td><td>2:3</td></tr></tbody></table></div>
+</section>
+<section class="section" id="install">
+  <h2 lang="en">Installation</h2><h2 lang="de">Installation</h2>
+  <p lang="en">The install script copies the Lua and Python files into <code>~/.config/darktable/lua/</code>. Manually:</p><p lang="de">Das Installationsskript kopiert die Lua- und Python-Dateien nach <code>~/.config/darktable/lua/</code>. Manuell:</p>
+  <ol class="steps" lang="en"><li>Copy <code>auto_crop_negative.lua</code> and <code>auto_crop_negative.py</code> to <code>~/.config/darktable/lua/</code> and make the script executable.</li><li>Add <code>require "auto_crop_negative"</code> to <code>~/.config/darktable/lua/init.lua</code>, or create the file with that line.</li></ol><ol class="steps" lang="de"><li>Kopiere <code>auto_crop_negative.lua</code> und <code>auto_crop_negative.py</code> nach <code>~/.config/darktable/lua/</code> und mache das Skript ausführbar.</li><li>Ergänze <code>require "auto_crop_negative"</code> in <code>~/.config/darktable/lua/init.lua</code> oder lege die Datei mit dieser Zeile an.</li></ol>
+  <p lang="en">Test without Darktable:</p><p lang="de">Test ohne Darktable:</p>
+  <div class="codeblock">python3 auto_crop_negative.py --debug \
+    -o /tmp/debug_crop.jpg \
+    '/path/to/scan.jpg'</div>
+</section>
+</main>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-brand">
+      <img src="icon.svg" alt="">
+      <div><span class="foot-name">Auto Crop Negative</span><span class="foot-tag"><span lang="en">Crop film negatives automatically</span><span lang="de">Filmnegative automatisch zuschneiden</span></span></div>
+    </div>
+    <nav class="foot-cols" aria-label="Footer">
+      <div><h4><span lang="en">Project</span><span lang="de">Projekt</span></h4><a href="#features"><span lang="en">Features</span><span lang="de">Funktionen</span></a><a href="#usage"><span lang="en">Usage</span><span lang="de">Nutzung</span></a><a href="#install"><span lang="en">Install</span><span lang="de">Installation</span></a></div>
+      <div><h4><span lang="en">Source</span><span lang="de">Quelltext</span></h4><a href="https://github.com/shrippen/darktable-auto-crop">GitHub</a><a href="https://github.com/shrippen/darktable-auto-crop/issues">Issues</a></div>
+    </nav>
+  </div>
+  <div class="foot-meta"><p>shrippen</p></div>
+</footer>
+
+</body>
+</html>
