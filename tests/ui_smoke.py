@@ -134,19 +134,29 @@ def main():
             pg.wait_for_timeout(1500)
             got = {u.split("/api/thumb/")[1].split("?")[0] for u in big}
             assert expect <= got, f"nicht vorgeladen: {expect - got}"
+            # Vorladen nutzt dieselbe Ansicht wie die Anzeige: geradegestellte Bilder tragen den Winkel im Link
+            api_state = json.loads(pg.evaluate("fetch('/api/session',{headers:{'X-Token':new URLSearchParams(location.search).get('t')}}).then(r=>r.text())"))
+            deg_of = {str(i["id"]): float(i.get("straighten") or 0) for i in api_state["images"]}
+            for u in big:
+                q = u.split("/api/thumb/")[1]
+                iid = q.split("?")[0]
+                sval = float(dict(kv.split("=") for kv in q.split("?")[1].split("&"))["s"])
+                assert abs(sval - deg_of[iid]) < 1e-6, f"Vorladen ohne Tilt: {u}"
             # Phase 5: die vier Konfidenz-Faktoren sind im Editor sichtbar
             assert pg.locator("#ed-side .cp-row").count() == 4, "Konfidenz-Faktoren fehlen im Editor"
             # Schraeglage: Messwert und (im Ordnermodus) nur Anzeige, kein Geradestellen-Knopf
             side = pg.inner_text("#ed-side").lower()
             assert ("tilt" in side or "schräglage" in side), "Schraeglage fehlt im Editor"
             assert pg.locator("#ed-toolbar [data-act='tilt-toggle']").count() == 1, "Tilt-Schalter fehlt"
-            # Tilt anwenden (Taste T): Vorschau wird geradegestellt, Kachel/Bild bekommen den Winkel
-            if not pg.locator("#ed-toolbar [data-act='tilt-toggle']").is_disabled():
-                pg.keyboard.press("t")
-                pg.wait_for_function("document.querySelector('#ed-toolbar [data-act=tilt-toggle]').getAttribute('aria-pressed')==='true'", timeout=8000)
-                assert "s=0" not in pg.get_attribute("#ed-img", "src"), "Bild nicht geradegestellt"
-                pg.keyboard.press("t")
-                pg.wait_for_function("document.querySelector('#ed-toolbar [data-act=tilt-toggle]').getAttribute('aria-pressed')==='false'", timeout=8000)
+            # Tilt-Schalter (Taste T): ist standardmaessig an, wenn ein verlaesslicher Tilt gemessen wurde
+            tog = "#ed-toolbar [data-act='tilt-toggle']"
+            if not pg.locator(tog).is_disabled():
+                start = pg.get_attribute(tog, "aria-pressed")
+                for want in ("false" if start == "true" else "true", start):
+                    pg.keyboard.press("t")
+                    pg.wait_for_function(f"document.querySelector(\"{tog}\").getAttribute('aria-pressed')==='{want}'", timeout=8000)
+                    pg.wait_for_timeout(300)
+                    assert ("s=0" in pg.get_attribute("#ed-img", "src")) == (want == "false"), "Bildansicht folgt dem Schalter nicht"
             shot("2-editor.png")
             h = pg.locator("#ed-crop .handle[data-h='se']")
             box = h.bounding_box()

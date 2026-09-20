@@ -124,6 +124,40 @@ class SessionTest(unittest.TestCase):
         with self.assertRaises(sess.SessionError):
             self.s.patch_images([101], {"straighten": {"deg": "x"}})
 
+    def test_tilt_is_applied_by_default_and_can_be_switched_off(self):
+        self.s.image(101)["detected"]["skew"] = {"deg": 2.0, "conf": 0.9}
+        self.s.image(102)["detected"]["skew"] = {"deg": 0.2, "conf": 0.9}      # zu klein
+        self.s.image(103)["detected"]["skew"] = {"deg": 3.0, "conf": 0.2}      # unsicher
+        pub = {i["id"]: i for i in self.s.public_state()["images"]}
+        self.assertEqual(pub[101]["straighten"], 2.0)
+        self.assertIsNone(pub[102]["straighten"])
+        self.assertIsNone(pub[103]["straighten"])
+        entries, _ = self.s.build_plan()
+        self.assertEqual({e["id"]: e["angle"] for e in entries}[101], 2.0)      # Plan folgt dem Standard
+        self.s.patch_images([101], {"straighten": None})                        # ausdruecklich aus
+        self.assertIsNone(self.s.public_state()["images"][0]["straighten"])
+        self.assertTrue(self.s.undo("session"))
+        self.assertEqual(self.s.public_state()["images"][0]["straighten"], 2.0)
+
+    def test_manual_crop_stays_right_when_tilt_is_toggled(self):
+        self.s.image(101)["detected"]["skew"] = {"deg": 3.0, "conf": 0.9}
+        self.s.patch_images([101], {"crop": [0.2, 0.2, 0.8, 0.8]})              # im geraden Bild gesetzt
+        straight = self.s.effective_crop(self.s.image(101))
+        self.assertEqual(straight, [0.2, 0.2, 0.8, 0.8])
+        self.s.patch_images([101], {"straighten": None})
+        orig = self.s.effective_crop(self.s.image(101))                         # umgerechnet ins Original
+        self.assertNotEqual(orig, straight)
+        self.s.patch_images([101], {"straighten": {"deg": 3.0}})
+        back = self.s.effective_crop(self.s.image(101))
+        for a, b in zip(back, straight):
+            self.assertAlmostEqual(a, b, places=3)
+
+    def test_manual_crop_stays_right_when_tilt_is_toggled_old_state(self):
+        # Crop ohne "deg" (aus einer aelteren Sitzung) gilt als Original und wird beim Tilt umgerechnet
+        self.s.image(101)["manual"] = {"crop": [0.2, 0.2, 0.8, 0.8]}
+        self.s.image(101)["detected"]["skew"] = {"deg": 3.0, "conf": 0.9}
+        self.assertNotEqual(self.s.effective_crop(self.s.image(101)), [0.2, 0.2, 0.8, 0.8])
+
     def test_manual_crop_makes_red_applicable(self):
         self.s.patch_images([103], {"crop": [0.2, 0.2, 0.8, 0.8]})
         self.assertTrue(self.s.will_apply(self.s.image(103)))

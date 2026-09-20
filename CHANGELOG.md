@@ -10,6 +10,10 @@
   (3 % der kurzen Seite), Winkel frei bis ±9°. Filmhalter und andere weiter entfernte Kanten kommen nicht mehr in Frage;
   uneinige Seiten werden verworfen (dann „nicht messbar“). Mediane Abweichung an künstlich gedrehten Bildern 0.03°,
   größter Fehler 0.5° (vorher 0.1° / 2.3°), dafür in ~20 % der künstlich gedrehten Fälle keine Messung.
+- **Tilt ist standardmäßig angewendet:** Bilder mit verlässlich gemessenem Tilt (≥ 0.3°, Sicherheit ≥ 0.4) werden in Galerie und
+  Editor geradegestellt gezeigt, auch beim Vorladen der zwei Nachbarbilder; der Plan für darktable enthält dann die Drehung.
+  Abschalten geht je Bild mit dem Schalter. Manuelle Crops merken sich den Winkel, in dem sie gesetzt wurden, und werden beim
+  Umschalten umgerechnet.
 - **Schalter „Tilt anwenden“ (Taste T)** in der Editor-Leiste, auch im Ordnermodus: zeigt das Bild mit angewendetem Tilt,
   der Crop wird auf dem geraden Bild gesetzt. Referenzen im Ordnermodus werden im Originalrahmen gespeichert, dazu
   `tilt_deg` und `manual_crop_straight`.

@@ -124,6 +124,8 @@ def crop_to_pixels(crop, img_w, img_h):
 
 
 MAX_STRAIGHTEN_DEG = 10.0
+AUTO_STRAIGHTEN_MIN_DEG = 0.3      # ab diesem gemessenen Tilt wird standardmaessig geradegestellt
+AUTO_STRAIGHTEN_MIN_CONF = 0.4
 
 
 def straight_size(size, deg):
@@ -290,15 +292,35 @@ class Session:
     def straight_deg(self, img):
         """Winkel, um den geradegestellt wird (None = aus): Vorschau hier, Drehung in darktable."""
         st = img.get("straighten")
-        if not st:
+        if st is False:                 # ausdruecklich aus
             return None
-        deg = float(st.get("deg") or 0.0)
-        return deg if abs(deg) >= 0.01 else None
+        if st:
+            deg = float(st.get("deg") or 0.0)
+            return deg if abs(deg) >= 0.01 else None
+        # Standard: gemessenen Tilt anwenden, wenn er merklich und verlaesslich ist
+        sk = (img.get("detected") or {}).get("skew") or {}
+        if sk.get("deg") is not None and abs(sk["deg"]) >= AUTO_STRAIGHTEN_MIN_DEG \
+                and (sk.get("conf") or 0.0) >= AUTO_STRAIGHTEN_MIN_CONF:
+            return float(sk["deg"])
+        return None
 
     def effective_crop(self, img):
-        """Aktueller Crop im aktuellen Bezugsrahmen (Original oder geradegestellt)."""
-        if img.get("manual"):
-            return img["manual"]["crop"]
+        """Aktueller Crop im aktuellen Bezugsrahmen (Original oder geradegestellt).
+
+        Ein manueller Crop merkt sich den Winkel, in dem er gesetzt wurde (``deg``, None = Original)
+        und wird bei anderem Winkel umgerechnet; so bleibt er richtig, wenn der Tilt an- oder
+        ausgeschaltet wird."""
+        man = img.get("manual")
+        if man:
+            cur, was, size = self.straight_deg(img), man.get("deg"), img.get("export_size")
+            if size and abs((cur or 0.0) - (was or 0.0)) > 0.005:
+                c = man["crop"]
+                if was:
+                    c = crop_from_straight(c, size, was)
+                if cur:
+                    c = crop_to_straight(c, size, cur)
+                return c
+            return man["crop"]
         return self.detected_crop(img)
 
     def detected_crop(self, img):
@@ -527,30 +549,19 @@ class Session:
                     if want and want.get("deg") == "auto":
                         sk = ((img.get("detected") or {}).get("skew") or {})
                         want = {"deg": sk["deg"]} if sk.get("deg") is not None else None
-                        if want is None and self.straight_deg(img) is None:
+                        if want is None:
                             op["ids"][str(img["id"])] = before     # nichts zu tun fuer dieses Bild
                             continue
                     before["straighten"] = copy.deepcopy(img.get("straighten"))
-                    if "manual" not in before:
-                        before["manual"] = copy.deepcopy(img.get("manual"))
                     old_deg = self.straight_deg(img)
                     new_deg = want.get("deg") if want else None
                     new_deg = new_deg if new_deg and abs(new_deg) >= 0.01 else None
-                    size = img.get("export_size")
-                    man = img.get("manual")
-                    if man and size:      # manuellen Crop in den neuen Bezugsrahmen umrechnen
-                        c = man["crop"]
-                        if old_deg:
-                            c = crop_from_straight(c, size, old_deg)
-                        if new_deg:
-                            c = crop_to_straight(c, size, new_deg)
-                        img["manual"] = dict(man, crop=c)
                     events.append(("straighten", old_deg, new_deg))
-                    img["straighten"] = want
+                    img["straighten"] = want if want else False
                 if "crop" in patch:
                     if "manual" not in before:
                         before["manual"] = copy.deepcopy(img.get("manual"))
-                    new = ({"crop": patch["crop"], "at": now_iso()}
+                    new = ({"crop": patch["crop"], "deg": self.straight_deg(img), "at": now_iso()}
                            if patch["crop"] is not None else None)
                     events.append(("crop", (before["manual"] or {}).get("crop"),
                                    patch["crop"]))
