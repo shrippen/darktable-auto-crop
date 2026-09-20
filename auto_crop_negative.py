@@ -1284,7 +1284,10 @@ def _refine_edge(gray, lo, hi, fixed_a, fixed_b, axis, is_far, polarity=1,
     return best_pos
 
 
-def _refine_box(gray, x, y, w, h, pos_reach=48, size_slack=45):
+REFINE_SIZE_SLACK = float(os.environ.get("ACN_REFINE_SLACK", 10))   # Sweep 10/15/30/45 auf 209 Referenzen: 194/192/191/192 Treffer
+
+
+def _refine_box(gray, x, y, w, h, pos_reach=48, size_slack=None):
     """Konsens-Box lokal einpassen: erst Position grob (Kantenpassung),
     dann jede Kante einzeln (max +/-size_slack von der Konsens-Groesse).
 
@@ -1294,6 +1297,8 @@ def _refine_box(gray, x, y, w, h, pos_reach=48, size_slack=45):
     """
     ih, iw = gray.shape
     x0, y0 = x, y
+    if size_slack is None:
+        size_slack = REFINE_SIZE_SLACK
 
     # Polaritaet einmal aus der Start-Box bestimmen: Negative koennen beide
     # Richtungen haben (Bildinhalt heller ODER dunkler als der Filmrand, je
@@ -1525,7 +1530,14 @@ def apply_film_consensus(results, load_paths, report=None):
 
             # Orientierung: aus der Einzeldetektion, wenn deren Groesse passt,
             # sonst aus der Rolle.
-            portrait = (rh > rw) if size_ok else (not film_landscape)
+            # Bild-Orientierung entscheidet: auf 209 Referenzbildern stimmt die Crop-Orientierung
+            # in 208 Faellen mit der des Bildes ueberein (die Einzeldetektion lag in 12 Faellen
+            # falsch: Querformat-Box in Hochformatbild). Nur bei fast quadratischem Bild
+            # (Mittelformat 6x6) zaehlt weiter die Detektion bzw. die Rolle.
+            if abs(iw - ih) > 0.1 * max(iw, ih):
+                portrait = ih > iw
+            else:
+                portrait = (rh > rw) if size_ok else (not film_landscape)
             w = min(int(round(short_px if portrait else long_px)), iw)
             h = min(int(round(long_px if portrait else short_px)), ih)
 
@@ -1576,15 +1588,16 @@ def apply_film_consensus(results, load_paths, report=None):
         size_dev = (abs(max(p["rw"], p["rh"]) - long_px) / max(long_px, 1)
                     + abs(min(p["rw"], p["rh"]) - short_px) / max(short_px, 1))
         size_agree = max(0.0, 1.0 - size_dev)
-        # Konfidenz (Roadmap Phase 3/4): nur noch Groessenuebereinstimmung mit dem Rollen-Konsens
-        # und Kantenklarheit. film_trust und der Belichtungsdeckel bleiben als Diagnosefaktoren in
-        # _conf_parts (und in der UI sichtbar), gehen aber NICHT mehr in die Zahl ein: Auf den
-        # 103 Referenzbildern (7 Filme) trennt film_trust Treffer und Fehltreffer schlechter als
-        # der Zufall (AUC 0.32: falsche Crops sind einer Rolle oft "einig falsch"), und der
-        # Belichtungsdeckel drueckte 22 richtige Crops in gelb/rot (AUC 0.58). Leave-One-Film-Out:
-        # AUC 0.885 (alt) -> 0.982, Abdeckung sicherer Treffer 84.7 % -> 99 % bei 98 % Precision.
-        # Nachvollziehbar mit: tools/calibrate.py --loo --from-json <eval-Rohdaten>
-        conf = 0.5 * size_agree + 0.5 * edge_score
+        # Konfidenz: Groessenuebereinstimmung mit dem Rollen-Konsens und Kantenklarheit, gedeckelt
+        # durch den Belichtungsfaktor (kontrastarme/unterbelichtete Bilder: die Kantensuche ist dort
+        # unzuverlaessig, auch bei hohem Groessen-/Kanten-Score). film_trust bleibt nur Diagnose.
+        # Geschichte: Mit 98 Referenzen (7 Filme) drueckte der Belichtungsdeckel richtige Crops
+        # nach gelb/rot ohne Praezisionsgewinn und wurde entfernt (Version size+edge-v2). Mit allen
+        # 209 Testfotos (9 Filme, alle von Hand gecroppt) kehrt sich das um: bei den Produktions-
+        # schwellen (gruen >= 0.5) sinken die falschen Gruenen von 11 auf 1 (139 statt 183 Gruene,
+        # Praezision 94.0 % -> 99.3 %; AUC 0.813 -> 0.848, ohne Film 34 0.802 -> 0.871). Nachvoll-
+        # ziehbar mit: tools/calibrate.py --loo --from-json <eval-Rohdaten>
+        base_conf = 0.5 * size_agree + 0.5 * edge_score
 
         # Unterbelichtete/kontrastarme Aufnahmen: Pass A findet dort kaum
         # oder keine Bild/Rand-Grenze (siehe measure_image_aspect), was auch
@@ -1598,7 +1611,7 @@ def apply_film_consensus(results, load_paths, report=None):
         else:
             contrast = float(contrast)
             exposure_factor = min(1.0, max(0.45, 0.45 + 0.55 * (contrast - 8) / 22))
-        # exposure_factor: nur noch Diagnose (siehe oben), kein Deckel mehr
+        conf = base_conf * exposure_factor
 
         r["confidence"] = float(round(min(1.0, max(0.0, conf)), 3))
         # Fuer die Konfidenz-Kalibrierung (tools/calibrate.py): die
@@ -1614,8 +1627,8 @@ def apply_film_consensus(results, load_paths, report=None):
             r.setdefault("reasons", []).append(
                 f"Kontrastarm/unterbelichtet (Kontrast "
                 f"{'n/a' if contrast is None else int(contrast)}) "
-                f"- Hinweis, Konfidenz nicht gedeckelt")
-        r["conf_formula"] = "size+edge-v2"
+                f"- Konfidenz gedeckelt (x{exposure_factor:.2f})")
+        r["conf_formula"] = "size+edge*exposure-v3"
         r.setdefault("reasons", []).append(
             f"Film-Konsens {int(long_px)}x{int(short_px)} "
             f"(n={p['n']}, MAD {int(p['mad_long'])}/{int(p['mad_short'])})")

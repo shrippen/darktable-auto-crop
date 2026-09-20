@@ -411,10 +411,10 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--films", help="Kommaliste, z.B. '27,30' (Default: alle "
                                     "mit Referenz-Crops)")
-    ap.add_argument("--t-green", type=float, default=0.75,
-                    help="Schwelle gruen (Default 0.75)")
-    ap.add_argument("--t-yellow", type=float, default=0.50,
-                    help="Schwelle gelb (Default 0.50)")
+    ap.add_argument("--t-green", type=float, default=0.5,
+                    help="Schwelle gruen (Default 0.5 = Produktion)")
+    ap.add_argument("--t-yellow", type=float, default=0.30,
+                    help="Schwelle gelb (Default 0.3 = Produktion)")
     ap.add_argument("--target", type=float, default=0.98,
                     help="Ziel-Precision fuer gruen bei LOFO/Split (Default 0.98)")
     ap.add_argument("--update-baseline", action="store_true")

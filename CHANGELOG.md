@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Algorithmus: geschärft an allen 209 handgecroppten Testfotos
+Referenzen: alle Bilder in `Testphotos/` (9 Filme) wurden im Web-UI von Hand gecroppt (`review_data/reviews.json`).
+Baseline vorher/nachher auf denselben 209 Bildern: **186 → 194 Treffer** (|dW|,|dH| < 60 px bei 2000 px langer Kante).
+- **Orientierung aus dem Bild:** Die Einzeldetektion lieferte in 12 Fällen die falsche Orientierung (Querformat-Box in einem
+  Hochformatbild, dy≈+300, dh≈−600). Auf den Referenzen stimmt die Crop-Orientierung in 208 von 209 Fällen mit der des
+  Bildes überein, deshalb bestimmt jetzt die Bildorientierung die Konsens-Box (nur bei fast quadratischen Bildern
+  entscheidet weiter die Detektion). Behebt 6 der 8 schwersten Fehlschläge.
+- **Engeres lokales Einpassen:** Die Größenabweichung beim Einpassen (`REFINE_SIZE_SLACK`) ist 10 statt 45 px. Die Referenzen
+  einer Rolle streuen nur um 3–12 px. Sweep 10/15/30/45: 194/192/191/192 Treffer; keine Rolle wird schlechter.
+- **Konfidenz: Belichtungsdeckel zurück** (`size+edge*exposure-v3`). Mit 98 Referenzen hatte er nichts gebracht und war
+  entfernt worden; mit 209 Bildern kehrt sich das um. Bei den Produktionsschwellen (grün ≥ 0.5) sinken falsche Grüne von 11
+  auf 1 (grün 139 statt 183, Präzision 94.0 % → 99.3 %, AUC 0.813 → 0.848; ohne Film 34 0.802 → 0.871). Der Preis: mehr Bilder
+  landen in gelb/rot (70 statt 26 zu prüfen). Leave-One-Film-Out: Präzision 93.9 % → 96.2 %, Abdeckung 79.7 % → 77.8 %.
+- `tools/eval.py` rechnet die 3-Wege-Tabelle jetzt mit den Produktionsschwellen (0.5 / 0.3).
+- Bekannte Grenze: In Film 34 liegt die Referenz bei 9 Bildern 40–70 px innerhalb der sichtbaren Rahmenkante, die die
+  Erkennung trifft (Oberkante); das sind vermutlich bewusst engere Crops und keine Erkennungsfehler. Sie bleiben Fehltreffer.
+
 ### Neu: Schräglage
 - **Pipeline:** Erkennung → **Tilt-Erkennung** → **korrigierte Erkennung**. Ist das Bild merklich schief (≥ 0.3°), wird es
   geradegestellt und der umgerechnete Crop dort lokal an die Kanten eingepasst; diese „korrigierte Erkennung“ ist der

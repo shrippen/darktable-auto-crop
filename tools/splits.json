@@ -1,5 +1,5 @@
 {
- "comment": "Split pro Film (nicht zufaellig gemischt). Schwellen nur auf 'tuning' waehlen, Erfolg nur auf 'holdout' berichten. Alle 5 Fehltreffer der Referenzdaten liegen in Film 27/29/31; der Holdout enthaelt Film 27 (3) und Film 31 (1), damit er auch Fehltreffer enthaelt. Film 33/34 haben noch keine Referenzen.",
+ "comment": "Split pro Film (nicht zufaellig gemischt). Schwellen nur auf 'tuning' waehlen, Erfolg nur auf 'holdout' berichten. Alle 5 Fehltreffer der Referenzdaten liegen in Film 27/29/31; der Holdout enthaelt Film 27 (3) und Film 31 (1), damit er auch Fehltreffer enthaelt. Film 33/34 haben inzwischen Referenzen; Stand 2026-09-20 wurde aber an allen 209 Bildern getunt, der Split ist daher nicht mehr unabhaengig.",
  "tuning": [
   "Film 28",
   "Film 29",

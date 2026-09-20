@@ -177,8 +177,8 @@ SCORERS = {
     "LR alle vier Faktoren": _lr([0, 1, 2, 3]),
     "LR ohne film_trust": _lr([0, 1, 3]),
     "edge_score allein": _fixed(lambda r: r["x"][1]),
-    "0.5 size_agree + 0.5 edge_score": _fixed(lambda r: 0.5 * r["x"][0] + 0.5 * r["x"][1]),
-    "0.5 size + 0.5 edge, x Belichtung": _fixed(lambda r: (0.5 * r["x"][0] + 0.5 * r["x"][1]) * r["x"][3]),
+    "0.5 size_agree + 0.5 edge_score (v2, alt)": _fixed(lambda r: 0.5 * r["x"][0] + 0.5 * r["x"][1]),
+    "0.5 size + 0.5 edge, x Belichtung (PRODUKTION v3)": _fixed(lambda r: (0.5 * r["x"][0] + 0.5 * r["x"][1]) * r["x"][3]),
 }
 
 

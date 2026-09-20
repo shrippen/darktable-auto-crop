@@ -211,6 +211,24 @@ sinnvoll:
       auf den Trainingsdaten).
       **Erledigt:** Auf dem Tuning-Set erreicht ein Ziel von 100 % Precision die Schwelle 0.49; der Holdout (Film 27, 31) hat dort 40/40 (100 %). Die Produktionsschwellen bleiben daher **grün ≥ 0.5, gelb ≥ 0.3**. Auf allen 103 Referenzen: grün 91 Treffer / 0 Fehltreffer (vorher 76 / 0), gelb 6 / 3. Grenze: nur 5 Fehltreffer insgesamt, die Zahlen sind grob.
 
+## Nachtrag: alle 209 Testfotos als Ground Truth (2026-09-20)
+
+Alle Bilder in `Testphotos/` sind jetzt von Hand gecroppt (Web-UI, `review_data/reviews.json`; 52 bestätigt, 7 als Problem
+markiert, 70 mit Tilt-Angabe). Damit ist die alte Aussage „nur 5 Fehltreffer in 103 Bildern“ überholt: **194 von 209
+Treffern** (Baseline vorher 186), 15 Fehltreffer.
+
+- [x] Orientierung aus der Bildform statt aus der Einzeldetektion (behob 6 der 8 schwersten Fehlschläge).
+- [x] Einpassen mit ±10 statt ±45 px Größenspielraum (die Referenzen einer Rolle streuen um 3–12 px).
+- [x] Belichtungsdeckel in der Konfidenz wieder eingesetzt: falsche Grüne 11 → 1, dafür weniger Grün (139 von 209).
+      **Das kehrt die Phase-3/4-Entscheidung um:** die damalige Aussage galt für 98 Referenzen (7 Filme), mit 209 nicht mehr.
+- [ ] **Offen: Film 34.** 9 Fehltreffer, alle mit Oberkante 40–70 px unterhalb der sichtbaren Rahmenkante. Entweder ist das
+      Ihre Vorgabe (etwas enger schneiden) oder ein Erkennungsfehler; das lässt sich nur mit einer Ansage klären, ob der Crop
+      *auf* der Rahmenkante oder *innerhalb* liegen soll.
+- [ ] Offen: Film 29 (Mittelformat 6x6, fast quadratisch): zwei Fehltreffer mit ~220 px seitlichem Versatz; 0346/0378 sind
+      Bilder mit ausgebranntem Himmel/Rand, wo der Crop nach Inhalt gesetzt wurde.
+- Achtung Aussagekraft: Es wurde an allen 209 Bildern gleichzeitig gemessen und getunt; `tools/splits.json` ist nicht mehr
+  sauber getrennt. Für einen ehrlichen Test braucht es neue, nicht angesehene Filme.
+
 ## Nachtrag: Schräglage (2026-09-20)
 
 - [x] Schräglage messen und in der Web-UI anzeigen (`measure_skew` in `auto_crop_negative.py`).
