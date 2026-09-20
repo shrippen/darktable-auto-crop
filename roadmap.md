@@ -229,6 +229,23 @@ Treffern** (Baseline vorher 186), 15 Fehltreffer.
 - Achtung Aussagekraft: Es wurde an allen 209 Bildern gleichzeitig gemessen und getunt; `tools/splits.json` ist nicht mehr
   sauber getrennt. Für einen ehrlichen Test braucht es neue, nicht angesehene Filme.
 
+## Nachtrag: weitere Erkennungsmethoden geprüft (2026-09-20)
+
+Auf den 209 Referenzen ausprobiert, **keine übernommen** (Stand 194/209; Rohdaten mit `tools/eval.py --json`):
+
+- **Statische Maske pro Rolle:** Der Film liegt in allen Scans einer Rolle an derselben Stelle (Verschiebung per
+  Phasenkorrelation ≈ 0 px), das Median-Bild zeigt nur die äußere Filmkante (Halter/Scanrand), keine Crop-Kanten.
+  Die Crop-Position streut ±10–25 px, weil die Bilder auf dem Film unterschiedlich sitzen, nicht weil der Film wandert.
+  Ausrichten am Median senkt die Streuung nicht (teils steigt sie). Kein Nutzen.
+- **Homogenität außen / Kantenkonsistenz / Farbschritt als Konfidenz-Merkmal:** Einzel-AUC bis 0,87 (Farbschritt
+  Minimum über die Kanten) gegenüber 0,85 der heutigen Konfidenz; im Leave-One-Film-Out ergibt eine logistische
+  Kombination 144 → 152 Grüne bei 98 % Präzision, ohne Verbesserung der AUC (0,81). Im Rauschen, nicht übernommen.
+- **Farbkanäle statt Graubild beim Einpassen** (max, min, R, G, B, Sättigung, Grau+Sättigung): 194–196 Treffer,
+  Film 34 bleibt unverändert. Kein belastbarer Gewinn.
+
+Fazit: Die verbleibenden Fehltreffer (Film 34, Film 29) sind keine Frage des Kantensignals, sondern der Vorgabe
+(Crop auf oder innerhalb der Rahmenkante) bzw. fehlender sichtbarer Kante.
+
 ## Nachtrag: Schräglage (2026-09-20)
 
 - [x] Schräglage messen und in der Web-UI anzeigen (`measure_skew` in `auto_crop_negative.py`).
