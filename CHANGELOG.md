@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Neu: Schräglage
+- Die Schräglage des Filmrahmens wird gemessen (Geradenanpassung an den vier Crop-Kanten, Suchbereich ±9°, Ergebnis
+  in Grad plus Sicherheit und Winkel je Seite) und in der Web-UI gezeigt: Kachelmarke „Schräg +1.2°“, Abschnitt im
+  Editor, Sortierung „Schräglage, größte zuerst“. Auf den 98 Referenzbildern liegt der Betrag bei höchstens 0.53°
+  (Median 0.19°); an künstlich gedrehten Bildern (±2 bis 7°) beträgt der mediane Fehler 0.1°.
+- **Geradestellen in darktable (optional, je Bild oder für die Auswahl):** setzt das Modul „Drehen und Perspektive“
+  (`ashift`, Rotation = Messwert, ohne automatischen Zuschnitt) und danach den Crop auf das gedrehte Bild. Editor und
+  Kacheln zeigen dann das geradegestellte Bild; der Winkel ist von Hand änderbar (±10°). Nur im darktable-Modus, der
+  Ordnermodus zeigt den Messwert nur an. „Zurücksetzen“ und ein erneuter Plan schalten die Drehung wieder aus.
+- Plan (`plan.json`) hat pro Bild `angle`, `was_angle`; der Ordner-Speichern-Dialog nennt jetzt `reviews.json`.
+
 ### Neu
 - Editor zeigt die vier Faktoren der Konfidenz (Größenübereinstimmung, Kantenklarheit, Film-Vertrauen,
   Belichtung) mit dem schwächsten hervorgehoben; sie stehen auch im `feedback.jsonl`.

@@ -446,18 +446,27 @@ local function pack_crop_params(cx, cy, cw, ch)
   return (bin:gsub(".", function(c) return string.format("%02x", c:byte()) end))
 end
 
-local function crop_style_xml(style_name, op_params_hex, enabled)
-  return string.format([[<?xml version="1.0" encoding="UTF-8"?>
-<darktable_style version="1.0">
-  <info>
-    <name>%s</name>
-    <description></description>
-  </info>
-  <style>
-    <plugin>
-      <num>0</num>
+-- Modul "Drehen und Perspektive" (ashift), Parameterversion 5, 892 Bytes (an darktable 5.6.1 per
+-- darktable-cli ausprobiert: nur mit exakt dieser Groesse werden die Parameter angenommen).
+-- Feldfolge: rotation, lensshift_v, lensshift_h, shear, f_length, crop_factor, orthocorr,
+-- aspect (8 float), mode, toggle (2 int), cl, cr, ct, cb (4 float), cropmode (int), Rest 0
+-- (gespeicherte Hilfslinien). cropmode 0 = kein automatischer Zuschnitt: die Ausgabe ist die
+-- Bounding-Box des gedrehten Bildes; der crop-Schritt danach bezieht sich auf diese Flaeche.
+-- rotation = gemessene Schraeglage in Grad (positiv = Bildinhalt im Uhrzeigersinn verdreht).
+local ASHIFT_MODVERSION = 5
+local ASHIFT_PARAMS_SIZE = 892
+local function pack_ashift_params(rotation_deg)
+  local bin = string.pack("<ffffffffi4i4ffffi4", rotation_deg, 0, 0, 0, 28.0, 1.0, 100.0, 1.0,
+    0, 0, 0, 1, 0, 1, 0)
+  bin = bin .. string.rep("\0", ASHIFT_PARAMS_SIZE - #bin)
+  return (bin:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
+local function style_plugin_xml(num, module_version, operation, params_hex, enabled)
+  return string.format([[    <plugin>
+      <num>%d</num>
       <module>%d</module>
-      <operation>crop</operation>
+      <operation>%s</operation>
       <op_params>%s</op_params>
       <enabled>%d</enabled>
       <blendop_params>%s</blendop_params>
@@ -466,20 +475,40 @@ local function crop_style_xml(style_name, op_params_hex, enabled)
       <multi_name></multi_name>
       <multi_name_hand_edited>0</multi_name_hand_edited>
     </plugin>
-  </style>
-</darktable_style>
-]], style_name, CROP_MODVERSION, op_params_hex, enabled and 1 or 0,
+]], num, module_version, operation, params_hex, enabled and 1 or 0,
     CROP_BLENDOP_PARAMS, CROP_BLENDOP_VERSION)
+end
+
+-- angle: nil = Drehung nicht anfassen, Zahl = drehen (Modul an), false = Drehung ausschalten
+local function crop_style_xml(style_name, op_params_hex, enabled, angle)
+  local plugins = ""
+  local n = 0
+  if angle ~= nil then
+    plugins = style_plugin_xml(n, ASHIFT_MODVERSION, "ashift",
+      pack_ashift_params(angle or 0), angle ~= false and angle ~= 0)
+    n = n + 1
+  end
+  plugins = plugins .. style_plugin_xml(n, CROP_MODVERSION, "crop", op_params_hex, enabled)
+  return string.format([[<?xml version="1.0" encoding="UTF-8"?>
+<darktable_style version="1.0">
+  <info>
+    <name>%s</name>
+    <description></description>
+  </info>
+  <style>
+%s  </style>
+</darktable_style>
+]], style_name, plugins)
 end
 
 -- Importiert+wendet einen einzelnen crop-Style auf ein Bild an und
 -- raeumt danach wieder auf. Gemeinsame Basis fuer set_crop() (Crop
 -- setzen) und undo_crop() (Crop-Modul wieder deaktivieren).
-local function apply_crop_style(image, op_params_hex, enabled, log_desc)
+local function apply_crop_style(image, op_params_hex, enabled, log_desc, angle)
   local style_name = "auto_crop_negative_tmp_" .. os.time() .. "_"
     .. tostring(math.random(100000, 999999))
   local tmp_path = os.tmpname() .. ".dtstyle"
-  local xml = crop_style_xml(style_name, op_params_hex, enabled)
+  local xml = crop_style_xml(style_name, op_params_hex, enabled, angle)
   local f = io.open(tmp_path, "w")
   f:write(xml)
   f:close()
@@ -500,7 +529,8 @@ local function apply_crop_style(image, op_params_hex, enabled, log_desc)
 
   dt.styles.apply(style_obj, image)
   dt.styles.delete(style_obj)
-  log(string.format("apply_crop_style %s: %s", image.filename, log_desc))
+  log(string.format("apply_crop_style %s: %s%s", image.filename, log_desc,
+    angle == nil and "" or (" ashift=" .. tostring(angle))))
 end
 
 -- Bilder, denen in dieser Sitzung zuletzt per set_crop() ein Crop
@@ -1090,14 +1120,14 @@ end
 -- sich auf den gedrehten Rahmen - exakt darktables Crop-Koordinaten (Spike-Ergebnis,
 -- companion-ui-plan.md Abschnitt 12) - deshalb NICHT mit image.width/height
 -- multiplizieren.
-local function set_crop_frac(image, l, t, r, b)
+local function set_crop_frac(image, l, t, r, b, angle)
   l = math.max(0, math.min(1, l))
   t = math.max(0, math.min(1, t))
   r = math.max(l + 0.001, math.min(1, r))
   b = math.max(t + 0.001, math.min(1, b))
   apply_crop_style(image, pack_crop_params(l, t, r, b), true,
     string.format("Plan: frac l=%s t=%s r=%s b=%s", (fmt_float_c(l, 4)),
-      (fmt_float_c(t, 4)), (fmt_float_c(r, 4)), (fmt_float_c(b, 4))))
+      (fmt_float_c(t, 4)), (fmt_float_c(r, 4)), (fmt_float_c(b, 4))), angle)
   last_cropped_images[#last_cropped_images + 1] = image
 end
 
@@ -1181,12 +1211,17 @@ local function companion_apply()
     else
       local ok, err = pcall(function()
         if e.apply and type(e.crop) == "table" then
-          set_crop_frac(img, e.crop[1], e.crop[2], e.crop[3], e.crop[4])
+          -- Drehung: Zahl = setzen; war frueher gesetzt, jetzt nicht mehr = ausschalten; sonst
+          -- die Drehung unberuehrt lassen (kein zusaetzlicher History-Eintrag)
+          local angle = tonumber(e.angle)
+          if angle == nil and tonumber(e.was_angle) then angle = false end
+          set_crop_frac(img, e.crop[1], e.crop[2], e.crop[3], e.crop[4], angle)
           n_crop = n_crop + 1
         elseif e.was_applied then
-          -- zuvor angewendet, jetzt nicht mehr gewollt: Crop wieder ausschalten
+          -- zuvor angewendet, jetzt nicht mehr gewollt: Crop (und Drehung) wieder ausschalten
           apply_crop_style(img, pack_crop_params(0, 0, 1, 1), false,
-            "Plan: Crop deaktiviert (Revision " .. revision .. ")")
+            "Plan: Crop deaktiviert (Revision " .. revision .. ")",
+            tonumber(e.was_angle) and false or nil)
         end
         set_color_label(img, e.label)
       end)
@@ -1235,7 +1270,22 @@ local reset_button   -- Widget (siehe unten)
 local RESET_LABEL = _("Crop & Farben zuruecksetzen")
 local reset_armed_until = 0
 
+-- Bild-ID -> true fuer Bilder, denen der zuletzt angewendete Plan eine Drehung gesetzt hat
+local function applied_rotation_ids()
+  local ids = {}
+  local _sid, dir = last_session()
+  if not dir then return ids end
+  local applied = parse_json(read_file(dir .. "/applied.json") or "")
+  if type(applied) == "table" and type(applied.images) == "table" then
+    for id, e in pairs(applied.images) do
+      if type(e) == "table" and tonumber(e.angle) then ids[math.tointeger(tonumber(id)) or id] = true end
+    end
+  end
+  return ids
+end
+
 local function do_reset(images)
+  local rotated = applied_rotation_ids()
   local queue = load_queue()
   local queue_changed = false
   local target = {}
@@ -1243,7 +1293,8 @@ local function do_reset(images)
   for _, img in ipairs(images) do
     target[img.filename] = true
     local ok, err = pcall(function()
-      apply_crop_style(img, pack_crop_params(0, 0, 1, 1), false, "Zuruecksetzen")
+      apply_crop_style(img, pack_crop_params(0, 0, 1, 1), false, "Zuruecksetzen",
+        rotated[img.id] and false or nil)
       img.red, img.yellow, img.green = false, false, false
     end)
     if ok then n = n + 1 else

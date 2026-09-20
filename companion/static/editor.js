@@ -84,6 +84,9 @@ export function refreshEditor() {
   if (!ed) return;
   if (!byId(ed.id)) { closeEditor(); return; }
   if (ed.drag) return;                 // waehrend des Ziehens nichts ueberschreiben
+  const im = el().querySelector('#ed-img');
+  const src = thumbUrl(ed.id, BIG);
+  if (im && im.getAttribute('src') !== src) { im.src = src; layout(); }     // geradegestellt <-> Original
   renderSide();
   renderStrip();
   syncCrop();
@@ -134,6 +137,13 @@ function build() {
   image.addEventListener('load', layout);
   image.src = thumbUrl(img.id, BIG);
   el().addEventListener('click', onClick);
+  el().addEventListener('change', (e) => {
+    const inp = e.target.closest('[data-deg]');
+    if (!inp) return;
+    const v = parseFloat(inp.value);
+    if (Number.isFinite(v) && Math.abs(v) <= 10) patch({ straighten: v === 0 ? null : { deg: v } });
+    else toast(T('skew_range'), 'error');
+  });
   const stage = el().querySelector('#ed-stage');
   stage.addEventListener('pointerdown', onDown);
   stage.addEventListener('pointermove', onMove);
@@ -152,7 +162,8 @@ function layout() {
   const frame = el().querySelector('#ed-frame');
   const img = cur();
   const im = el().querySelector('#ed-img');
-  const ar = img.export_size ? img.export_size[0] / img.export_size[1]
+  const vs = img.view_size || img.export_size;
+  const ar = vs ? vs[0] / vs[1]
     : (im.naturalWidth ? im.naturalWidth / im.naturalHeight : 1.5);
   const pad = 12;
   const w = stage.clientWidth - pad * 2, h = stage.clientHeight - pad * 2;
@@ -195,6 +206,34 @@ function refDevHtml(img) {
     <div class="notice-list">${T('ref_dev_v', f(r.dx), f(r.dy), f(r.dw), f(r.dh), r.tol)}</div></div>`;
 }
 
+const fmtDeg = (d) => `${d > 0 ? '+' : ''}${d.toFixed(2)}°`;
+
+// Schraeglage des Filmrahmens (gemessen an den vier Crop-Kanten) und Geradestellen in darktable.
+function skewHtml(img) {
+  const sk = img.skew, locked = !isEditable();
+  if (!sk || sk.deg == null) return `<div><h3>${T('skew')}</h3><p class="field-hint">${T('skew_none')}</p></div>`;
+  const sides = Object.entries(sk.sides || {}).map(([k, v]) => `${S('side_' + k)} ${fmtDeg(v)}`).join(' · ');
+  const strong = Math.abs(sk.deg) >= 0.5;
+  const rows = `<dl class="kv"><dt>${T('skew_measured')}</dt><dd>${fmtDeg(sk.deg)} ${sk.deg > 0 ? T('skew_cw') : T('skew_ccw')}</dd>
+    <dt>${T('skew_sure')}</dt><dd>${sk.conf.toFixed(2)}${sk.conf < 0.4 ? ' · ' + T('skew_unsure') : ''}</dd></dl>
+    <p class="field-hint">${esc(sides)}</p>`;
+  let ctl;
+  if (store.s.mode !== 'darktable') {
+    ctl = `<p class="field-hint">${T('skew_folder')}</p>`;
+  } else if (img.straighten != null) {
+    ctl = `<div class="callout callout-ok"><strong>${T('skew_on')} ${fmtDeg(img.straighten)}</strong>
+      <div class="chips" style="margin-top:.5rem;align-items:center">
+        <label class="toolbar-label" for="ed-deg">${T('skew_angle')}</label>
+        <input class="input" id="ed-deg" data-deg type="number" step="0.1" min="-10" max="10" value="${img.straighten}" style="width:6rem"${locked ? ' disabled' : ''}>
+        <button type="button" class="btn btn-outline btn-sm" data-act="straighten-off"${locked ? ' disabled' : ''}>${T('skew_off')}</button></div>
+      <p class="field-hint" style="margin-top:.5rem">${T('skew_on_h')}</p></div>`;
+  } else {
+    ctl = `<button type="button" class="btn ${strong ? 'btn-accent' : 'btn-outline'} btn-sm" data-act="straighten-on"${locked ? ' disabled' : ''}>${S('skew_do', fmtDeg(sk.deg))}</button>
+      <p class="field-hint">${T('skew_off_h')}</p>`;
+  }
+  return `<div><h3>${T('skew')}</h3>${rows}${ctl}</div>`;
+}
+
 function renderSide() {
   const img = cur();
   const list = filmImages();
@@ -226,6 +265,7 @@ function renderSide() {
       <button type="button" class="btn btn-outline btn-sm" data-act="undo"${locked ? ' disabled' : ''}>${T('undo')} · Z</button>
     </div>
     ${refDevHtml(img)}
+    ${skewHtml(img)}
     ${confPartsHtml(img)}
     ${reasons ? `<div><h3>${T('reasons')}</h3><ul class="reasons">${reasons}</ul></div>` : ''}
     <p class="keyhint">${T('k_move')}<br>${T('k_group')}<br>${T('k_accept')}</p>`;
@@ -423,6 +463,8 @@ function onClick(e) {
     else if (a === 'next') go(1);
     else if (a === 'cands') loadCandidates();
     else if (a === 'reset') patch({ crop: null });
+    else if (a === 'straighten-on') patch({ straighten: { deg: cur().skew.deg } });
+    else if (a === 'straighten-off') patch({ straighten: null });
     else if (a === 'undo') guard(() => api('POST', 'undo', { scope: 'selection', ids: [ed.id] })).then(hooks.refresh);
     else if (a === 'prop-accept') guard(() => api('POST', 'proposals/accept', { ids: [ed.id] })).then(hooks.refresh);
     else if (a === 'prop-discard') guard(() => api('POST', 'proposals/discard', { ids: [ed.id] })).then(hooks.refresh);

@@ -46,6 +46,34 @@ def _single_worker(item):
     return r
 
 
+def _skew_worker(item):
+    """Schraeglage des Filmrahmens am erkannten Crop messen (Grad, + = im Uhrzeigersinn)."""
+    path, x, y, w, h = item
+    acn = _acn()
+    _, small, scale = acn._prepare_detect_gray(acn.load_image(path))
+    return acn.measure_skew(small, int(x * scale), int(y * scale),
+                            max(8, int(w * scale)), max(8, int(h * scale)))
+
+
+def measure_skews(results, paths, workers=None):
+    """Haengt jedem Ergebnis ``_skew`` an. ``paths`` = {abs_pfad: id}, ``results`` = {id: result}.
+    Fehler bei der Messung machen die Erkennung nicht ungueltig (dann fehlt nur die Angabe)."""
+    items = {}
+    for path, iid in paths.items():
+        r = results.get(iid)
+        if r and not r.get("error") and r.get("x") is not None and r.get("width"):
+            items[iid] = (path, r["x"], r["y"], r["width"], r["height"])
+    if not items:
+        return
+    with cf.ThreadPoolExecutor(max_workers=workers or min(4, os.cpu_count() or 2)) as ex:
+        futs = {ex.submit(_skew_worker, it): iid for iid, it in items.items()}
+        for fut in cf.as_completed(futs):
+            try:
+                results[futs[fut]]["_skew"] = fut.result()
+            except Exception:      # noqa: BLE001 - Diagnose, nie fatal
+                pass
+
+
 def _candidates_worker(item):
     path, aspect = item
     acn = _acn()
@@ -208,6 +236,8 @@ class Analyzer:
         for path, iid in paths.items():
             results.setdefault(iid, {"error": "Erkennung lieferte kein Ergebnis"})
         aspects = {k: v["aspect_ratio"] for k, v in batch["film_aspects"].items()}
+        self._stage("skew", 0, 0)
+        measure_skews(results, paths)
         s.apply_detection(results, aspects)
         s.mark_analysis_done()
 
@@ -254,6 +284,7 @@ class Analyzer:
                 iid = paths.get(os.path.abspath(r["input_file"]))
                 if iid is not None:
                     results[iid] = r
+        measure_skews(results, paths)
         s.set_proposals(results, settings)
 
     # -- Kandidaten fuer den Editor ------------------------------------------

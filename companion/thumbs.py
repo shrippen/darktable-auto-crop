@@ -17,13 +17,16 @@ def clamp_width(w):
     return max(MIN_W, min(MAX_W, w))
 
 
-def thumb_bytes(src_path, cache_dir, key, width):
+def thumb_bytes(src_path, cache_dir, key, width, straighten_deg=None):
     """JPEG-Bytes der Vorschau (lange Kante = ``width``). Exif-Orientierung wird
     angewendet, damit Anzeige und Erkennung (cv2 dreht ebenfalls) dieselben
-    Koordinaten teilen."""
+    Koordinaten teilen. ``straighten_deg`` dreht den Inhalt um diesen Winkel gegen den Uhr-
+    zeigersinn (Schraeglage geradestellen); die Flaeche waechst auf die Bounding-Box wie bei
+    darktables "Drehen und Perspektive" ohne Zuschnitt, Ecken werden schwarz."""
     width = clamp_width(width)
     mtime = int(os.path.getmtime(src_path))
-    cache = os.path.join(cache_dir, f"{key}_{width}_{mtime}.jpg")
+    tag = f"_s{straighten_deg:+.2f}" if straighten_deg else ""
+    cache = os.path.join(cache_dir, f"{key}_{width}{tag}_{mtime}.jpg")
     if os.path.exists(cache):
         with open(cache, "rb") as f:
             return f.read()
@@ -31,6 +34,8 @@ def thumb_bytes(src_path, cache_dir, key, width):
         im.draft("RGB", (width * 2, width * 2))    # schnelleres JPEG-Dekodieren
         im = ImageOps.exif_transpose(im).convert("RGB")
         im.thumbnail((width, width), Image.LANCZOS)
+        if straighten_deg:
+            im = im.rotate(straighten_deg, resample=Image.BICUBIC, expand=True, fillcolor=(0, 0, 0))
         buf = io.BytesIO()
         im.save(buf, "JPEG", quality=88)
     data = buf.getvalue()

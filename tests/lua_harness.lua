@@ -47,13 +47,23 @@ local dt = {
     import = function(path)
       local f = io.open(path); local xml = f:read("*a"); f:close()
       local name = xml:match("<name>(.-)</name>")
-      style_store[#style_store + 1] = { name = name,
-        params = xml:match("<op_params>(.-)</op_params>"),
-        enabled = xml:match("<enabled>(%d)</enabled>") == "1" }
+      local entry = { name = name }
+      for block in xml:gmatch("<plugin>(.-)</plugin>") do
+        local op = block:match("<operation>(.-)</operation>")
+        local params = block:match("<op_params>(.-)</op_params>")
+        local enabled = block:match("<enabled>(%d)</enabled>") == "1"
+        if op == "crop" then entry.params, entry.enabled = params, enabled
+        elseif op == "ashift" then
+          entry.ashift_bytes, entry.ashift_enabled = #params // 2, enabled
+          entry.angle = string.unpack("<f", (params:sub(1, 8):gsub("%x%x", function(h) return string.char(tonumber(h, 16)) end)))
+        end
+      end
+      style_store[#style_store + 1] = entry
     end,
     apply = function(style, image)
       styles_applied[#styles_applied + 1] = { file = image.filename, id = image.id,
-        enabled = style.enabled, crop = hex_to_floats(style.params) }
+        enabled = style.enabled, crop = hex_to_floats(style.params),
+        angle = style.angle, ashift_enabled = style.ashift_enabled, ashift_bytes = style.ashift_bytes }
     end,
     delete = function(style)
       for i, s in ipairs(style_store) do if s == style then table.remove(style_store, i) break end end
@@ -99,8 +109,9 @@ end
 local st = {}
 for _, s in ipairs(styles_applied) do
   local function num(v) return (string.format("%.4f", v):gsub(",", ".")) end
-  st[#st + 1] = string.format('{"id":%d,"enabled":%s,"crop":[%s,%s,%s,%s]}', s.id,
-    tostring(s.enabled), num(s.crop[1]), num(s.crop[2]), num(s.crop[3]), num(s.crop[4]))
+  st[#st + 1] = string.format('{"id":%d,"enabled":%s,"crop":[%s,%s,%s,%s],"angle":%s,"ashift_enabled":%s,"ashift_bytes":%s}', s.id,
+    tostring(s.enabled), num(s.crop[1]), num(s.crop[2]), num(s.crop[3]), num(s.crop[4]),
+    s.angle and num(s.angle) or "null", tostring(s.ashift_enabled or false), tostring(s.ashift_bytes or "null"))
 end
 local pr = {}
 for _, p in ipairs(prints) do pr[#pr + 1] = '"' .. p:gsub('"', '\\"') .. '"' end

@@ -998,6 +998,92 @@ def find_best_crop(gray: np.ndarray, target_ratio: float = 1.5,
 
 # ─── Film-Konsens (Batch) ────────────────────────────────────────────────────
 
+SKEW_MAX_DEG = 9.0      # Suchbereich +/- Grad (erwartet werden bis ca. 7)
+
+
+def _line_fit_theil_sen(us, vs, tol):
+    """Robuste Gerade v = a + s*u (Theil-Sen). Liefert (slope, inlier_ratio)."""
+    us = np.asarray(us, float)
+    vs = np.asarray(vs, float)
+    n = len(us)
+    if n < 6:
+        return None, 0.0
+    iu, ju = np.triu_indices(n, 1)
+    du = us[ju] - us[iu]
+    ok = np.abs(du) > 1e-6
+    slopes = (vs[ju] - vs[iu])[ok] / du[ok]
+    if len(slopes) == 0:
+        return None, 0.0
+    s = float(np.median(slopes))
+    a = float(np.median(vs - s * us))
+    res = np.abs(vs - (a + s * us))
+    return s, float(np.mean(res < tol))
+
+
+def _edge_points(gray, x, y, w, h, side, n=36, strip=7):
+    """Sucht entlang einer Crop-Kante an n Stellen die staerkste Hell/Dunkel-
+    Grenze quer zur Kante. Fenster: +/- SKEW_MAX_DEG ueber die Kantenlaenge.
+    Liefert (u, v) = (Position entlang, Position quer)."""
+    ih, iw = gray.shape
+    horizontal = side in ("top", "bottom")
+    length = w if horizontal else h
+    band = int(length * 0.5 * math.tan(math.radians(SKEW_MAX_DEG))) + 10
+    us, vs = [], []
+    for t in np.linspace(0.1, 0.9, n):
+        if horizontal:
+            u = int(x + t * w)
+            c = y if side == "top" else y + h
+            lo, hi = max(0, c - band), min(ih, c + band)
+            x0, x1 = max(0, u - strip), min(iw, u + strip + 1)
+            if hi - lo < 8 or x1 <= x0:
+                continue
+            prof = gray[lo:hi, x0:x1].mean(axis=1)
+        else:
+            u = int(y + t * h)
+            c = x if side == "left" else x + w
+            lo, hi = max(0, c - band), min(iw, c + band)
+            y0, y1 = max(0, u - strip), min(ih, u + strip + 1)
+            if hi - lo < 8 or y1 <= y0:
+                continue
+            prof = gray[y0:y1, lo:hi].mean(axis=0)
+        g = np.abs(np.convolve(prof, [-1, -1, -1, 0, 1, 1, 1], mode="valid"))
+        if g.max() < 6:          # keine erkennbare Kante
+            continue
+        us.append(u)
+        vs.append(lo + 3 + int(np.argmax(g)))
+    return us, vs
+
+
+def measure_skew(gray, x, y, w, h):
+    """Schaetzt die Schraeglage des Filmrahmens in Grad aus den vier Kanten des
+    (ungefaehren) Crops. Positiv = Bildinhalt im Uhrzeigersinn verdreht.
+
+    Jede Kante liefert eine robuste Geradenanpassung; die Winkel der Seiten
+    werden gewichtet gemittelt. 'conf' ist der Anteil uebereinstimmender
+    Kantenpunkte, 'spread' die Streuung der Seitenwinkel (Grad)."""
+    g = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), 1.5)
+    sides = {}
+    for side in ("top", "bottom", "left", "right"):
+        us, vs = _edge_points(g, x, y, w, h, side)
+        length = w if side in ("top", "bottom") else h
+        slope, inl = _line_fit_theil_sen(us, vs, tol=max(2.0, length * 0.004))
+        if slope is None or inl < 0.5 or abs(slope) > math.tan(math.radians(SKEW_MAX_DEG + 3)):
+            continue
+        ang = math.degrees(math.atan(slope))
+        sides[side] = (ang if side in ("top", "bottom") else -ang, inl)
+    if len(sides) < 2:
+        return {"deg": None, "conf": 0.0, "spread": None, "sides": {}}
+    angs = np.array([a for a, _ in sides.values()])
+    wts = np.array([i for _, i in sides.values()])
+    order = np.argsort(angs)
+    cw = np.cumsum(wts[order])
+    deg = float(angs[order][np.searchsorted(cw, cw[-1] / 2)])
+    spread = float(np.max(np.abs(angs - deg)))
+    return {"deg": round(deg, 2), "conf": round(float(wts.mean()) * len(sides) / 4, 3),
+            "spread": round(spread, 2),
+            "sides": {k: round(v[0], 2) for k, v in sides.items()}}
+
+
 def _median(xs):
     xs = sorted(xs)
     n = len(xs)

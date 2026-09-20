@@ -1,5 +1,5 @@
 // Companion-UI: Hauptmodul (Kopf, Phasen, Werkzeugleiste, Einstellungen, Fertig/Zurueck).
-import { api, events } from './api.js';
+import { api, events, setDegLookup } from './api.js';
 import { T, S, esc } from './i18n.js';
 import { store, setLS, byId, isEditable, selectedIds } from './store.js';
 import { guard, toast, dialog } from './ui.js';
@@ -115,6 +115,7 @@ function renderToolbar() {
   const sel = selectedIds();
   const proposals = s.images.filter((i) => i.proposal && i.proposal.crop).length;
   const sortOpts = [['name', 'sort_name'], ['conf_asc', 'sort_conf_asc'], ['conf_desc', 'sort_conf_desc'],
+    ['skew_desc', 'sort_skew_desc'],
     ...(s.mode === 'folder' ? [['ref_desc', 'sort_ref_desc']] : [])]
     .map(([v, k]) => `<option value="${v}"${store.sort === v ? ' selected' : ''}>${esc(S(k))}</option>`).join('');
   $('toolbar').innerHTML = `<div class="toolbar">
@@ -191,6 +192,7 @@ function renderActionbar() {
   $('actionbar').innerHTML = `<div class="actionbar-inner"><div class="group">
       <button type="button" class="btn btn-outline btn-sm" data-act="undo"${editable && s.can_undo ? '' : ' disabled'}>${T('undo')} · Z</button>
       <button type="button" class="btn btn-outline btn-sm" data-act="undo-sel"${editable && selectedIds().length ? '' : ' disabled'}>${T('undo_sel')}</button>
+      ${s.mode === 'darktable' ? `<button type="button" class="btn btn-outline btn-sm" data-act="straighten-sel" title="${esc(S('straighten_sel_h'))}"${editable && selectedIds().length ? '' : ' disabled'}>${T('straighten_sel')}</button>` : ''}
       <span class="selcount">${T('to_apply')}: ${n.apply} · ${T('band_red')}: ${n.red}</span></div>
       <div class="group">${right}</div></div>`;
 }
@@ -269,13 +271,18 @@ async function onAction(act) {
   } else if (act === 'discard-proposals') {
     await guard(() => api('POST', 'proposals/discard', { ids: s.images.filter((i) => i.proposal).map((i) => i.id) }), refresh);
   } else if (act === 'undo') await guard(() => api('POST', 'undo', { scope: 'session' }), refresh);
-  else if (act === 'undo-sel') await guard(() => api('POST', 'undo', { scope: 'selection', ids: selectedIds() }), refresh);
+  else if (act === 'straighten-sel') {
+    await guard(() => api('PATCH', 'images', { ids: selectedIds(), straighten: { deg: 'auto' } }), refresh);
+    toast(T('straighten_done'), 'ok');
+  } else if (act === 'undo-sel') await guard(() => api('POST', 'undo', { scope: 'selection', ids: selectedIds() }), refresh);
   else if (act === 'cleanup') { const r = await guard(() => api('POST', 'cleanup', {})); if (r) toast(`${r.removed}`, 'ok'); return; }
   else if (act === 'quit') { await guard(() => api('POST', 'quit', {})); return; }
   await refresh();
 }
 
 // ── Start ────────────────────────────────────────────────────────────────────
+
+setDegLookup((id) => (byId(id) || {}).straighten || 0);
 
 function wire() {
   document.addEventListener('click', async (e) => {

@@ -211,6 +211,16 @@ sinnvoll:
       auf den Trainingsdaten).
       **Erledigt:** Auf dem Tuning-Set erreicht ein Ziel von 100 % Precision die Schwelle 0.49; der Holdout (Film 27, 31) hat dort 40/40 (100 %). Die Produktionsschwellen bleiben daher **grün ≥ 0.5, gelb ≥ 0.3**. Auf allen 103 Referenzen: grün 91 Treffer / 0 Fehltreffer (vorher 76 / 0), gelb 6 / 3. Grenze: nur 5 Fehltreffer insgesamt, die Zahlen sind grob.
 
+## Nachtrag: Schräglage (2026-09-20)
+
+- [x] Schräglage messen und in der Web-UI anzeigen (`measure_skew` in `auto_crop_negative.py`).
+- [x] Geradestellen über darktable (`ashift` + `crop`, Parameter gegen darktable 5.6.1 mit `darktable-cli` geprüft:
+      Rotation = Messwert richtet aus, die Ausgabe ist die Bounding-Box, Version 5 mit 892 Byte Parametern).
+- [ ] **Offen:** Messung an *echt* schräg fotografierten Bildern (die Referenzen haben höchstens 0.53°) und das
+      Anwenden über `dt.styles` in der echten darktable-Oberfläche (im Test nur gegen den Lua-Stub und `darktable-cli`).
+- [ ] **Offen:** Erkennung selbst arbeitet weiter mit achsparallelem Rechteck; bei ≥ 3° könnte eine Erkennung *im
+      geradegestellten Bild* genauer sein (Neu-Erkennung nach dem Drehen).
+
 ## Phase 5: Feedback-Schleife aus echter Nutzung
 
 Damit sich das Problem "grün war falsch" nicht wiederholt, ohne dass es

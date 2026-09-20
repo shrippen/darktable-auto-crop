@@ -133,6 +133,11 @@ def main():
             assert expect <= got, f"nicht vorgeladen: {expect - got}"
             # Phase 5: die vier Konfidenz-Faktoren sind im Editor sichtbar
             assert pg.locator("#ed-side .cp-row").count() == 4, "Konfidenz-Faktoren fehlen im Editor"
+            # Schraeglage: Messwert und (im Ordnermodus) nur Anzeige, kein Geradestellen-Knopf
+            side = pg.inner_text("#ed-side").lower()
+            assert ("tilt" in side or "schräglage" in side), "Schraeglage fehlt im Editor"
+            assert pg.locator("#ed-side [data-act='straighten-on']").count() == 0
+            assert pg.locator("#actionbar [data-act='straighten-sel']").count() == 0
             shot("2-editor.png")
             h = pg.locator("#ed-crop .handle[data-h='se']")
             box = h.bounding_box()

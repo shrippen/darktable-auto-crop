@@ -59,7 +59,8 @@ function updateTile(el, img) {
   el.draggable = isEditable();
   el.toggleAttribute('data-error', img.status === 'error');
   const frame = el.querySelector('.tile-frame');
-  const ar = img.export_size ? img.export_size[0] / img.export_size[1] : 1.5;
+  const vs = img.view_size || img.export_size;
+  const ar = vs ? vs[0] / vs[1] : 1.5;
   frame.style.setProperty('--ar', ar);
   frame.classList.toggle('is-wide', ar >= 1.5);
   frame.classList.toggle('is-tall', ar < 1.5);
@@ -89,11 +90,16 @@ function updateTile(el, img) {
       ? `<span class="tile-badge">${T('ref_hit')}</span>`
       : `<span class="tile-badge is-hl">${T('ref_miss')} ${img.ref.score.toFixed(1)}×</span>`);
   }
+  const sk = img.skew;
+  if (img.straighten) badges.push(`<span class="tile-badge is-hl">${T('straightened')} ${fmtDeg(img.straighten)}</span>`);
+  else if (sk && sk.deg != null && Math.abs(sk.deg) >= 0.5 && sk.conf >= 0.4) badges.push(`<span class="tile-badge">${T('skewed')} ${fmtDeg(sk.deg)}</span>`);
   if (img.decision === 'skip') badges.push(`<span class="tile-badge is-off">${T('skip')}</span>`);
   if (img.decision === 'accept') badges.push(`<span class="tile-badge">${T('accept')}</span>`);
   el.querySelector('.tile-badges').innerHTML = badges.join('');
   // Vorschlag der Neu-Erkennung als zweites Overlay ist im Editor; hier nur die Marke.
 }
+
+const fmtDeg = (d) => `${d > 0 ? '+' : ''}${d.toFixed(1)}°`;
 
 export function renderGallery() {
   const s = store.s;

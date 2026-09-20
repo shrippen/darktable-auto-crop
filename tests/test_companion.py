@@ -65,6 +65,26 @@ class CropMathTest(unittest.TestCase):
             sess.clamp_crop("abc")
 
 
+class StraightenMathTest(unittest.TestCase):
+    def test_canvas_matches_darktable_ashift(self):
+        # in darktable 5.6.1 gemessen: Rotation 5 Grad auf 1333x2000 (ohne Zuschnitt) -> 1502x2108
+        w, h = sess.straight_size((1333, 2000), 5)
+        self.assertLess(abs(w - 1502), 1.0)      # darktable schneidet ab (2108.57 -> 2108)
+        self.assertLess(abs(h - 2108), 1.0)
+
+    def test_roundtrip_and_center(self):
+        c = [0.05, 0.07, 0.95, 0.93]
+        t = sess.crop_to_straight(c, (1333, 2000), 4.0)
+        back = sess.crop_from_straight(t, (1333, 2000), 4.0)
+        for a, b in zip(c, back):
+            self.assertAlmostEqual(a, b, places=3)
+        self.assertAlmostEqual((t[0] + t[2]) / 2, 0.5, places=3)   # Mitte bleibt in der Mitte
+
+    def test_zero_angle_is_identity(self):
+        c = [0.1, 0.2, 0.8, 0.9]
+        self.assertEqual(sess.crop_to_straight(c, (3000, 2000), 0.0), c)
+
+
 class SessionTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -76,6 +96,38 @@ class SessionTest(unittest.TestCase):
         self.assertEqual(groups, ["green", "yellow", "red"])
         applies = [self.s.will_apply(i) for i in self.s.state["images"].values()]
         self.assertEqual(applies, [True, True, False])      # ungeprueftes Rot wird nicht gecroppt
+
+    def test_straighten_converts_crops_and_undoes(self):
+        det = list(self.s.image(101)["detected"]["crop"])
+        self.s.patch_images([101], {"crop": [0.2, 0.2, 0.8, 0.8]})
+        self.s.patch_images([101], {"straighten": {"deg": 3.0}})
+        img = self.s.public_image(self.s.image(101))
+        self.assertEqual(img["straighten"], 3.0)
+        self.assertNotEqual(img["crop"], [0.2, 0.2, 0.8, 0.8])          # in den gedrehten Rahmen umgerechnet
+        self.assertNotEqual(img["detected_crop"], det)
+        self.assertGreater(img["view_size"][0], 3000)                    # Flaeche = Bounding-Box
+        entries, _ = self.s.build_plan()
+        self.assertEqual({e["id"]: e["angle"] for e in entries}[101], 3.0)
+        self.assertTrue(self.s.undo("session"))
+        img = self.s.public_image(self.s.image(101))
+        self.assertIsNone(img["straighten"])
+        for a, b in zip(img["crop"], [0.2, 0.2, 0.8, 0.8]):
+            self.assertAlmostEqual(a, b, places=3)
+
+    def test_straighten_auto_uses_measured_skew_and_validates(self):
+        self.s.image(101)["detected"]["skew"] = {"deg": -1.4, "conf": 0.9}
+        self.s.patch_images([101, 102], {"straighten": {"deg": "auto"}})     # 102: nichts gemessen
+        self.assertEqual(self.s.public_image(self.s.image(101))["straighten"], -1.4)
+        self.assertIsNone(self.s.public_image(self.s.image(102))["straighten"])
+        with self.assertRaises(sess.SessionError):
+            self.s.patch_images([101], {"straighten": {"deg": 25}})
+        with self.assertRaises(sess.SessionError):
+            self.s.patch_images([101], {"straighten": {"deg": "x"}})
+
+    def test_straighten_not_available_in_folder_mode(self):
+        f = make_session(os.path.join(self.tmp, "f"), mode="folder")
+        with self.assertRaises(sess.SessionError):
+            f.patch_images([101], {"straighten": {"deg": 1.0}})
 
     def test_manual_crop_makes_red_applicable(self):
         self.s.patch_images([103], {"crop": [0.2, 0.2, 0.8, 0.8]})
@@ -271,6 +323,29 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.js("PATCH", "/api/images", {"ids": [999], "group": "red"})[0], 404)
         self.assertEqual(self.js("PATCH", "/api/images", {"ids": [101], "group": "purple"})[0], 400)
         self.assertEqual(self.js("PATCH", "/api/images", {"ids": [101]})[0], 400)
+
+    def test_straightened_thumb_grows_to_bounding_box(self):
+        from PIL import Image
+        import io
+        src = os.path.join(self.tmp, "exp.jpg")
+        Image.new("RGB", (600, 400), (120, 120, 120)).save(src)
+        img = self.s.image(101)
+        img["export"] = src
+        img["export_size"] = [600, 400]
+        def size():
+            st, raw = self.call("GET", "/api/thumb/101?w=600&s=0")
+            self.assertEqual(st, 200)
+            return Image.open(io.BytesIO(raw)).size
+        self.assertEqual(size(), (600, 400))
+        self.assertEqual(self.js("PATCH", "/api/images", {"ids": [101], "straighten": {"deg": 5}})[0], 200)
+        w, h = size()
+        self.assertAlmostEqual(w, 600 * 0.9962 + 400 * 0.0872, delta=2)     # Bounding-Box wie in darktable
+        self.assertGreater(h, 400)
+        _, data = self.js("GET", "/api/session")
+        pub = next(i for i in data["images"] if i["id"] == 101)
+        self.assertEqual(pub["straighten"], 5.0)
+        self.assertLess(abs(pub["view_size"][0] - w), 2)
+        self.assertEqual(self.js("GET", "/api/candidates/101")[1]["candidates"], [])
 
     def test_thumb(self):
         if not PHOTOS:
@@ -748,6 +823,31 @@ class LuaBridgeTest(unittest.TestCase):
         self.assertFalse(st[102]["enabled"])                         # zuvor angewendet, jetzt wieder aus
         self.assertNotIn(103, st)                                    # unveraendert: nicht angefasst
         self.assertEqual(sess.read_json(self.s.path("result.json"))["revision"], 2)
+
+    def test_straighten_sets_rotation_and_crop_in_one_style(self):
+        self.s.patch_images([101], {"straighten": {"deg": 2.5}})
+        self.s.finish()
+        out = self.run_lua("apply")
+        st = {x["id"]: x for x in out["styles"]}
+        self.assertAlmostEqual(st[101]["angle"], 2.5, places=3)
+        self.assertTrue(st[101]["ashift_enabled"])
+        self.assertEqual(st[101]["ashift_bytes"], 892)      # nur diese Groesse nimmt darktable an
+        self.assertIsNone(st[102]["angle"])                 # ohne Drehung: ashift bleibt unberuehrt
+        self.s.refresh_from_disk()
+        applied = sess.read_json(self.s.path("applied.json"))
+        self.assertEqual(applied["images"]["101"]["angle"], 2.5)
+
+    def test_removing_straighten_switches_rotation_off(self):
+        self.s.patch_images([101], {"straighten": {"deg": 2.5}})
+        self.s.finish()
+        self.run_lua("apply")
+        self.s.refresh_from_disk()
+        self.s.reopen()
+        self.s.patch_images([101], {"straighten": None})
+        self.s.finish()
+        st = {x["id"]: x for x in self.run_lua("apply")["styles"]}
+        self.assertFalse(st[101]["ashift_enabled"])
+        self.assertTrue(st[101]["enabled"])                 # Crop bleibt an
 
     def test_changed_file_is_skipped_not_cropped(self):
         self.s.finish()

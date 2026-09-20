@@ -20,6 +20,7 @@ Koordinatensystem von darktables Crop-Modul (siehe companion-ui-plan.md, Abschni
 import copy
 import hashlib
 import json
+import math
 import os
 import shutil
 import threading
@@ -120,6 +121,53 @@ def crop_to_pixels(crop, img_w, img_h):
     x, y = int(round(l * img_w)), int(round(t * img_h))
     return {"x": x, "y": y, "width": int(round(r * img_w)) - x,
             "height": int(round(b * img_h)) - y}
+
+
+MAX_STRAIGHTEN_DEG = 10.0
+
+
+def straight_size(size, deg):
+    """Groesse der geradegestellten Flaeche = Bounding-Box des gedrehten Bildes.
+    Entspricht der Ausgabe von darktables Modul "Drehen und Perspektive" (ashift) ohne
+    Zuschnitt (Rotation 5 Grad auf 1333x2000 ergibt dort 1502x2108)."""
+    w, h = size
+    t = math.radians(abs(deg))
+    return (w * math.cos(t) + h * math.sin(t), h * math.cos(t) + w * math.sin(t))
+
+
+def _rot(dx, dy, deg_cw):
+    t = math.radians(deg_cw)
+    return dx * math.cos(t) - dy * math.sin(t), dx * math.sin(t) + dy * math.cos(t)
+
+
+def crop_to_straight(crop, size, deg):
+    """Crop [l,t,r,b] im Original -> im geradegestellten Bild (Mitte mitdrehen, Groesse behalten).
+
+    ``deg`` = gemessene Schraeglage (+ = Bildinhalt im Uhrzeigersinn verdreht); die
+    Korrektur dreht den Inhalt um ``deg`` gegen den Uhrzeigersinn."""
+    w, h = size
+    W, H = straight_size(size, deg)
+    l, t, r, b = crop
+    dx, dy = _rot((l + r) / 2 * w - w / 2, (t + b) / 2 * h - h / 2, -deg)
+    cw, ch = (r - l) * w, (b - t) * h
+    return _fit_box(W / 2 + dx, H / 2 + dy, cw, ch, W, H)
+
+
+def crop_from_straight(crop, size, deg):
+    """Umkehrung von :func:`crop_to_straight`."""
+    w, h = size
+    W, H = straight_size(size, deg)
+    l, t, r, b = crop
+    dx, dy = _rot((l + r) / 2 * W - W / 2, (t + b) / 2 * H - H / 2, deg)
+    cw, ch = (r - l) * W, (b - t) * H
+    return _fit_box(w / 2 + dx, h / 2 + dy, cw, ch, w, h)
+
+
+def _fit_box(cx, cy, cw, ch, W, H):
+    cw, ch = min(cw, W), min(ch, H)
+    x0 = min(max(cx - cw / 2, 0.0), W - cw)
+    y0 = min(max(cy - ch / 2, 0.0), H - ch)
+    return [round(x0 / W, 5), round(y0 / H, 5), round((x0 + cw) / W, 5), round((y0 + ch) / H, 5)]
 
 
 def new_session_id():
@@ -231,11 +279,28 @@ class Session:
             return None
         return exp if os.path.isabs(exp) else self.path(exp)
 
+    def straight_deg(self, img):
+        """Winkel, um den in darktable geradegestellt wird (None = aus). Nur im darktable-Modus."""
+        st = img.get("straighten")
+        if not st or self.mode != "darktable":
+            return None
+        deg = float(st.get("deg") or 0.0)
+        return deg if abs(deg) >= 0.01 else None
+
     def effective_crop(self, img):
+        """Aktueller Crop im aktuellen Bezugsrahmen (Original oder geradegestellt)."""
         if img.get("manual"):
             return img["manual"]["crop"]
+        return self.detected_crop(img)
+
+    def detected_crop(self, img):
         det = img.get("detected")
-        return det["crop"] if det else None
+        if not det:
+            return None
+        deg, size = self.straight_deg(img), img.get("export_size")
+        if deg and size:
+            return crop_to_straight(det["crop"], size, deg)
+        return det["crop"]
 
     def group_of(self, img):
         """Gruppe: Nutzerentscheid, sonst aus der Konfidenz (Schwellen aus den Einstellungen)."""
@@ -273,11 +338,14 @@ class Session:
             "confidence": det.get("confidence"),
             "method": det.get("method"), "reasons": det.get("reasons", []),
             "conf_parts": det.get("conf_parts"),
-            "detected_crop": det.get("crop"),
+            "skew": det.get("skew"),
+            "detected_crop": self.detected_crop(img),
+            "straighten": self.straight_deg(img),
+            "view_size": self._view_size(img),
             "manual_crop": (img.get("manual") or {}).get("crop"),
             "crop": self.effective_crop(img),
             "decision": img.get("decision"),
-            "proposal": self._public_proposal(img),
+            "proposal": self._public_proposal(img, self.straight_deg(img)),
             "ref": self.ref_deviation(img),
             "apply": self.will_apply(img),
             "export_size": img.get("export_size"),
@@ -285,14 +353,23 @@ class Session:
                                and os.path.exists(self.export_path(img))),
         }
 
+    def _view_size(self, img):
+        size, deg = img.get("export_size"), self.straight_deg(img)
+        if size and deg:
+            return [round(v, 1) for v in straight_size(size, deg)]
+        return size
+
     @staticmethod
-    def _public_proposal(img):
+    def _public_proposal(img, deg=None):
         p = img.get("proposal")
         if not p:
             return None
         if p.get("error"):
             return {"error": p["error"]}
-        return {"crop": p["crop"], "confidence": p.get("confidence"),
+        crop = p["crop"]
+        if deg and img.get("export_size"):
+            crop = crop_to_straight(crop, img["export_size"], deg)
+        return {"crop": crop, "confidence": p.get("confidence"),
                 "method": p.get("method"), "reasons": p.get("reasons", [])}
 
     def ref_deviation(self, img):
@@ -388,8 +465,10 @@ class Session:
 
         patch: {"crop": [l,t,r,b] | None (= Korrektur zuruecknehmen),
                 "group": "green|yellow|red" | None (= automatisch),
-                "decision": "accept|skip" | None}
-        Nur vorhandene Schluessel werden angewendet."""
+                "decision": "accept|skip" | None,
+                "straighten": {"deg": float} | None (= Schraeglage nicht korrigieren)}
+        Nur vorhandene Schluessel werden angewendet. Ein Crop im Patch bezieht sich auf den
+        Rahmen nach dem Patch (bei "straighten" also auf das geradegestellte Bild)."""
         with self.lock:
             self._require_editable()
             if not ids:
@@ -400,12 +479,49 @@ class Session:
                 raise SessionError("ungueltige Gruppe")
             if patch.get("decision") not in (None, "accept", "skip"):
                 raise SessionError("ungueltige Entscheidung")
+            if patch.get("straighten") is not None:
+                if self.mode != "darktable":
+                    raise SessionError("Geradestellen gibt es nur mit darktable")
+                if patch["straighten"].get("deg") != "auto":     # "auto" = je Bild der gemessene Wert
+                    try:
+                        deg = float(patch["straighten"].get("deg"))
+                    except (TypeError, ValueError):
+                        raise SessionError("straighten.deg muss eine Zahl sein")
+                    if abs(deg) > MAX_STRAIGHTEN_DEG:
+                        raise SessionError(f"Winkel ausserhalb +/-{MAX_STRAIGHTEN_DEG:g} Grad")
+                    patch = dict(patch, straighten={"deg": round(deg, 2)})
             op = {"ids": {}, "t": time.time()}
             for iid in ids:
                 img = self.image(iid)
                 before, events = {}, []
+                if "straighten" in patch:
+                    want = patch["straighten"]
+                    if want and want.get("deg") == "auto":
+                        sk = ((img.get("detected") or {}).get("skew") or {})
+                        want = {"deg": sk["deg"]} if sk.get("deg") is not None else None
+                        if want is None and self.straight_deg(img) is None:
+                            op["ids"][str(img["id"])] = before     # nichts zu tun fuer dieses Bild
+                            continue
+                    before["straighten"] = copy.deepcopy(img.get("straighten"))
+                    if "manual" not in before:
+                        before["manual"] = copy.deepcopy(img.get("manual"))
+                    old_deg = self.straight_deg(img)
+                    new_deg = want.get("deg") if want else None
+                    new_deg = new_deg if new_deg and abs(new_deg) >= 0.01 else None
+                    size = img.get("export_size")
+                    man = img.get("manual")
+                    if man and size:      # manuellen Crop in den neuen Bezugsrahmen umrechnen
+                        c = man["crop"]
+                        if old_deg:
+                            c = crop_from_straight(c, size, old_deg)
+                        if new_deg:
+                            c = crop_to_straight(c, size, new_deg)
+                        img["manual"] = dict(man, crop=c)
+                    events.append(("straighten", old_deg, new_deg))
+                    img["straighten"] = want
                 if "crop" in patch:
-                    before["manual"] = copy.deepcopy(img.get("manual"))
+                    if "manual" not in before:
+                        before["manual"] = copy.deepcopy(img.get("manual"))
                     new = ({"crop": patch["crop"], "at": now_iso()}
                            if patch["crop"] is not None else None)
                     events.append(("crop", (before["manual"] or {}).get("crop"),
@@ -483,6 +599,7 @@ class Session:
                     "reasons": r.get("reasons", []),
                     "orientation": r.get("orientation"),
                     "conf_parts": r.get("_conf_parts"),
+                    "skew": r.get("_skew"),
                     "at": now_iso(),
                 }
                 img["status"] = "done"
@@ -509,6 +626,7 @@ class Session:
                     "method": r.get("method"), "reasons": r.get("reasons", []),
                     "orientation": r.get("orientation"),
                     "conf_parts": r.get("_conf_parts"),
+                    "skew": r.get("_skew"),
                     "settings": settings or {}, "at": now_iso(),
                 }
                 img["export_size"] = [w, h]
@@ -562,12 +680,13 @@ class Session:
 
     @staticmethod
     def _entry_key(entry):
-        return (entry.get("apply"), tuple(entry.get("crop") or ()), entry.get("label"))
+        return (entry.get("apply"), tuple(entry.get("crop") or ()), entry.get("label"),
+                entry.get("angle") or 0.0)
 
     def _entry_changed(self, img, applied_entry):
         """Weicht der aktuelle Stand vom zuletzt angewendeten ab?"""
         cur = {"apply": self.will_apply(img), "crop": self.effective_crop(img),
-               "label": self.group_of(img)}
+               "label": self.group_of(img), "angle": self.straight_deg(img)}
         if applied_entry is None:
             return True                # nie angewendet (auch das Label zaehlt)
         return self._entry_key(cur) != self._entry_key(applied_entry)
@@ -583,6 +702,7 @@ class Session:
                 "id": img["id"], "path": img["path"],
                 "size": (img.get("fingerprint") or {}).get("size"),
                 "crop": self.effective_crop(img),
+                "angle": self.straight_deg(img),   # Grad; darktable-Rotation = dieser Wert
                 "label": self.group_of(img),
                 "apply": self.will_apply(img) and not stale,
             }
@@ -592,6 +712,7 @@ class Session:
                                  "reason": "changed"})
             prev = applied.get(str(img["id"])) or {}
             entry["was_applied"] = bool(prev.get("apply"))   # Lua schaltet dann den Crop wieder aus
+            entry["was_angle"] = prev.get("angle")           # ... und ggf. die Drehung
             entry["changed"] = self._entry_changed(img, applied.get(str(img["id"])))
             if stale:
                 entry["changed"] = False
@@ -664,7 +785,7 @@ class Session:
                     if e and r.get("status") in ("ok", "skipped"):
                         applied["images"][str(iid)] = {
                             "apply": e["apply"], "crop": e["crop"],
-                            "label": e["label"]}
+                            "label": e["label"], "angle": e.get("angle")}
                 applied["revision"] = self.revision
                 atomic_write_json(self.path("applied.json"), applied)
             self.state["phase"] = "apply_failed" if status == "failed" else "applied"
@@ -725,7 +846,8 @@ class Session:
         applied = {"revision": self.revision, "images": {}}
         for e in read_json(self.path("plan.json"), {}).get("images", []):
             applied["images"][str(e["id"])] = {
-                "apply": e["apply"], "crop": e["crop"], "label": e["label"]}
+                "apply": e["apply"], "crop": e["crop"], "label": e["label"],
+                "angle": e.get("angle")}
         atomic_write_json(self.path("applied.json"), applied)
         atomic_write_json(self.path("result.json"), {
             "revision": self.revision, "status": "ok", "images": {}})

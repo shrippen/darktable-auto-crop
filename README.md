@@ -116,6 +116,14 @@ Messen und kalibrieren (Roadmap): `tools/eval.py` (Trefferquote, Leave-One-Film-
 Feedback auswerten (Roadmap Phase 5): `.venv/bin/python tools/feedback_report.py` (vor dem Aufräumen nach 14 Tagen).
 Tests: `.venv/bin/python -m unittest discover -s tests` (Browser-Test: `tests/ui_smoke.py`, benötigt Playwright).
 
+#### Schräglage
+
+Der Rahmen einer Aufnahme kann leicht gekippt sein. Die Erkennung liefert weiter ein achsparalleles Rechteck, misst
+aber zusätzlich die Schräglage (in Grad, + = Inhalt im Uhrzeigersinn) und zeigt sie an. Im Editor lässt sich das Bild
+per Knopf **geradestellen**: darktable dreht dann mit dem Modul „Drehen und Perspektive“ um den Messwert (der Winkel
+ist änderbar), der Crop sitzt auf dem gedrehten Bild. „Auswahl geradestellen“ in der Aktionsleiste macht das für mehrere
+Bilder. Die Messung ist bis etwa ±9° ausgelegt; bei niedriger Sicherheit bitte per Auge prüfen.
+
 ### Einzelbild
 1. Bild in der Dunkelkammer öffnen
 2. Auf "Einzelbild zuschneiden" klicken

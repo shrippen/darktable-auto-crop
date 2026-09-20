@@ -21,7 +21,11 @@ export async function api(method, path, body) {
   return data;
 }
 
-export const thumbUrl = (id, w) => `/api/thumb/${id}?w=${w}&t=${encodeURIComponent(token)}`;
+// Der Winkel steht nur im Link, damit der Browser-Cache nach dem Geradestellen nicht das alte Bild liefert;
+// gedreht wird serverseitig nach dem Sitzungszustand.
+let degOf = () => 0;
+export const setDegLookup = (fn) => { degOf = fn; };
+export const thumbUrl = (id, w) => `/api/thumb/${id}?w=${w}&s=${degOf(id) || 0}&t=${encodeURIComponent(token)}`;
 
 export function events(onEvent) {
   const es = new EventSource(`/api/events?t=${encodeURIComponent(token)}`);

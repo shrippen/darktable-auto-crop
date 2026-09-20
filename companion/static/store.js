@@ -21,8 +21,10 @@ export const selectedIds = () => [...store.selected].filter((id) => byId(id));
 const NAME = (a, b) => (a.film || '').localeCompare(b.film || '', undefined, { numeric: true })
   || (a.filename || '').localeCompare(b.filename || '', undefined, { numeric: true });
 const refScore = (i) => (i.ref ? i.ref.score : -1);
+const skewAbs = (i) => (i.skew && i.skew.deg != null ? Math.abs(i.skew.deg) : -1);
 export function sorted(images) {
   const list = [...images];
+  if (store.sort === 'skew_desc') { list.sort((a, b) => skewAbs(b) - skewAbs(a) || NAME(a, b)); return list; }
   if (store.sort === 'ref_desc') { list.sort((a, b) => refScore(b) - refScore(a) || NAME(a, b)); return list; }
   if (store.sort === 'conf_asc') list.sort((a, b) => (a.confidence ?? -1) - (b.confidence ?? -1) || NAME(a, b));
   else if (store.sort === 'conf_desc') list.sort((a, b) => (b.confidence ?? -1) - (a.confidence ?? -1) || NAME(a, b));

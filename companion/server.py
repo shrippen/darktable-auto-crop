@@ -245,17 +245,19 @@ class Handler(BaseHTTPRequestHandler):
             if not src or not os.path.exists(src):
                 return self._error(404, "kein Export")
             data = thumb_bytes(src, s.path("thumbs"), str(img["id"]),
-                               (query.get("w") or ["320"])[0])
+                               (query.get("w") or ["320"])[0], s.straight_deg(img))
             return self._send(200, data, "image/jpeg",
                               {"Cache-Control": "private, max-age=600"})
         mc = re.fullmatch(r"candidates/([^/]+)", route)
         if mc and m == "GET":
+            if s.straight_deg(s.image(mc.group(1))):     # Kandidaten gelten nur im Originalrahmen
+                return self._send(200, {"candidates": []})
             return self._send(200, {"candidates": a.candidates(mc.group(1))})
 
         # ---- Schreibzugriffe ----
         if m == "PATCH" and route == "images":
             b = self._body()
-            patch = {k: b[k] for k in ("crop", "group", "decision") if k in b}
+            patch = {k: b[k] for k in ("crop", "group", "decision", "straighten") if k in b}
             if not patch:
                 raise sess.SessionError("nichts zu aendern")
             s.patch_images(b.get("ids") or [], patch)
