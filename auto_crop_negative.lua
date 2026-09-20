@@ -221,6 +221,7 @@ local batch_state = {
   toast_sec = 0,      -- letzte Sekunde, fuer die ein Toast kam
 }
 
+local status_label  -- Statuszeile (Fortschritt/Restzeit), wird unten erzeugt
 local lt_widget  -- Forward-Deklaration (Widget wird unten erzeugt;
                  -- check_batch/cleanup_batch aktualisieren die Statuszeile)
 
@@ -228,7 +229,7 @@ local function cleanup_batch(closing_job)
   local st = batch_state
   if st.json_file then os.remove(st.json_file); st.json_file = nil end
   if st.prog_file then os.remove(st.prog_file); st.prog_file = nil end
-  pcall(function() lt_widget.children[10].label = "" end)
+  pcall(function() status_label.label = "" end)
   if closing_job and st.job then
     pcall(function() st.job.valid = false end)
     st.job = nil
@@ -360,7 +361,7 @@ local function check_batch()
           local eta_txt = fmt(eta)
           -- Panel-Statuszeile live aktualisieren
           pcall(function()
-            lt_widget.children[10].label = string.format(
+            status_label.label = string.format(
               _("Restzeit: %s (Bild %d/%d)"), eta_txt, disp_done, disp_total)
           end)
           -- Toast nur bei deutlicher Aenderung (10 s Schritte)
@@ -681,7 +682,7 @@ local function detect_and_queue()
   batch_state.job.percent = 0
   log(string.format("spawned pid=%d", pid))
   pcall(function()
-    lt_widget.children[10].label = _("Auto Crop: 0 / %d Bilder analysiert...")
+    status_label.label = _("Auto Crop: 0 / %d Bilder analysiert...")
       :format(#paths)
   end)
   dt.print(string.format(
@@ -790,16 +791,554 @@ local function apply_all_queued()
     n, #todo))
 end
 
+
+-- ═══ Companion (Web-UI): Review starten, Plan anwenden, Pruefung oeffnen ═══
+-- Ablauf (siehe companion-ui-plan.md): "Review starten" uebergibt die Auswahl an
+-- den lokalen Companion-Server (Python) und oeffnet den Browser. Dort wird geprueft
+-- und korrigiert; "Fertig" sperrt die Ansicht und schreibt plan.json. Erst dann
+-- wirkt "Plan anwenden" hier. Die Crops werden weiterhin ausschliesslich ueber
+-- darktables eigene API (dt.styles, siehe apply_crop_style) gesetzt - nie ueber XMP.
+
+local CACHE_ROOT = os.getenv("AUTOCROP_CACHE")
+  or (os.getenv("HOME") .. "/.cache/auto-crop-negative")
+local LAST_SESSION_FILE = CACHE_ROOT .. "/last_session"
+
+-- Rueckmeldung, die nicht spurlos verschwindet: Log + kurze Einblendung + Statuszeile
+-- im Plugin (dt.print allein ist fluechtig und war beim Fehlersuchen nicht auffindbar).
+local function say(msg)
+  log("companion: " .. msg)
+  dt.print(msg)
+  pcall(function() status_label.label = msg end)
+end
+
+local function sh_quote(str)
+  return "'" .. (tostring(str):gsub("'", "'\\''")) .. "'"
+end
+
+local function json_escape(str)
+  local out = tostring(str)
+  out = out:gsub("\\", "\\\\")
+  out = out:gsub('"', '\\"')
+  out = out:gsub("\n", "\\n")
+  out = out:gsub("\r", "\\r")
+  out = out:gsub("\t", "\\t")
+  return out
+end
+
+local function file_size(path)
+  local h = io.open(path, "rb")
+  if not h then return nil end
+  local n = h:seek("end")
+  h:close()
+  return n
+end
+
+local function pid_alive(pid)
+  return pid ~= nil
+    and os.execute(string.format("kill -0 %d 2>/dev/null", pid)) == true
+end
+
+local function write_atomic(path, content)
+  local tmp = path .. ".tmp"
+  if not write_file(tmp, content) then return false end
+  return os.rename(tmp, path) and true or false
+end
+
+local function remember_session(sid)
+  os.execute("mkdir -p " .. sh_quote(CACHE_ROOT))
+  write_file(LAST_SESSION_FILE, sid .. "\n")
+end
+
+local function last_session()
+  local raw = read_file(LAST_SESSION_FILE)
+  if not raw then return nil end
+  local sid = raw:gsub("%s+", "")
+  if sid == "" then return nil end
+  return sid, CACHE_ROOT .. "/" .. sid
+end
+
+local function open_url(url)
+  os.execute("xdg-open " .. sh_quote(url) .. " >/dev/null 2>&1 &")
+end
+
+-- ── Serveranzeige im Plugin-Bereich ─────────────────────────────────────────
+-- Klar erkennbare Statuszeile (startet / laeuft / gestoppt), die URL als Knopf
+-- (Klick oeffnet den Browser) und ein Stop-Knopf.
+-- WICHTIG: Label-Widgets in darktables Lua-Oberflaeche koennen KEIN Markup (weder
+-- <b> noch <span>): Tags wuerden woertlich erscheinen. Hervorhebung deshalb nur
+-- ueber Grossbuchstaben, Symbole und das "section_label"-Widget (fette Kopfzeile).
+local server_status, server_hint, url_button, stop_button   -- Widgets (siehe unten)
+local server_ui = { starting = false, url = nil, last = 0 }
+
+local function set_widget_visible(w, visible)
+  if not w then return end
+  pcall(function() w.visible = visible end)
+end
+
+local function set_server_state(state, url)
+  server_ui.starting = (state == "starting")
+  server_ui.url = (state == "running") and url or nil
+  if not server_status then return end
+  if state == "starting" then
+    server_status.label = "◐ SERVER STARTET …"
+    url_button.label = _("(URL erscheint gleich)")
+  elseif state == "running" then
+    server_status.label = "▶ SERVER LÄUFT"
+    url_button.label = url
+  else
+    server_status.label = "■ Server gestoppt"
+    url_button.label = ""
+  end
+  set_widget_visible(url_button, state ~= "stopped")
+  pcall(function() stop_button.sensitive = (state ~= "stopped") end)
+end
+
+local function read_server_info(dir)
+  local info = parse_json(read_file(dir .. "/server.json") or "")
+  if type(info) == "table" and info.url and info.pid then return info end
+  return nil
+end
+
+-- Zeigt den echten Zustand (Server evtl. von selbst beendet, z. B. nach 30 min
+-- Leerlauf). Billig genug fuer haeufige Events: nur /proc-Abfrage, hoechstens alle 2 s.
+local function refresh_server_status()
+  if server_ui.starting then return end
+  local now = os.time()
+  if now - server_ui.last < 2 then return end
+  server_ui.last = now
+  local _sid, dir = last_session()
+  local info = dir and read_server_info(dir)
+  local pid = info and math.tointeger(info.pid)
+  if pid and file_exists("/proc/" .. pid) then
+    if server_ui.url ~= info.url then set_server_state("running", info.url) end
+  elseif server_ui.url or (server_status and server_status.label:find("STARTET")) then
+    set_server_state("stopped")
+  end
+end
+
+local function darktable_pid()
+  -- $PPID der von io.popen gestarteten Shell ist der darktable-Prozess selbst
+  local h = io.popen("echo $PPID", "r")
+  local pid = h and tonumber(h:read("*l"))
+  if h then h:close() end
+  return pid and math.tointeger(pid)
+end
+
+-- Wartet, bis der Server server.json geschrieben hat (dt.control.sleep pumpt die
+-- GTK-Eventloop, darktable bleibt bedienbar).
+local function wait_for_server(dir, timeout_ms)
+  local waited = 0
+  while waited < timeout_ms do
+    local info = parse_json(read_file(dir .. "/server.json") or "")
+    if type(info) == "table" and info.url and pid_alive(info.pid) then
+      return info
+    end
+    dt.control.sleep(200)
+    waited = waited + 200
+  end
+  return nil
+end
+
+local function spawn_companion(args, out_path)
+  local py = find_python()
+  if not py or not py:match("auto_crop_negative_wrapper%.py$") then
+    say(_("Auto Crop: auto_crop_negative_wrapper.py nicht gefunden (install.sh ausfuehren)"))
+    return nil
+  end
+  local cmd = string.format("%s companion %s > %s 2>&1 & echo $!",
+    sh_quote(py), args, sh_quote(out_path))
+  log("spawn companion: " .. cmd)
+  local h = io.popen(cmd, "r")
+  local pid = h and tonumber(h:read("*l"))
+  if h then h:close() end
+  return pid
+end
+
+local function companion_start()
+  local images = dt.gui.action_images
+  if not images or #images == 0 then
+    say(_("Auto Crop: keine Bilder ausgewaehlt"))
+    return
+  end
+  os.execute("mkdir -p " .. sh_quote(CACHE_ROOT))
+  local sid = os.date("%Y-%m-%dT%H-%M-%S")
+    .. string.format("-%04x", math.random(0, 65535))
+  local dir = CACHE_ROOT .. "/" .. sid
+  local parts = {}
+  for _, img in ipairs(images) do
+    parts[#parts + 1] = string.format('{"id":%d,"path":"%s"}',
+      img.id, json_escape(img.path .. "/" .. img.filename))
+  end
+  local t_green = dt.preferences.read(MOD_LT, "t_green", "float")
+  local t_yellow = dt.preferences.read(MOD_LT, "t_yellow", "float")
+  local job = string.format(
+    '{"session":"%s","mode":"darktable","settings":{"t_green":%s,"t_yellow":%s},"images":[%s]}',
+    sid, (fmt_float_c(t_green, 3)), (fmt_float_c(t_yellow, 3)),
+    table.concat(parts, ","))
+  local job_path = os.tmpname() .. ".json"
+  if not write_file(job_path, job) then
+    say(_("Auto Crop: Job-Datei konnte nicht geschrieben werden"))
+    return
+  end
+  remember_session(sid)
+  set_server_state("starting")
+  say(string.format(_("Auto Crop: SERVER STARTET fuer %d Bilder ..."), #images))
+  local pid = spawn_companion(string.format("serve --job %s --root %s --watch-pid %d",
+    sh_quote(job_path), sh_quote(CACHE_ROOT), darktable_pid() or 0),
+    CACHE_ROOT .. "/" .. sid .. ".out")
+  if not pid then
+    os.remove(job_path)
+    set_server_state("stopped")
+    say(_("Auto Crop: Companion konnte nicht gestartet werden (siehe Log)"))
+    return
+  end
+  local info = wait_for_server(dir, 30000)
+  os.remove(job_path)
+  if not info then
+    log("Companion: server.json nicht erschienen, Ausgabe: " .. dir .. ".out")
+    set_server_state("stopped")
+    say(_("Auto Crop: Web-UI antwortet nicht (siehe Log)"))
+    return
+  end
+  set_server_state("running", info.url)
+  say(_("Auto Crop: SERVER LÄUFT - Web-UI im Browser geoeffnet"))
+  open_url(info.url)
+  say(_("Auto Crop: Web-UI geoeffnet. Dort pruefen, auf \"Fertig\" druecken, dann hier \"Plan anwenden\"."))
+end
+
+local function companion_open()
+  local sid, dir = last_session()
+  if not sid or not file_exists(dir .. "/state.json") then
+    say(_("Auto Crop: keine Sitzung gefunden - erst \"Review starten\""))
+    return
+  end
+  local info = read_server_info(dir)
+  if info and pid_alive(info.pid) then
+    set_server_state("running", info.url)
+    open_url(info.url)
+    return
+  end
+  os.remove(dir .. "/server.json")
+  set_server_state("starting")
+  say(_("Auto Crop: SERVER STARTET ..."))
+  local pid = spawn_companion(string.format("serve --session %s --root %s --watch-pid %d",
+    sh_quote(dir), sh_quote(CACHE_ROOT), darktable_pid() or 0), dir .. ".out")
+  if not pid then
+    set_server_state("stopped")
+    say(_("Auto Crop: Companion konnte nicht gestartet werden (siehe Log)"))
+    return
+  end
+  info = wait_for_server(dir, 30000)
+  if not info then
+    set_server_state("stopped")
+    say(_("Auto Crop: Web-UI antwortet nicht (siehe Log)"))
+    return
+  end
+  set_server_state("running", info.url)
+  say(_("Auto Crop: SERVER LÄUFT - Web-UI im Browser geoeffnet"))
+  open_url(info.url)
+end
+
+-- Stop-Knopf: beendet den Companion-Server der letzten Sitzung (die Sitzung selbst
+-- bleibt auf der Platte; "Pruefung oeffnen" startet den Server wieder).
+local function companion_stop()
+  local _sid, dir = last_session()
+  local info = dir and read_server_info(dir)
+  local pid = info and math.tointeger(info.pid)
+  if not pid or not pid_alive(pid) then
+    if dir then os.remove(dir .. "/server.json") end
+    set_server_state("stopped")
+    say(_("Auto Crop: Server laeuft nicht"))
+    return
+  end
+  os.execute(string.format("kill -TERM %d 2>/dev/null", pid))
+  for _ = 1, 25 do                      -- bis zu 5 s auf das geordnete Ende warten
+    if not pid_alive(pid) then break end
+    dt.control.sleep(200)
+  end
+  if pid_alive(pid) then os.execute(string.format("kill -KILL %d 2>/dev/null", pid)) end
+  os.remove(dir .. "/server.json")
+  set_server_state("stopped")
+  say(_("Auto Crop: Server gestoppt"))
+end
+
+-- Beim Beenden von darktable den Server stoppen. Das "exit"-Ereignis der Lua-API
+-- feuert am Anfang des Herunterfahrens; die PID-Ueberwachung (--watch-pid) im Server
+-- bleibt als zweites Netz, greift aber erst, wenn der Prozess wirklich beendet ist
+-- (darktable kann nach dem Schliessen des Fensters noch eine Weile haengen).
+dt.register_event("auto_crop_negative_exit", "exit", function()
+  pcall(function()
+    local _sid, dir = last_session()
+    local info = dir and read_server_info(dir)
+    local pid = info and math.tointeger(info.pid)
+    if pid then
+      os.execute(string.format("kill -TERM %d 2>/dev/null", pid))
+      log("exit: Companion-Server " .. pid .. " gestoppt")
+    end
+  end)
+end)
+
+-- Anzeige aktuell halten, auch wenn der Server von selbst endet (Leerlauf)
+for _, ev in ipairs({ "mouse-over-image-changed", "selection-changed",
+                      "collection-changed", "view-changed" }) do
+  dt.register_event("auto_crop_server_status_" .. ev, ev, function()
+    pcall(refresh_server_status)
+  end)
+end
+
+-- Setzt einen Crop aus normalisierten Anteilen l,t,r,b (0..1). Die Anteile beziehen
+-- sich auf den gedrehten Rahmen - exakt darktables Crop-Koordinaten (Spike-Ergebnis,
+-- companion-ui-plan.md Abschnitt 12) - deshalb NICHT mit image.width/height
+-- multiplizieren.
+local function set_crop_frac(image, l, t, r, b)
+  l = math.max(0, math.min(1, l))
+  t = math.max(0, math.min(1, t))
+  r = math.max(l + 0.001, math.min(1, r))
+  b = math.max(t + 0.001, math.min(1, b))
+  apply_crop_style(image, pack_crop_params(l, t, r, b), true,
+    string.format("Plan: frac l=%s t=%s r=%s b=%s", (fmt_float_c(l, 4)),
+      (fmt_float_c(t, 4)), (fmt_float_c(r, 4)), (fmt_float_c(b, 4))))
+  last_cropped_images[#last_cropped_images + 1] = image
+end
+
+local function result_json(revision, status, results)
+  local items = {}
+  for id, r in pairs(results) do
+    items[#items + 1] = string.format('"%s":{"status":"%s","message":"%s"}',
+      tostring(id), r.status, json_escape(r.message or ""))
+  end
+  return string.format('{"revision":%d,"status":"%s","applied_at":"%s","images":{%s}}',
+    revision, status, os.date("!%Y-%m-%dT%H:%M:%SZ"), table.concat(items, ","))
+end
+
+local function companion_apply()
+  local sid, dir = last_session()
+  log("companion_apply: last_session=" .. tostring(sid))
+  if not sid then
+    say(_("Auto Crop: keine Sitzung gefunden - erst \"Review starten\""))
+    return
+  end
+  local plan = parse_json(read_file(dir .. "/plan.json") or "")
+  -- Nur ein vollstaendiger, gesperrter Plan wird angewendet. plan.json wird atomar
+  -- geschrieben und beim Zurueckkehren in die Pruefung entfernt.
+  if type(plan) ~= "table" or plan.complete ~= true or plan.phase ~= "locked"
+     or type(plan.images) ~= "table" then
+    log(string.format("companion_apply: Plan nicht anwendbar (Typ=%s complete=%s phase=%s)",
+      type(plan), type(plan) == "table" and tostring(plan.complete) or "-",
+      type(plan) == "table" and tostring(plan.phase) or "-"))
+    say(_("Auto Crop: Web-UI noch nicht auf \"Fertig\" gestellt - hier passiert nichts"))
+    return
+  end
+  local revision = math.tointeger(plan.revision) or 1
+  local prev = parse_json(read_file(dir .. "/result.json") or "")
+  if type(prev) == "table" and math.tointeger(prev.revision) == revision then
+    say(_("Auto Crop: dieser Plan wurde schon angewendet"))
+    return
+  end
+
+  say(string.format(_("Auto Crop: wende Plan an (Revision %d, %d Bilder) ..."),
+    revision, #plan.images))
+  local need, dirs = {}, {}
+  for _, e in ipairs(plan.images) do
+    need[math.tointeger(e.id) or e.id] = e
+    dirs[(e.path or ""):match("^(.*)/[^/]*$") or ""] = true
+  end
+  local found = {}
+  -- zuerst nur die betroffenen Filme durchsuchen (schnell)
+  pcall(function()
+    for _, film in ipairs(dt.films) do
+      if dirs[film.path] then
+        for _, img in ipairs(film) do
+          if need[img.id] then found[img.id] = img end
+        end
+      end
+    end
+  end)
+  -- Rueckfall: fehlende Bilder in der ganzen Bibliothek suchen
+  local missing = false
+  for id in pairs(need) do if not found[id] then missing = true break end end
+  if missing then
+    pcall(function()
+      for _, img in ipairs(dt.database) do
+        if need[img.id] and not found[img.id] then found[img.id] = img end
+      end
+    end)
+  end
+
+  local results, n_ok, n_err, n_crop = {}, 0, 0, 0
+  for _, e in ipairs(plan.images) do
+    local id = math.tointeger(e.id) or e.id
+    local img = found[id]
+    local res
+    if not e.changed then
+      res = { status = "skipped", message = "unchanged" }
+    elseif not img then
+      res = { status = "error", message = "image not found in library" }
+    elseif (img.path .. "/" .. img.filename) ~= e.path then
+      res = { status = "error", message = "file moved or renamed" }
+    elseif e.size and file_size(e.path) ~= math.tointeger(e.size) then
+      res = { status = "skipped", message = "file changed since export" }
+    else
+      local ok, err = pcall(function()
+        if e.apply and type(e.crop) == "table" then
+          set_crop_frac(img, e.crop[1], e.crop[2], e.crop[3], e.crop[4])
+          n_crop = n_crop + 1
+        elseif e.was_applied then
+          -- zuvor angewendet, jetzt nicht mehr gewollt: Crop wieder ausschalten
+          apply_crop_style(img, pack_crop_params(0, 0, 1, 1), false,
+            "Plan: Crop deaktiviert (Revision " .. revision .. ")")
+        end
+        set_color_label(img, e.label)
+      end)
+      if ok then
+        res = { status = "ok", message = e.apply and "cropped" or "label only" }
+      else
+        log("companion_apply " .. tostring(e.path) .. ": " .. tostring(err))
+        res = { status = "error", message = tostring(err) }
+      end
+    end
+    if res.status == "ok" then n_ok = n_ok + 1 elseif res.status == "error" then n_err = n_err + 1 end
+    results[id] = res
+  end
+  local status = "ok"
+  if n_err > 0 then status = (n_ok > 0) and "partial" or "failed" end
+  if not write_atomic(dir .. "/result.json", result_json(revision, status, results)) then
+    say(_("Auto Crop: result.json konnte nicht geschrieben werden"))
+    return
+  end
+  log(string.format("companion_apply rev=%d ok=%d err=%d crops=%d", revision, n_ok, n_err, n_crop))
+  say(string.format(
+    _("Auto Crop: Plan angewendet - %d Bilder, %d Crops, %d Fehler. Nicht zufrieden? \"Pruefung oeffnen\"."),
+    n_ok, n_crop, n_err))
+end
+
+-- Fehler in Knopf-Callbacks landen im Log statt spurlos zu verschwinden
+local function guarded(fn, name)
+  return function()
+    local ok, err = pcall(fn)
+    if not ok then
+      log(name .. " Fehler: " .. tostring(err))
+      dt.print_error("Auto Crop Negative: " .. name .. ": " .. tostring(err))
+      say(_("Auto Crop: Fehler - Details im Log"))
+    end
+  end
+end
+
+-- ═══ Zuruecksetzen: Crop und Farblabels der Auswahl leeren ═══════
+-- Schaltet das Crop-Modul der selektierten Bilder wieder aus (wie "Rueckgaengig", aber
+-- unabhaengig davon, ob das Plugin den Crop gesetzt hat), entfernt die Farblabels rot/
+-- gelb/gruen (blau/lila bleiben unberuehrt) und loescht wartende Queue-Eintraege, damit die
+-- Dunkelkammer nichts erneut anwendet. Achtung: Die Lua-API kann History-Eintraege
+-- nicht loeschen; es kommt ein neuer Schritt "Crop aus" dazu (in der History sichtbar).
+-- Zweistufig: der erste Klick "scharfschalten", der zweite (binnen 6 s) fuehrt aus.
+local reset_button   -- Widget (siehe unten)
+local RESET_LABEL = _("Crop & Farben zuruecksetzen")
+local reset_armed_until = 0
+
+local function do_reset(images)
+  local queue = load_queue()
+  local queue_changed = false
+  local target = {}
+  local n, n_err = 0, 0
+  for _, img in ipairs(images) do
+    target[img.filename] = true
+    local ok, err = pcall(function()
+      apply_crop_style(img, pack_crop_params(0, 0, 1, 1), false, "Zuruecksetzen")
+      img.red, img.yellow, img.green = false, false, false
+    end)
+    if ok then n = n + 1 else
+      n_err = n_err + 1
+      log("reset " .. tostring(img.filename) .. " Fehler: " .. tostring(err))
+    end
+    if queue[img.filename] then queue[img.filename] = nil; queue_changed = true end
+  end
+  if queue_changed then save_queue(queue) end
+  local remaining = {}
+  for _, image in ipairs(last_cropped_images) do
+    if not target[image.filename] then remaining[#remaining + 1] = image end
+  end
+  last_cropped_images = remaining
+  say(string.format(_("Auto Crop: %d Bild(er) zurueckgesetzt (Crop aus, Farblabels leer)%s"),
+    n, n_err > 0 and string.format(_(", %d Fehler"), n_err) or ""))
+end
+
+local function reset_clicked()
+  local images = dt.gui.action_images
+  if not images or #images == 0 then
+    say(_("Auto Crop: keine Bilder ausgewaehlt"))
+    return
+  end
+  if os.time() > reset_armed_until then
+    reset_armed_until = os.time() + 6
+    reset_button.label = string.format(_("Wirklich %d Bild(er) zuruecksetzen? Nochmal klicken"), #images)
+    say(string.format(_("Auto Crop: %d Bild(er) - zum Zuruecksetzen nochmal klicken (6 s)"), #images))
+    return
+  end
+  reset_armed_until = 0
+  reset_button.label = RESET_LABEL
+  do_reset(images)
+end
+
 -- ═══ Widgets ═══════
+
+server_status = dt.new_widget("section_label") {
+  label = "■ Server gestoppt" }
+url_button = dt.new_widget("button") {
+  label = "",
+  tooltip = _("Opens the web UI in your browser"),
+  clicked_callback = guarded(function()
+    if server_ui.url then open_url(server_ui.url) end
+  end, "open_url") }
+stop_button = dt.new_widget("button") {
+  label = _("Server stoppen"),
+  tooltip = _("Stops the web UI server. The session stays on disk; "
+    .. "\"Prüfung öffnen\" starts it again."),
+  clicked_callback = guarded(companion_stop, "companion_stop") }
+server_hint = dt.new_widget("label") {
+  label = _("Stops automatically when darktable closes or after 30 min without activity in the web UI."),
+  ellipsize = "end" }
+reset_button = dt.new_widget("button") {
+  label = RESET_LABEL,
+  tooltip = _("Resets the selected images: disables the crop module and clears the "
+    .. "red/yellow/green color labels. Click twice to confirm."),
+  clicked_callback = guarded(reset_clicked, "reset") }
+pcall(function() url_button.ellipsize = "middle" end)   -- lange URL kuerzen statt Panel aufblaehen
+set_widget_visible(url_button, false)
+pcall(function() stop_button.sensitive = false end)
+
+status_label = dt.new_widget("label") {
+  label = "" }  -- Statuszeile: Fortschritt + Restzeit waehrend des Laufs
 
 -- Ein Widget fuer beide Views (Lighttable + Darkroom)
 lt_widget = dt.new_widget("box") {
   orientation = "vertical",
-  dt.new_widget("label") {
-    label = "<b>Auto Crop Negative</b>" },
-  dt.new_widget("label") {
-    label = _("Detect film frame on selected images and queue crops.") },
+  dt.new_widget("section_label") {
+    label = "Auto Crop Negative" },
+  server_status,
+  url_button,
+  stop_button,
+  server_hint,
   dt.new_widget("separator") {},
+  dt.new_widget("label") {
+    label = _("Review in the web UI, then apply the plan here.") },
+  dt.new_widget("button") {
+    label = _("Review starten"),
+    tooltip = _("Exports the selected images, detects the film frames and "
+      .. "opens the web UI in your browser to check and correct them."),
+    clicked_callback = guarded(companion_start, "companion_start") },
+  dt.new_widget("button") {
+    label = _("Plan anwenden"),
+    tooltip = _("Applies the plan from the web UI. Works only after you "
+      .. "pressed Finish there."),
+    clicked_callback = guarded(companion_apply, "companion_apply") },
+  dt.new_widget("button") {
+    label = _("Prüfung öffnen"),
+    tooltip = _("Reopens the web UI of the last session, e.g. if you are "
+      .. "not happy with the result here."),
+    clicked_callback = guarded(companion_open, "companion_open") },
+  dt.new_widget("separator") {},
+  dt.new_widget("label") {
+    label = _("Direct mode (without web UI):") },
   dt.new_widget("button") {
     label = _("Detect & Queue"),
     tooltip = _("Run three-pass detection, queue results for darkroom"),
@@ -830,10 +1369,11 @@ lt_widget = dt.new_widget("box") {
       .. "selection. Adds a new history step (non-destructive) instead "
       .. "of removing the crop entry."),
     clicked_callback = function() undo_crop_all() end },
+  dt.new_widget("separator") {},
+  reset_button,
   dt.new_widget("label") {
     label = _("After detection: open images in darkroom to apply crops.") },
-  dt.new_widget("label") {
-    label = "" },  -- Statuszeile: Fortschritt + Restzeit waehrend des Laufs
+  status_label,
 }
 
 -- ═══ Registration ═══════
@@ -851,6 +1391,7 @@ dt.register_event("auto_crop_negative_shortcut", "shortcut",
   function(_, _) detect_and_queue() end,
   _("Auto Crop Negative: detect and queue selected images"))
 
+pcall(refresh_server_status)   -- lief schon ein Server (z. B. nach Skript-Neuladen)?
 dt.print_log("Auto Crop Negative: loaded")
 
 -- ═══ script_manager interface ═══════

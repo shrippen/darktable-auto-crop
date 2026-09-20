@@ -43,6 +43,18 @@ else
     "$VENV_DIR/bin/pip" install opencv-python-headless numpy
 fi
 
+# Pillow: Vorschauen der Companion-UI (Web-Oberflaeche)
+VENV_PY="${LUA_DIR}/.venv/bin/python"
+[ -x "$VENV_PY" ] || VENV_PY="$PYTHON_BIN"
+if ! "$VENV_PY" -c "import PIL" 2>/dev/null; then
+    echo "  → Installiere Pillow (Vorschauen der Web-UI)..."
+    if [ "$VENV_PY" = "${LUA_DIR}/.venv/bin/python" ]; then
+        "${LUA_DIR}/.venv/bin/pip" install pillow
+    else
+        $PYTHON_BIN -m pip install --user pillow
+    fi
+fi
+
 # Wrapper immer installieren: leitet auf die Venv-Python um und faellt
 # ohne Venv auf das System-Python zurueck
 WRAPPER="${PLUGIN_DIR}/auto_crop_negative_wrapper.py"
@@ -77,6 +89,13 @@ echo ""
 echo "[3/4] Installiere Lua-Plugin..."
 cp "$SCRIPT_DIR/auto_crop_negative.lua" "$PLUGIN_DIR/"
 echo "  ✓ ${PLUGIN_DIR}/auto_crop_negative.lua"
+
+# Companion-UI (lokaler Server + Web-Oberflaeche); Tests und Caches bleiben draussen
+rm -rf "${PLUGIN_DIR}/companion"
+mkdir -p "${PLUGIN_DIR}/companion"
+cp -r "$SCRIPT_DIR/companion/." "${PLUGIN_DIR}/companion/"
+find "${PLUGIN_DIR}/companion" -name '__pycache__' -type d -prune -exec rm -rf {} +
+echo "  ✓ ${PLUGIN_DIR}/companion/"
 echo ""
 
 # ── 4. Alte Dateien im Root bereinigen ───────────────────────────────────────
@@ -102,8 +121,11 @@ echo "Nächste Schritte:"
 echo "  1. Darktable neu starten"
 echo "  2. Script Manager aktivieren:"
 echo "     Lua → Script Manager → contrib → Auto Crop Negative → ON"
-echo "  3. Lighttable: Bilder auswählen → 'Detect & Queue' klicken"
-echo "  4. Dunkelkammer: Bilder öffnen → Crop wird automatisch gesetzt"
+echo "  3. Lighttable: Bilder auswählen → 'Review starten' (Web-UI öffnet sich)"
+echo "  4. In der Web-UI prüfen/korrigieren → 'Fertig'"
+echo "  5. Zurück in darktable: 'Plan anwenden'"
+echo "     (Nicht zufrieden? 'Prüfung öffnen' → in der Web-UI 'Zurück zur Prüfung')"
+echo "  Alternativ ohne Web-UI: 'Detect & Queue', dann Bilder in der Dunkelkammer öffnen"
 echo ""
 echo "Tastenkürzel:"
 echo "  Voreinstellungen → Tastatur → Auto Crop Negative"

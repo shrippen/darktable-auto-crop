@@ -83,6 +83,30 @@ Danach Darktable neu starten. Das Plugin erscheint als Panel "Auto Crop Negative
 
 ## Nutzung
 
+### Mit Web-UI (Companion)
+1. Bilder in der Hellkammer auswählen → **Review starten**. Darktable exportiert die Raws
+   (volle Auflösung, ohne vorhandenen Crop), die Erkennung läuft, die Web-UI öffnet sich im Browser.
+2. In der Web-UI prüfen: Kacheln nach 🟢 Grün / 🟡 Gelb / 🔴 Rot, Umsortieren per Drag-and-drop,
+   Crop-Editor mit Ziehgriffen und Kandidaten, „Auswahl neu erkennen“ mit anderen Einstellungen.
+3. **Fertig** drücken: Die Ansicht wird gesperrt und der Plan übergeben.
+4. In darktable **Plan anwenden** (wirkt erst nach „Fertig“). Nicht zufrieden? **Prüfung öffnen** und in der
+   Web-UI **Zurück zur Prüfung**; erneutes Anwenden ändert nur, was sich geändert hat.
+
+Ohne darktable (Kalibrieren auf einem Bilderordner, ersetzt langfristig `review_gui.py`):
+
+```bash
+.venv/bin/python -m companion serve --folder Testphotos \
+    --results review_data/results.json --reviews review_data/reviews.json --open
+```
+
+Im Plugin-Bereich von darktable zeigt eine große Statuszeile, ob der Server **startet**, **läuft** oder **gestoppt** ist. Die URL steht als Knopf darunter (Klick öffnet den Browser), dazu ein **Server stoppen**-Knopf. Der Server beendet sich außerdem selbst, wenn darktable geschlossen wird oder 30 Minuten lang keine Aktivität in der Web-UI war (die UI warnt fünf Minuten vorher). Die Sitzung bleibt dabei erhalten: **Prüfung öffnen** startet ihn wieder.
+
+**Zurücksetzen:** Der Knopf **Crop & Farben zurücksetzen** im Plugin-Bereich schaltet bei allen selektierten Bildern das Crop-Modul aus und leert die Farblabels rot/gelb/grün (blau/lila bleiben unangetastet). Er verlangt zwei Klicks binnen 6 Sekunden. Die History behält einen zusätzlichen Schritt „Crop aus“ (die Lua-API kann keine History-Einträge löschen).
+
+Sitzungen liegen in `~/.cache/auto-crop-negative/` und werden nach 14 Tagen aufgeräumt
+(`python -m companion cleanup`). Details und Entwurf: [`companion-ui-plan.md`](companion-ui-plan.md).
+Tests: `.venv/bin/python -m unittest discover -s tests` (Browser-Test: `tests/ui_smoke.py`, benötigt Playwright).
+
 ### Einzelbild
 1. Bild in der Dunkelkammer öffnen
 2. Auf "Einzelbild zuschneiden" klicken
@@ -118,5 +142,11 @@ Die JSON-Ausgabe enthält x, y, width, height, confidence, needs_review.
 |-------|-------------|
 | `auto_crop_negative.py` | Python-Backend: Bildanalyse und Crop-Erkennung |
 | `auto_crop_negative.lua` | Lua-Frontend: Darktable-Integration |
+| `companion/` | Companion-UI: lokaler Server, Sitzungen, Export, Web-Oberfläche (`static/`) |
+| `tests/` | Unit-/Integrationstests, Lua-Stub, Browser-Smoke-Test |
 | `install.sh` | Installations-Skript |
 | `README.md` | Diese Dokumentation |
+
+## License
+
+[MIT](LICENSE)

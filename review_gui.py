@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Review-GUI for Auto-Crop-Negative Batch results.
 
+Hinweis: Wird langfristig durch die Web-UI ersetzt (python -m companion serve --folder
+Testphotos ...), siehe companion-ui-plan.md. Bleibt bis zur praktischen Paritaet erhalten.
+
 Tastatur: Pfeile=Navigation, O=OK, P=Problem, R=Reset,
           1-9=springe 10..90, Ctrl+S=speichern, Esc=schliessen
 
