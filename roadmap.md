@@ -258,6 +258,15 @@ Zweite Runde (alle sechs Ideen, ebenfalls nicht übernommen; Bezug 194/209):
   k=2 −1,1 Punkte, k=3 +0,2, k=5 +0,2, k=8 +1,4 Punkte Trefferquote. Erst ab etwa 8 Korrekturen ein kleiner Gewinn.
 - **Pixelklassifikator statt Kantensuche** (Gradient Boosting auf 20 Merkmalen je Pixel, Box aus der Maske,
   Leave-One-Film-Out): 138 von 209 Treffer. Bei nur 9 Rollen zu wenig Vielfalt (Film 29/31 mit anderem Format: 0 Treffer).
+- **Pixelklassifikator, zweiter Versuch** (auf Wunsch: 1000 px lange Kante statt 1/8, keine absoluten Lagemerkmale,
+  als Zusatzsignal nur im „vertrauten“ Bereich; Gradient Boosting, 200 Bäume, Leave-One-Film-Out):
+  142 von 209 Treffern allein (vorher 138). Film 27/30/33 (35/35, 28/28, 37/37) wie der Detektor, Film 29/31 ~0, Film 34 9/28.
+  Die Selbsteinschätzung des Modells ist gut (Trefferquote in „außen sicher ≥ 0,95 und unentschieden ≤ 3 %“: 64/64),
+  der Domänenabstand zum Training dagegen kaum (AUC 0,59). **Aber:** genau in diesem Bereich trifft der Detektor
+  ebenfalls 64/64. Uneinigkeit gibt es 4-mal, dann liegt der Detektor 3-mal richtig, das Modell 2-mal. Als Konfidenz-
+  Merkmal keine Verbesserung (AUC 0,80–0,81 gegen 0,85 heute), als Prüfer stuft es nur 1–4 der 70 Nicht-Grünen hoch.
+  Beide Verfahren scheitern an denselben kontrastarmen Bildern; das Modell liefert daher kein unabhängiges zweites Signal.
+  Skripte lagen im Scratchpad (nicht im Repo); sinnvoll erneut zu prüfen, sobald weitere Filme als Trainingsdaten da sind.
 - Beobachtung zur Auswertung: Das Treffer-Kriterium prüft nur Breite und Höhe, nicht die Position. Versätze ohne
   Größenfehler (z. B. Film 29, 0222) zählen als Treffer.
 
