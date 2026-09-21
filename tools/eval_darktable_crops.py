@@ -16,6 +16,11 @@ Beispiele:
   tools/eval_darktable_crops.py --no-rotated          # nur Bilder ohne Drehung (exakte Referenz)
   tools/eval_darktable_crops.py --json out.json       # Rohdaten sichern
   tools/eval_darktable_crops.py --from-json out.json  # ohne neue Berechnung auswerten
+  tools/eval_darktable_crops.py --single              # jede Rolle einzeln verarbeiten (kein Stapel)
+
+Die Erkennung nutzt die anderen Rollen eines Stapels (Cross-Film-Abgleich der Groesse). Mit --single zeigt sich, wie gut
+sie ohne diese Stuetze ist, etwa wenn nur eine Rolle in darktable markiert wird. Stand 2026-09-21 auf 1871 Referenzen:
+alle 71 Rollen im Stapel 73.1 % Treffer, jede Rolle einzeln 55.9 %; Stapel aus 5 Zufallsrollen streuen zwischen 1 % und 89 %.
 """
 import argparse
 import importlib.util
@@ -63,6 +68,7 @@ def main():
     ap.add_argument("--t-green", type=float, default=0.5)
     ap.add_argument("--t-yellow", type=float, default=0.30)
     ap.add_argument("--target", type=float, default=0.98)
+    ap.add_argument("--single", action="store_true", help="jede Rolle einzeln durch die Pipeline schicken (ohne Cross-Film-Abgleich)")
     ap.add_argument("--json", help="Pipeline-Rohdaten hierhin schreiben")
     ap.add_argument("--from-json", help="Pipeline-Rohdaten von hier lesen")
     args = ap.parse_args()
@@ -92,6 +98,16 @@ def main():
 
     if args.from_json:
         data = json.load(open(args.from_json))
+    elif args.single:
+        data = {"film_aspects": {}, "results": []}
+        for i, roll in enumerate(rolls, 1):
+            print(f"  [{i}/{len(rolls)}] {roll}", file=sys.stderr)
+            part = ev.run_pipeline(ev.film_images(roll))
+            data["film_aspects"].update(part.get("film_aspects", {}))
+            data["results"].extend(part["results"])
+        if args.json:
+            with open(args.json, "w") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
     else:
         data = ev.run_pipeline(paths)
         if args.json:

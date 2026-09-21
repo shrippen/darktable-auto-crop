@@ -273,6 +273,59 @@ Zweite Runde (alle sechs Ideen, ebenfalls nicht übernommen; Bezug 194/209):
 Fazit: Die verbleibenden Fehltreffer (Film 34, Film 29) sind keine Frage des Kantensignals, sondern der Vorgabe
 (Crop auf oder innerhalb der Rahmenkante) bzw. fehlender sichtbarer Kante.
 
+## Nachtrag: 4106 weitere Testfotos, Auswertung gegen darktable-Crops (2026-09-21)
+
+Neue Daten: `tools/convert_testphotos.py` hat alle übrigen Raws (Steinfeldts + Eigene, 145 Rollen) in ungecroppte 2000-px-JPEGs
+umgewandelt (Originale und Sidecars unverändert). 1662 Sidecars enthalten einen früheren darktable-Crop, 498 davon mit
+Drehung; sie liegen in `review_data/darktable_crops.json` und dienen mit `tools/eval_darktable_crops.py` als Referenz
+für 62 weitere Rollen (dazu deine 209 Handcrops: zusammen 71 Rollen, 1871 Referenzen). Wichtig: Diese Crops sind älter und
+teils bewusst enger als die sichtbare Rahmenkante (Forst, Stellwerk, Freibad 2, Altona: Referenz 40–130 px kleiner);
+solche Rollen sind Konvention, kein Erkennungsfehler.
+
+**Ausgangslage:** 90,4 % Treffer auf den 209 Handcrops, aber nur ~70 % auf den darktable-Rollen (Entwicklungshälfte 68,7 %,
+Prüfhälfte 72,7 %), und 18 % der grünen Bilder waren falsch (auf den 209: 0,7 %).
+
+**Ursachen (gemessen):**
+- Pass A misst bei 12 von 71 Rollen ein falsches Seitenverhältnis (1,06, 1,10, 1,14, 2,3, 2,7, 8,6 statt 1,5). Trefferquote
+  dort 21 %, bei den 59 übrigen 84 %. Betroffen sind vor allem Farbnegative.
+- Die Rohbox allein trifft nur bei 34 % der Bilder (auch mit richtigem Seitenverhältnis). Erst Rollen-Median und der
+  Cross-Film-Abgleich der Größe heben das auf ~84 %.
+- **Der Cross-Film-Abgleich ist instabil.** Eine einzige zusätzliche Rolle (Film 25, 11 Bilder) im Pool lässt ~14 andere
+  Rollen einbrechen (Film 1: 27 → 4, Film 10: 35 → 2), weil der Pool-Cluster kippt. Jede Rolle *einzeln* verarbeitet
+  trifft nur 55,9 % (Stapel aus allen 71: 73,1 %); Stapel aus 5 Zufallsrollen streuen zwischen 1 % und 89 %. Reproduzierbar mit
+  `tools/eval_darktable_crops.py --single`. Ein fester Verkleinerungsfaktor statt des Pools ist deutlich schlechter
+  (Faktor 0,98: Prüfhälfte 66,7 %; ab 0,96 < 50 %), Pool je Rolle statt je Bild ebenfalls.
+- Die Rahmengröße ist zwischen Rollen nicht konstant (Referenzen 1687×1126 bis 1910×1261). Eine globale Konstante
+  (auch die exakt richtige) bringt 70–78 %.
+
+**Übernommen:** Konfidenz `size+edge*exposure*roll-v4` (siehe CHANGELOG). Rollen-Verlässlichkeit aus Größenstreuung,
+Abgleich-Umfang und Seitenverhältnis-Abweichung. AUC 0,74 → 0,85, Präzision der Grünen 79,7 % → 91,6 % (Prüfhälfte
+81,7 % → 95,6 %), auf den 209 unverändert. Rollen mit Faktor ≥ 0,7 (36) treffen zu 89 %, darunter (35) zu 57 %; die
+Totalausfälle sind damit fast alle erkannt.
+
+**Geprüft und verworfen** (jeweils gegen Entwicklungs-, Prüf- und 209er-Satz):
+- Kontrastnormalisierung, Farbkanäle, Pixelklassifikator, gelerntes Kantenmodell, Perforation, Nachbarlücke, Korrekturen
+  lernen (Runde 2, siehe oben): kein belastbarer Gewinn.
+- Statische Rollenmaske / Kantenpaar-Schätzung der Rollengröße: findet die feste Halteröffnung (+27/+49 px zu groß), die
+  Bildkante ist nur ein zweiter, etwas kleinerer Peak; „kleinster starker Peak" trifft 60 % der Rollen auf 30 px.
+- 3:2 für alle Rollen erzwingen (67,8 % Prüfhälfte), Auswahl der besseren Hypothese je Rolle nach Konfidenz oder
+  Rollenfaktor, auch mit auf verlässliche Rollen beschränktem Pool: die gewechselten Rollen werden besser, andere brechen
+  ein (Pool-Kippen), netto schlechter; bei Film 14/Film 4 steigt die Konfidenz, die Treffer bleiben 0.
+- Zweistufiges Einpassen (Größe aus eingepassten statt Rohboxen): ohne Pool besser (Entwicklung 283 → 342), mit Pool nicht.
+- Globales Schrumpfen der Box um 8–32 px: verbessert die 209 (189 → 201), verschlechtert die darktable-Crops
+  (Prüfhälfte 683 → 554); die Referenzsätze haben verschiedene Konventionen.
+- Pool-Statistik (Median, 25./35./65. Perzentil statt dichtestem Cluster): Cluster ist am besten; Perzentil 25 bricht auf
+  3 % zusammen. Pool-Schwelle 1,00–1,02 statt 1,03: gleich gut.
+
+**Empfehlung / offen:**
+- [ ] **Vorwissen aus bekannten Rollen speichern** (löst die Einzelrollen-Schwäche): die Größen bestätigter Rollen
+      (reviews.json, akzeptierte Crops, ggf. darktable-Crops) als Pool für neue Läufe ablegen, ähnlich einer Bibliothek
+      „Rohgröße → Rahmengröße". Offline: Rohschätzung + Korrektur aus den 10 ähnlichsten bekannten Rollen bringt 41 von 65
+      Rollen auf ±45 px (ohne Korrektur 28).
+- [ ] Pass A (Seitenverhältnis) für Farbnegative robuster machen; solange es fehlt, erscheinen die betroffenen Rollen
+      dank `roll_factor` gelb/rot statt fälschlich grün.
+- [ ] Pool stabilisieren (Cluster-Wahl kippt bei 3 % Abstand); Ansätze müssen Einzelrolle und Stapel gleichzeitig verbessern.
+
 ## Nachtrag: Schräglage (2026-09-20)
 
 - [x] Schräglage messen und in der Web-UI anzeigen (`measure_skew` in `auto_crop_negative.py`).
