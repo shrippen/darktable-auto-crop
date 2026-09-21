@@ -1399,6 +1399,36 @@ def _consensus_worker(item):
     return _refine_box(g, x, y, w, h)
 
 
+# Rollen-Verlaessligkeit (Konfidenz-Faktor, siehe apply_film_consensus). Auf 1662 Referenzen aus 62 Rollen
+# (darktable-Crops aus den Sidecars, tools/eval_darktable_crops.py) haengt die Trefferquote stark an drei
+# Rollen-Eigenschaften, die die Bild-Konfidenz nicht sieht:
+#   film_trust  Streuung der Roh-Groessen der Rolle: < 0.6 -> 0-35 % Treffer, 0.7-0.8 -> 72 %, >= 0.9 -> 97 %
+#   clamp       wie stark der Cross-Film-Abgleich die Rollengroesse nach unten ziehen musste: > 6 % -> 22 % Treffer
+#   aspect_dev  Abweichung des Konsens-Seitenverhaeltnisses vom gemessenen: < 2 % -> 86 %, 5-10 % -> 36 %
+# Die Rampen sind bewusst grob (Sweep aller Stuetzstellen aendert AUC/Praezision kaum).
+ROLL_TRUST = (0.55, 0.85, 0.15)     # Faktor 0.15 bei Vertrauen <= 0.55, linear bis 1.0 ab 0.85
+ROLL_CLAMP = (0.03, 0.07, 0.4)      # kein Abzug bis 3 % Abgleich, linear bis Faktor 0.4 ab 7 %
+ROLL_ASPECT = (0.03, 0.10, 0.4)     # kein Abzug bis 3 % Abweichung, linear bis Faktor 0.4 ab 10 %
+
+
+def _ramp(x, x0, x1, y0, y1):
+    """Stueckweise linear: y0 bis x0, y1 ab x1, dazwischen linear."""
+    if x1 == x0:
+        return y1 if x >= x1 else y0
+    t = min(1.0, max(0.0, (x - x0) / (x1 - x0)))
+    return y0 + (y1 - y0) * t
+
+
+def roll_reliability(film_trust, clamp, aspect_dev):
+    """Faktor 0.06-1 fuer die Konfidenz aller Bilder einer Rolle (1 = unauffaellig)."""
+    t0, t1, tmin = ROLL_TRUST
+    c0, c1, cmin = ROLL_CLAMP
+    a0, a1, amin = ROLL_ASPECT
+    return (_ramp(film_trust, t0, t1, tmin, 1.0)
+            * _ramp(max(clamp, 0.0), c0, c1, 1.0, cmin)
+            * _ramp(aspect_dev, a0, a1, 1.0, amin))
+
+
 def apply_film_consensus(results, load_paths, report=None):
     """Fixiert die Crop-Groesse pro Filmrolle auf den robusten Median und
     loest je Bild nur noch die Position.
@@ -1437,6 +1467,7 @@ def apply_film_consensus(results, load_paths, report=None):
         film_stats[film] = {
             "rs": rs, "n": n, "longs": longs, "shorts": shorts,
             "long_px": long_px, "short_px": short_px,
+            "raw_long_px": long_px, "raw_short_px": short_px,
             "bucket_aspect": max(aspect, 1.0 / aspect),
         }
 
@@ -1590,13 +1621,17 @@ def apply_film_consensus(results, load_paths, report=None):
         size_agree = max(0.0, 1.0 - size_dev)
         # Konfidenz: Groessenuebereinstimmung mit dem Rollen-Konsens und Kantenklarheit, gedeckelt
         # durch den Belichtungsfaktor (kontrastarme/unterbelichtete Bilder: die Kantensuche ist dort
-        # unzuverlaessig, auch bei hohem Groessen-/Kanten-Score). film_trust bleibt nur Diagnose.
+        # unzuverlaessig, auch bei hohem Groessen-/Kanten-Score).
         # Geschichte: Mit 98 Referenzen (7 Filme) drueckte der Belichtungsdeckel richtige Crops
         # nach gelb/rot ohne Praezisionsgewinn und wurde entfernt (Version size+edge-v2). Mit allen
         # 209 Testfotos (9 Filme, alle von Hand gecroppt) kehrt sich das um: bei den Produktions-
         # schwellen (gruen >= 0.5) sinken die falschen Gruenen von 11 auf 1 (139 statt 183 Gruene,
         # Praezision 94.0 % -> 99.3 %; AUC 0.813 -> 0.848, ohne Film 34 0.802 -> 0.871). Nachvoll-
         # ziehbar mit: tools/calibrate.py --loo --from-json <eval-Rohdaten>
+        # Version v4 (Rollen-Verlaesslichkeit, siehe ROLL_*): dazu 1662 darktable-Crops aus 62 weiteren Rollen
+        # (tools/eval_darktable_crops.py). Dort waren 18 % der Gruenen falsch (Praezision 79.7 %), obwohl die Bild-Konfidenz
+        # hoch war, weil ganze Rollen falsch lagen (falsches Seitenverhaeltnis aus Pass A, uneinheitliche Groessen).
+        # Mit dem Faktor: AUC 0.74 -> 0.85, Praezision der Gruenen 91.8 %; auf den 209 Handcrops unveraendert (99.3 %).
         base_conf = 0.5 * size_agree + 0.5 * edge_score
 
         # Unterbelichtete/kontrastarme Aufnahmen: Pass A findet dort kaum
@@ -1611,7 +1646,15 @@ def apply_film_consensus(results, load_paths, report=None):
         else:
             contrast = float(contrast)
             exposure_factor = min(1.0, max(0.45, 0.45 + 0.55 * (contrast - 8) / 22))
-        conf = base_conf * exposure_factor
+        # Rollen-Verlaesslichkeit: Streuung der Roh-Groessen, Umfang des Cross-Film-Abgleichs, Abweichung des
+        # Konsens-Seitenverhaeltnisses vom gemessenen (siehe ROLL_* oben).
+        fs_ = film_stats.get(r["film"], {})
+        raw_l, raw_s = fs_.get("raw_long_px", long_px), fs_.get("raw_short_px", short_px)
+        clamp = max((raw_l - long_px) / max(raw_l, 1.0), (raw_s - short_px) / max(raw_s, 1.0), 0.0)
+        bucket_asp = fs_.get("bucket_aspect") or (long_px / max(short_px, 1.0))
+        aspect_dev = abs(long_px / max(short_px, 1.0) - bucket_asp) / bucket_asp
+        roll_factor = roll_reliability(p["film_trust"], clamp, aspect_dev)
+        conf = base_conf * exposure_factor * roll_factor
 
         r["confidence"] = float(round(min(1.0, max(0.0, conf)), 3))
         # Fuer die Konfidenz-Kalibrierung (tools/calibrate.py): die
@@ -1622,13 +1665,24 @@ def apply_film_consensus(results, load_paths, report=None):
             "edge_score": round(float(edge_score), 4),
             "film_trust": round(p["film_trust"], 4),
             "exposure_factor": round(exposure_factor, 4),
+            "roll_factor": round(roll_factor, 4),
         }
+        if roll_factor < 1.0:
+            weak = []
+            if p["film_trust"] < ROLL_TRUST[1]:
+                weak.append(f"Groessen der Rolle streuen (Vertrauen {p['film_trust']:.2f})")
+            if clamp > ROLL_CLAMP[0]:
+                weak.append(f"Rollengroesse musste um {clamp * 100:.0f} % angeglichen werden")
+            if aspect_dev > ROLL_ASPECT[0]:
+                weak.append(f"Seitenverhaeltnis weicht um {aspect_dev * 100:.0f} % vom gemessenen ab")
+            r.setdefault("reasons", []).append(
+                "Rolle unsicher (x%.2f): %s" % (roll_factor, "; ".join(weak) or "mehrere schwache Hinweise"))
         if exposure_factor < 1.0:
             r.setdefault("reasons", []).append(
                 f"Kontrastarm/unterbelichtet (Kontrast "
                 f"{'n/a' if contrast is None else int(contrast)}) "
                 f"- Konfidenz gedeckelt (x{exposure_factor:.2f})")
-        r["conf_formula"] = "size+edge*exposure-v3"
+        r["conf_formula"] = "size+edge*exposure*roll-v4"
         r.setdefault("reasons", []).append(
             f"Film-Konsens {int(long_px)}x{int(short_px)} "
             f"(n={p['n']}, MAD {int(p['mad_long'])}/{int(p['mad_short'])})")

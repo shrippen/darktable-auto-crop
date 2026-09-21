@@ -419,8 +419,8 @@ class AnalysisTest(unittest.TestCase):
             self.assertTrue(0 <= l < r <= 1 and 0 <= t < b <= 1)
             self.assertGreater((r - l) * (b - t), 0.3)         # ein Bildrahmen, kein Fussel
             parts = img["detected"].get("conf_parts")
-            if parts:                    # Konfidenz = (50 % Groesse + 50 % Kante) x Belichtungsfaktor
-                expect = (0.5 * parts["size_agree"] + 0.5 * parts["edge_score"]) * parts["exposure_factor"]
+            if parts:                    # Konfidenz = (50 % Groesse + 50 % Kante) x Belichtung x Rollen-Verlaesslichkeit
+                expect = (0.5 * parts["size_agree"] + 0.5 * parts["edge_score"]) * parts["exposure_factor"] * parts.get("roll_factor", 1.0)
                 self.assertAlmostEqual(img["detected"]["confidence"], min(1.0, max(0.0, expect)), delta=0.002)
         first = next(iter(s.state["images"]))
         self.assertTrue(an.candidates(first))

@@ -187,13 +187,14 @@ function renderStrip() {
   if (active && active.scrollIntoView) active.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 
-// Die vier Faktoren der Konfidenz (siehe roadmap.md): zeigt bei einem falschen "gruenen"
+// Die Faktoren der Konfidenz (siehe roadmap.md): zeigt bei einem falschen "gruenen"
 // Ergebnis sofort, welcher Faktor die Fehleinschaetzung verursacht hat.
-const PARTS = ['size_agree', 'edge_score', 'film_trust', 'exposure_factor'];
+const PARTS = ['size_agree', 'edge_score', 'exposure_factor', 'roll_factor'];
+const PARTS_OLD = ['size_agree', 'edge_score', 'film_trust', 'exposure_factor'];   // Sitzungen vor der Rollen-Verlaesslichkeit
 function confPartsHtml(img) {
   const cp = img.conf_parts;
   if (!cp) return `<div><h3>${T('conf_parts')}</h3><p class="field-hint">${T('cp_none')}</p></div>`;
-  const vals = PARTS.filter((k) => typeof cp[k] === 'number');
+  const vals = (typeof cp.roll_factor === 'number' ? PARTS : PARTS_OLD).filter((k) => typeof cp[k] === 'number');
   const min = Math.min(...vals.map((k) => cp[k]));
   const rows = vals.map((k) => {
     const v = cp[k];

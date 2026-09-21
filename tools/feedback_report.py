@@ -44,7 +44,7 @@ def tolerance(size):
     (Ohne Skalierung waere die Toleranz auf 5520x8280-Exporten viermal zu streng.)"""
     return TOL_PX * max(size) / float(REF_EDGE) if size else TOL_PX
 PHASE_RANK = {"applied": 3, "locked": 2, "reviewing": 1}
-FACTORS = ["size_agree", "edge_score", "film_trust", "exposure_factor"]
+FACTORS = ["size_agree", "edge_score", "film_trust", "exposure_factor", "roll_factor"]
 
 
 def auto_group(state, det):

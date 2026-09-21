@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Konfidenz: Rollen-Verlässlichkeit (`size+edge*exposure*roll-v4`)
+Neue Testdaten: 4106 weitere Raw-Fotos wurden mit `tools/convert_testphotos.py` in ungecroppte JPEGs umgewandelt (Crop und
+Drehung in der Sidecar nur im Export abgeschaltet, Originale unverändert). In 1662 Sidecars steckt ein früherer darktable-Crop
+von dir; er liegt in `review_data/darktable_crops.json` und dient mit `tools/eval_darktable_crops.py` als (ältere, weniger
+verlässliche) Referenz für 62 weitere Rollen. Auf diesen Rollen zeigte sich ein Problem, das die 209 Handcrops nicht zeigten:
+Die Konfidenz war dort hoch, obwohl **ganze Rollen** falsch lagen (Pass A misst bei 12 von 71 Rollen ein falsches
+Seitenverhältnis, Trefferquote dort 21 % gegen 84 %). 18 % der grünen Bilder waren falsch (Präzision 79.7 %).
+- Neuer Faktor `roll_factor` (0.06–1), der alle Bilder einer Rolle gemeinsam senkt, wenn (a) die Roh-Größen der Rolle stark
+  streuen (`film_trust` < 0.85), (b) der Abgleich mit den anderen Rollen die Größe um mehr als 3 % nach unten ziehen musste
+  oder (c) das Seitenverhältnis der Konsens-Box um mehr als 3 % vom gemessenen abweicht. Die Rampen sind bewusst grob; ein
+  Sweep aller Stützstellen ändert AUC und Präzision kaum.
+- Wirkung auf den darktable-Rollen: AUC 0.74 → 0.85, Präzision der Grünen 79.7 % → 91.6 % (auf den ungesehenen Rollen der
+  Prüfhälfte 81.7 % → 95.6 %, AUC 0.77 → 0.91). Auf den 209 Handcrops unverändert: 194 Treffer, Grüne 99.3 % richtig,
+  Leave-One-Film-Out-Präzision 96.2 % → 97.9 %.
+- Der Crop selbst ändert sich nicht, nur die Einstufung grün/gelb/rot. Die Web-UI zeigt den Faktor unter „Woraus sich die
+  Konfidenz ergibt“ und nennt in den Hinweisen den Grund („Rolle unsicher (x0.xx): …“).
+- Verworfen nach Messung (Details in `roadmap.md`): statische Rollenmaske, Kantenpaar-/Peak-Schätzung der Rollengröße, 3:2
+  für alle Rollen erzwingen, Hypothesen-Auswahl je Rolle, Pool je Rolle statt je Bild, zweistufiges Einpassen, globales
+  Schrumpfen der Box.
+
 ### Algorithmus: geschärft an allen 209 handgecroppten Testfotos
 Referenzen: alle Bilder in `Testphotos/` (9 Filme) wurden im Web-UI von Hand gecroppt (`review_data/reviews.json`).
 Baseline vorher/nachher auf denselben 209 Bildern: **186 → 194 Treffer** (|dW|,|dH| < 60 px bei 2000 px langer Kante).
