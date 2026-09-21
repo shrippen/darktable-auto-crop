@@ -3176,5 +3176,605 @@
       "valid": false,
       "reason": "zu wenig Kontrast"
     }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0346.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "dark_span zu klein"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0347.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 36,
+        "y": 2,
+        "w": 1283,
+        "h": 1953
+      },
+      "image": {
+        "x": 83,
+        "y": 71,
+        "w": 1212,
+        "h": 1830
+      },
+      "aspect": 0.6623,
+      "contrast": 117.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0348.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 0,
+        "y": 13,
+        "w": 1948,
+        "h": 1283
+      },
+      "image": {
+        "x": 52,
+        "y": 52,
+        "w": 1828,
+        "h": 1209
+      },
+      "aspect": 1.512,
+      "contrast": 133.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0349.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 0,
+        "y": 11,
+        "w": 1939,
+        "h": 1284
+      },
+      "image": {
+        "x": 43,
+        "y": 37,
+        "w": 1828,
+        "h": 1211
+      },
+      "aspect": 1.5095,
+      "contrast": 144.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0350.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 37,
+        "y": 9,
+        "w": 1283,
+        "h": 1948
+      },
+      "image": {
+        "x": 81,
+        "y": 80,
+        "w": 835,
+        "h": 1828
+      },
+      "aspect": 0.4568,
+      "contrast": 102.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0351.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 0,
+        "y": 11,
+        "w": 1957,
+        "h": 1284
+      },
+      "image": {
+        "x": 60,
+        "y": 41,
+        "w": 1829,
+        "h": 1209
+      },
+      "aspect": 1.5128,
+      "contrast": 124.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0352.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 12,
+        "y": 11,
+        "w": 1945,
+        "h": 1283
+      },
+      "image": {
+        "x": 86,
+        "y": 49,
+        "w": 1802,
+        "h": 1210
+      },
+      "aspect": 1.4893,
+      "contrast": 133.2
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0353.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 21,
+        "y": 11,
+        "w": 1935,
+        "h": 1283
+      },
+      "image": {
+        "x": 92,
+        "y": 41,
+        "w": 1828,
+        "h": 1210
+      },
+      "aspect": 1.5107,
+      "contrast": 134.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0354.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 0,
+        "y": 10,
+        "w": 1958,
+        "h": 1283
+      },
+      "image": {
+        "x": 60,
+        "y": 44,
+        "w": 1827,
+        "h": 1209
+      },
+      "aspect": 1.5112,
+      "contrast": 117.5
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0355.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 0,
+        "y": 11,
+        "w": 1937,
+        "h": 1284
+      },
+      "image": {
+        "x": 47,
+        "y": 39,
+        "w": 1753,
+        "h": 1210
+      },
+      "aspect": 1.4488,
+      "contrast": 126.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0356.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 0,
+        "y": 11,
+        "w": 1957,
+        "h": 1283
+      },
+      "image": {
+        "x": 63,
+        "y": 38,
+        "w": 1831,
+        "h": 1214
+      },
+      "aspect": 1.5082,
+      "contrast": 138.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0357.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 0,
+        "y": 11,
+        "w": 1935,
+        "h": 1283
+      },
+      "image": {
+        "x": 40,
+        "y": 40,
+        "w": 1833,
+        "h": 1213
+      },
+      "aspect": 1.5111,
+      "contrast": 160.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0358.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 22,
+        "y": 11,
+        "w": 1935,
+        "h": 1282
+      },
+      "image": {
+        "x": 88,
+        "y": 37,
+        "w": 1834,
+        "h": 1220
+      },
+      "aspect": 1.5033,
+      "contrast": 161.2
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0359.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 15,
+        "y": 12,
+        "w": 1943,
+        "h": 1283
+      },
+      "image": {
+        "x": 75,
+        "y": 29,
+        "w": 1834,
+        "h": 1223
+      },
+      "aspect": 1.4996,
+      "contrast": 161.2
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0360.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 2,
+        "y": 11,
+        "w": 1949,
+        "h": 1283
+      },
+      "image": {
+        "x": 65,
+        "y": 40,
+        "w": 1833,
+        "h": 1213
+      },
+      "aspect": 1.5111,
+      "contrast": 149.2
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0361.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 0,
+        "y": 12,
+        "w": 1957,
+        "h": 1282
+      },
+      "image": {
+        "x": 79,
+        "y": 30,
+        "w": 1836,
+        "h": 1220
+      },
+      "aspect": 1.5049,
+      "contrast": 151.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0362.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "zu wenig Kontrast"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0363.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 36,
+        "y": 0,
+        "w": 1284,
+        "h": 1958
+      },
+      "image": {
+        "x": 83,
+        "y": 315,
+        "w": 318,
+        "h": 765
+      },
+      "aspect": 0.4157,
+      "contrast": 17.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0364.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "zu wenig Kontrast"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0365.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "zu wenig Kontrast"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0366.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "zu wenig Kontrast"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0367.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "zu wenig Kontrast"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0368.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "zu wenig Kontrast"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0369.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "zu wenig Kontrast"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0370.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "zu wenig Kontrast"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0371.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "zu wenig Kontrast"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0372.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 8,
+        "y": 0,
+        "w": 1283,
+        "h": 1947
+      },
+      "image": {
+        "x": 34,
+        "y": 18,
+        "w": 1221,
+        "h": 1845
+      },
+      "aspect": 0.6618,
+      "contrast": 156.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0373.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 8,
+        "y": 0,
+        "w": 1283,
+        "h": 1930
+      },
+      "image": {
+        "x": 42,
+        "y": 35,
+        "w": 1217,
+        "h": 1842
+      },
+      "aspect": 0.6607,
+      "contrast": 153.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0374.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 36,
+        "y": 0,
+        "w": 1283,
+        "h": 1932
+      },
+      "image": {
+        "x": 76,
+        "y": 46,
+        "w": 1215,
+        "h": 1839
+      },
+      "aspect": 0.6607,
+      "contrast": 163.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0375.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 13,
+        "y": 0,
+        "w": 1282,
+        "h": 1861
+      },
+      "image": {
+        "x": 52,
+        "y": 268,
+        "w": 1212,
+        "h": 1532
+      },
+      "aspect": 0.7911,
+      "contrast": 158.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0376.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 0,
+        "y": 30,
+        "w": 1909,
+        "h": 1281
+      },
+      "image": {
+        "x": 56,
+        "y": 59,
+        "w": 1746,
+        "h": 1210
+      },
+      "aspect": 1.443,
+      "contrast": 117.5
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0377.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "dark_span zu klein"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0378.jpg",
+    "measurement": {
+      "valid": false,
+      "reason": "dark_span zu klein"
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0379.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 39,
+        "y": 23,
+        "w": 1903,
+        "h": 1283
+      },
+      "image": {
+        "x": 98,
+        "y": 58,
+        "w": 1827,
+        "h": 1213
+      },
+      "aspect": 1.5062,
+      "contrast": 118.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0380.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 51,
+        "y": 15,
+        "w": 1934,
+        "h": 1282
+      },
+      "image": {
+        "x": 103,
+        "y": 62,
+        "w": 1823,
+        "h": 1211
+      },
+      "aspect": 1.5054,
+      "contrast": 119.0
+    }
+  },
+  {
+    "film": "Film 35",
+    "filename": "20250414_0381.jpg",
+    "measurement": {
+      "valid": true,
+      "strip": {
+        "x": 36,
+        "y": 0,
+        "w": 1283,
+        "h": 1926
+      },
+      "image": {
+        "x": 48,
+        "y": 63,
+        "w": 1212,
+        "h": 1811
+      },
+      "aspect": 0.6692,
+      "contrast": 112.0
+    }
   }
 ]
