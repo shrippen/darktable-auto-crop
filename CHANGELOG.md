@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Crop-Größe aus der Perforation (`film_scale.py`)
+Der Lochabstand des 35-mm-Films (4,7625 mm) ist eine Konstante; `film_scale.py` misst ihn über die Autokorrelation der
+Randstreifen, aufsummiert über die Bilder einer Rolle. Daraus ergeben sich Maßstab (px/mm) und die Rahmengröße (36,2 × 24,1 mm,
+die Konvention wird aus Handcrops der Web-UI gelernt). Rollen mit Takt-Score ≥ 0,30 bekommen ihre Größe daraus statt aus
+Rollen-Median und Cross-Film-Pool; bei unklarem Seitenverhältnis entscheidet die rohe Rollengröße oder die Kantenschärfe
+zwischen 3:2 und quadratisch. Ohne `film_scale.py` oder ohne Takt bleibt die Erkennung wie zuvor.
+- Auf den 62 darktable-Rollen (1662 Referenzen): **62,6 % → 87,4 % Treffer**, Anteil richtiger Grüner 80,4 % → 93,5 %. Auf den
+  209 Handcrops 194 → 196. Ganze Rollen kamen zurück (Forst 0/37 → 36/37, Weimar 07.07.2014 0/38 → 35/38, Zwiebelmarkt 0/40 → 30/40).
+- **Takt-Messung mit Konsens:** Der Takt kommt nicht mehr aus der einen stärksten Streifenlage, sondern aus dem Peak-Bündel mit
+  der größten Score-Summe über alle Streifenlagen. Vorher entschied ein einzelner Fremdpeak am äußersten Bildrand (0,129 statt
+  0,118 der Bildbreite) und ergab einen 10 % zu großen Maßstab (Altona Sept 89 und Film 1 auf unentwickelten Bildern: 0 Treffer).
+  Auf den entwickelten Bildern unverändert (1452 → 1454 Treffer), auf unentwickelten 1397 → 1453.
+- Neu: Button „Größe auf Rolle“ im Crop-Editor überträgt die Größe eines korrigierten Crops auf die übrigen Bilder der Rolle
+  (ein Undo-Schritt, keine Feedback-Einträge). `install.sh` kopiert `film_scale.py` mit.
+- Nachführung der Rollengröße (`SCALE_CFG["adapt"]`) eingebaut, aber aus (0): 8 px und 16 px brachten keinen Gewinn.
+- `tools/convert_testphotos.py --unedited`: Export ohne Negadoctor/Filmic/Belichtung (nicht invertiert, nur Weißabgleich bleibt),
+  für Messungen mit unentwickelten Bildern. Nur für Auswertungen, kein Bestandteil der Erkennung.
+
 ### Konfidenz: Rollen-Verlässlichkeit (`size+edge*exposure*roll-v4`)
 Neue Testdaten: 4106 weitere Raw-Fotos wurden mit `tools/convert_testphotos.py` in ungecroppte JPEGs umgewandelt (Crop und
 Drehung in der Sidecar nur im Export abgeschaltet, Originale unverändert). In 1662 Sidecars steckt ein früherer darktable-Crop

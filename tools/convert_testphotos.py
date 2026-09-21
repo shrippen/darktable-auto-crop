@@ -44,6 +44,9 @@ DEFAULT_LABELS = os.path.join(PROJECT_DIR, "review_data", "darktable_crops.json"
 COLLECTIONS = ("Steinfeldts", "Eigene")   # Unterordner der Quelle; Wichmanns ist leer
 RAW_EXT = (".nef",)
 DISABLE_OPS = ("crop", "ashift")
+# --unedited: nur die Module behalten, die aus dem Sensorbild ueberhaupt ein Bild machen (Entwicklung, Weissabgleich,
+# Farbprofile, Ausrichtung). Alles andere (Negadoctor/Inversion, Filmic, Belichtung, Kanalmixer, ...) aus.
+UNEDITED_KEEP = ("rawprepare", "demosaic", "temperature", "colorin", "colorout", "gamma", "flip")
 
 ENTRY_RE = re.compile(r"<rdf:li\s[^>]*?darktable:operation=\"[^\"]*\"[^>]*?/>", re.S)
 
@@ -122,6 +125,15 @@ def neutralize_xmp(xmp_text):
     return ENTRY_RE.sub(repl, xmp_text)
 
 
+def unedit_xmp(xmp_text):
+    """Kopie der Sidecar, in der jedes Modul ausser UNEDITED_KEEP ausgeschaltet ist (unentwickeltes, nicht invertiertes Bild)."""
+    def repl(m):
+        s = m.group(0)
+        op = _attr(s, "darktable:operation")
+        return s if op in UNEDITED_KEEP else s.replace('darktable:enabled="1"', 'darktable:enabled="0"')
+    return ENTRY_RE.sub(repl, xmp_text)
+
+
 def find_rolls(src, collections):
     """{Rollenname: [Rohdatei ...]}; bei doppeltem Namen wird der Sammlungsname vorangestellt."""
     found = []
@@ -154,17 +166,17 @@ def low_priority_prefix(nice):
     return prefix
 
 
-def convert_one(dt_cli, raw, dst_file, long_edge, quality, cfg_dir, tmp_dir, nice=19):
+def convert_one(dt_cli, raw, dst_file, long_edge, quality, cfg_dir, tmp_dir, nice=19, unedited=False):
     """Ein RAW -> JPEG. Gibt (ok, Meldung) zurueck."""
     xmp = raw + ".xmp"
     xmp_arg = []
     tmp_xmp = None
     if os.path.exists(xmp):
         text = open(xmp, encoding="utf-8", errors="replace").read()
-        if needs_neutralizing(text):
+        if unedited or needs_neutralizing(text):
             tmp_xmp = os.path.join(tmp_dir, os.path.basename(raw) + ".xmp")
             with open(tmp_xmp, "w", encoding="utf-8") as fh:
-                fh.write(neutralize_xmp(text))
+                fh.write(unedit_xmp(text) if unedited else neutralize_xmp(text))
             xmp_arg = [tmp_xmp]
     tmp_out = os.path.join(tmp_dir, os.path.splitext(os.path.basename(raw))[0] + ".jpg")
     if os.path.exists(tmp_out):
@@ -173,6 +185,7 @@ def convert_one(dt_cli, raw, dst_file, long_edge, quality, cfg_dir, tmp_dir, nic
     cmd = low_priority_prefix(nice) + [dt_cli, raw] + xmp_arg + [tmp_out, "--width", str(long_edge), "--height", str(long_edge),
                                      "--out-ext", "jpg", "--core",
                                      "--conf", "write_sidecar_files=never",
+                                     *(["--conf", "plugins/darkroom/workflow=none"] if unedited else []),
                                      "--conf", f"plugins/imageio/format/jpeg/quality={quality}"]
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     produced = tmp_out if os.path.exists(tmp_out) else None
@@ -205,6 +218,9 @@ def main():
     ap.add_argument("--limit", type=int, help="hoechstens N Bilder (zum Ausprobieren)")
     ap.add_argument("--dry-run", action="store_true", help="nur zaehlen, nichts schreiben")
     ap.add_argument("--no-labels", action="store_true", help="darktable_crops.json nicht schreiben")
+    ap.add_argument("--unedited", action="store_true",
+                    help="ohne Negadoctor/Filmic/Belichtung entwickeln (nicht invertiertes, unbearbeitetes Bild); "
+                         "schreibt keine Labels, --dst angeben (nicht Testphotos/)")
     args = ap.parse_args()
 
     dt_cli = shutil.which("darktable-cli")
@@ -242,7 +258,7 @@ def main():
           + f"; darktable-Crops in Sidecars: {len(labels)} (mit Drehung: {sum(1 for v in labels.values() if v['rotation'])})")
     if args.dry_run:
         return
-    if not args.no_labels:
+    if not args.no_labels and not args.unedited:
         old = {}
         if os.path.exists(args.labels):
             old = json.load(open(args.labels))
@@ -268,7 +284,7 @@ def main():
             tls.cfg = os.path.join(work, f"cfg{idx}")
             tls.tmp = os.path.join(work, f"tmp{idx}")
             os.makedirs(tls.tmp, exist_ok=True)
-        return raw, convert_one(dt_cli, raw, dst_file, args.long, args.quality, tls.cfg, tls.tmp, args.nice)
+        return raw, convert_one(dt_cli, raw, dst_file, args.long, args.quality, tls.cfg, tls.tmp, args.nice, args.unedited)
 
     done = 0
     try:

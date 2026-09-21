@@ -304,7 +304,7 @@ Abgleich-Umfang und Seitenverhältnis-Abweichung. AUC 0,74 → 0,85, Präzision 
 Totalausfälle sind damit fast alle erkannt.
 
 **Geprüft und verworfen** (jeweils gegen Entwicklungs-, Prüf- und 209er-Satz):
-- Kontrastnormalisierung, Farbkanäle, Pixelklassifikator, gelerntes Kantenmodell, Perforation, Nachbarlücke, Korrekturen
+- Kontrastnormalisierung, Farbkanäle, Pixelklassifikator, gelerntes Kantenmodell, Perforation (als Position; als Maßstab siehe Nachtrag 2026-09-22), Nachbarlücke, Korrekturen
   lernen (Runde 2, siehe oben): kein belastbarer Gewinn.
 - Statische Rollenmaske / Kantenpaar-Schätzung der Rollengröße: findet die feste Halteröffnung (+27/+49 px zu groß), die
   Bildkante ist nur ein zweiter, etwas kleinerer Peak; „kleinster starker Peak" trifft 60 % der Rollen auf 30 px.
@@ -361,6 +361,28 @@ auffällt:
 - [x] Feedback in `tools/eval.py` und `tools/calibrate.py` einspeisen (Ground Truth aus
       `--export-gt` zusammen mit `reviews.json` auswerten; die Bilder liegen als Raw
       außerhalb von `Testphotos/`).
+
+## Nachtrag: Perforation als Maßstab, unentwickelte Raws (2026-09-22)
+
+**Übernommen: Perforations-Takt als Maßstab** (`film_scale.py`). Der frühere Versuch „Perforation als Positionsanker“ (oben,
+verworfen) und dieser Ansatz sind verschieden: hier liefert der Lochabstand (4,7625 mm) die *Größe* des Rahmens für die ganze Rolle,
+nicht die Position. Stapel aus allen 62 darktable-Rollen: 1040/1662 (62,6 %) → 1452/1662 (87,4 %); Grüne 80,4 % → 93,5 % richtig;
+209 Handcrops 194 → 196. Die Größe der Rolle hängt damit nicht mehr am Cross-Film-Pool, der schon bei einer weiteren Rolle kippte.
+Weiterhin ohne Erfolg: Leipzig (2/34), Freibad 3, Nachts Weihnachtsmarkt, Viktorianisches Wasser, Küste 1/2 (Takt-Score < 0,30).
+Die Crop-Konvention (36,2 × 24,1 mm) wurde auf denselben Referenzen abgestimmt; ein Teil des Gewinns kann Anpassung sein.
+
+**Geprüft und nicht übernommen:**
+- *Nachführung der Rollengröße* per Kantenevidenz (`adapt` 8/16 px): 1449/1450 gegen 1452, Handcrops 196/195 gegen 196. Bleibt aus.
+- *Unentwickelte, nicht invertierte Raws* als Erkennungsquelle (`convert_testphotos.py --unedited`, nur Weißabgleich bleibt):
+  1397/1662 (84,1 %) gegen 1452 (87,4 %), AUC der Konfidenz 0,61 gegen 0,75. Zwei Rollen (Altona, Film 1) brachen komplett ein, weil
+  die Takt-Messung von einem Fremdpeak in einer einzelnen Streifenlage getäuscht wurde. Mit der Konsens-Messung (jetzt im Code):
+  Raw 1453 (87,4 %), entwickelt 1454; die Konfidenz auf Raw bleibt schlechter (AUC 0,65). Das Raw rettet Rollen, an denen die
+  entwickelten Bilder scheitern (Leipzig 2 → 28/34, Küste 1/2 0 → 6/7, Freibad 3 0 → 4/5), und verliert in anderen (Cayeux 34 → 29).
+- *Kombination beider Läufe* (je Rolle die höhere mittlere Konfidenz bzw. der höhere Takt-Score, je Bild die höhere Konfidenz):
+  höchstens 88,3 % gegen 87,5 %; die Obergrenze bei perfekter Wahl je Rolle liegt bei 90,4 %. Der doppelte Export lohnt nicht.
+- *Neu-Kalibrierung der Grün-Schwelle* auf Raw: für 90 % Precision wäre 0,63 nötig (Abdeckung 37–42 %), 95 % nur bei 0,91
+  (Abdeckung 13 %); 98 % erreicht keine Schwelle. Auf entwickelten Bildern reicht 0,50 für 93,5 %/79 % Abdeckung.
+  Auswahl der Schwelle je auf ganzen Rollen (2-fold, Leave-One-Roll-Out), nicht auf demselben Bild.
 
 ## Priorisierung
 
