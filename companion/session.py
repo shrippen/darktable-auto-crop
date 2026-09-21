@@ -123,6 +123,7 @@ def crop_to_pixels(crop, img_w, img_h):
             "height": int(round(b * img_h)) - y}
 
 
+PITCH_MM = 4.7625                  # Lochabstand 35-mm-Film (siehe film_scale.py)
 MAX_STRAIGHTEN_DEG = 10.0
 AUTO_STRAIGHTEN_MIN_DEG = 0.3      # ab diesem gemessenen Tilt wird standardmaessig geradegestellt
 AUTO_STRAIGHTEN_MIN_CONF = 0.4
@@ -582,6 +583,82 @@ class Session:
             del self.history[:-200]
             self.save()
 
+    def apply_roll_size(self, ref_id):
+        """Uebertraegt die Groesse des Crops von ``ref_id`` auf die uebrigen Bilder derselben Rolle.
+
+        Die Rollengroesse ist der wirksamste Hebel (ein Wert je Rolle erklaert etwa 95 % der Treffer). Jedes Bild behaelt
+        seine erkannte Mitte, nur Breite und Hoehe werden angeglichen (Orientierung je Bild beibehalten). Bilder mit
+        eigener manueller Korrektur bleiben unangetastet. Ein Undo-Schritt; es entsteht kein Feedback-Eintrag, denn die
+        abgeleiteten Crops sind keine Handarbeit.
+        Rueckgabe: Zahl der geaenderten Bilder."""
+        with self.lock:
+            self._require_editable()
+            ref = self.image(ref_id)
+            size = ref.get("export_size")
+            crop = self.effective_crop(ref)
+            if not size or not crop:
+                raise SessionError("Referenzbild hat keinen Crop")
+            W0, H0 = size
+            rw, rh = (crop[2] - crop[0]) * W0, (crop[3] - crop[1]) * H0
+            long_px, short_px = max(rw, rh), min(rw, rh)
+            op, n = {"ids": {}, "t": time.time()}, 0
+            for img in self.state["images"].values():
+                if img["film"] != ref["film"] or img["id"] == ref["id"] or img.get("manual"):
+                    continue
+                cur, isz = self.effective_crop(img), img.get("export_size")
+                if not cur or not isz:
+                    continue
+                W, H = isz
+                cw, ch = (cur[2] - cur[0]) * W, (cur[3] - cur[1]) * H
+                landscape = cw >= ch
+                w, h = (long_px, short_px) if landscape else (short_px, long_px)
+                new = _fit_box((cur[0] + cur[2]) / 2 * W, (cur[1] + cur[3]) / 2 * H, w, h, W, H)
+                op["ids"][str(img["id"])] = {"manual": copy.deepcopy(img.get("manual"))}
+                img["manual"] = {"crop": new, "deg": self.straight_deg(img), "at": now_iso(), "derived": "roll"}
+                n += 1
+            if n:
+                self.history.append(op)
+                del self.history[:-200]
+                self.save()
+            return n
+
+    def _learn_convention(self):
+        """Handcrops dieser Sitzung in die gespeicherte Konvention (mm) einfliessen lassen, hoechstens einmal je Stand."""
+        try:
+            import film_scale
+            conv = self.learned_convention()
+            if conv and conv != self.state.get("convention_learned"):
+                if film_scale.update_convention(conv):
+                    self.state["convention_learned"] = conv
+        except Exception:      # noqa: BLE001 - Lernen darf das Abschliessen nie verhindern
+            pass
+
+    def learned_convention(self):
+        """Crop-Groesse in mm aus den von Hand gesetzten Crops dieser Sitzung (Median), oder None.
+
+        Nur Rollen mit gemessenem Perforationstakt (Score >= 0.4) und nur echte Handarbeit (keine abgeleiteten Crops).
+        Ergebnis: {"long_mm", "short_mm", "n"}; wird von ``auto_crop_negative`` als Voreinstellung gelesen."""
+        longs, shorts = [], []
+        for img in self.state["images"].values():
+            man, size = img.get("manual"), img.get("export_size")
+            sc = (self.state.get("film_scales") or {}).get(img["film"])
+            if not man or man.get("derived") or not size or not sc or sc.get("score", 0) < 0.4:
+                continue
+            mm_px = sc["pitch_frac"] * max(size) / PITCH_MM
+            c = man["crop"]
+            if man.get("deg"):
+                c = crop_from_straight(c, size, man["deg"])
+            w, h = (c[2] - c[0]) * size[0] / mm_px, (c[3] - c[1]) * size[1] / mm_px
+            if 0.6 < max(w, h) / max(min(w, h), 1e-6) < 2.0 and max(w, h) > 30:   # nur 35-mm-artige Rahmen
+                longs.append(max(w, h))
+                shorts.append(min(w, h))
+        if len(longs) < 3:
+            return None
+        longs.sort()
+        shorts.sort()
+        return {"long_mm": round(longs[len(longs) // 2], 2), "short_mm": round(shorts[len(shorts) // 2], 2),
+                "n": len(longs)}
+
     def undo(self, scope="session", ids=None):
         """Macht die letzte Aenderung rueckgaengig: 'session' = letzte Aktion,
         'selection' = letzte Aktion, die eines der Bilder in ``ids`` betraf
@@ -612,7 +689,7 @@ class Session:
             self.save()
             return True
 
-    def apply_detection(self, results, film_aspects=None):
+    def apply_detection(self, results, film_aspects=None, film_scales=None):
         """Uebernimmt Erkennungsergebnisse ``{id: result_dict}`` (Pixel -> normalisiert).
 
         result: Ausgabe der Erkennung (x,y,width,height,_img_w,_img_h,confidence,...)
@@ -645,6 +722,11 @@ class Session:
                 img["error"] = None
             if film_aspects:
                 self.state.setdefault("film_aspects", {}).update(film_aspects)
+            if film_scales:
+                # nur was fuer die Konvention gebraucht wird: Takt als Bruchteil der langen Bildkante und sein Score
+                self.state.setdefault("film_scales", {}).update(
+                    {f: {"pitch_frac": v["pitch_frac"], "score": v.get("score", 0.0)}
+                     for f, v in film_scales.items() if v.get("pitch_frac")})
             if self.phase == "analyzing" and not any(
                     i.get("status") == "pending" for i in self.state["images"].values()):
                 self.state["phase"] = "reviewing"
@@ -774,6 +856,7 @@ class Session:
             atomic_write_json(self.path("plan.json"), plan)
             self.state["phase"] = "locked"
             self.history.clear()
+            self._learn_convention()
             self.save()
             summary = self._summary()
             if self.mode == "folder":

@@ -270,6 +270,7 @@ function renderSide() {
     <div class="chips">
       <button type="button" class="btn btn-outline btn-sm" data-act="reset"${locked || !img.manual_crop ? ' disabled' : ''}>${T('reset_crop')} · R</button>
       <button type="button" class="btn btn-outline btn-sm" data-act="undo"${locked ? ' disabled' : ''}>${T('undo')} · Z</button>
+      <button type="button" class="btn btn-outline btn-sm" data-act="roll-size" title="${esc(S('roll_size_h'))}"${locked || !img.manual_crop ? ' disabled' : ''}>${T('roll_size')}</button>
     </div>
     ${refDevHtml(img)}
     ${skewHtml(img)}
@@ -449,6 +450,14 @@ function save() {
 function saveSoon() { clearTimeout(ed.saveTimer); ed.saveTimer = setTimeout(save, 450); }
 function flushSave() { if (ed && ed.saveTimer) { clearTimeout(ed.saveTimer); ed.saveTimer = null; save(); } }
 
+// Groesse dieses (korrigierten) Crops auf die uebrigen, nicht selbst korrigierten Bilder der Rolle uebertragen.
+async function rollSize() {
+  if (ed.saveTimer) { const pending = save(); ed.saveTimer = null; await pending; }
+  const r = await guard(() => api('POST', 'roll-size', { id: ed.id }), hooks.refresh);
+  if (r) toast(S('roll_size_done', r.changed), r.changed ? undefined : 'error');
+  await hooks.refresh();
+}
+
 async function patch(p) {
   await guard(() => api('PATCH', 'images', { ids: [ed.id], ...p }), hooks.refresh);
   await hooks.refresh();
@@ -512,6 +521,7 @@ function onClick(e) {
     else if (a === 'straighten-on') patch({ straighten: { deg: cur().skew.deg } });
     else if (a === 'straighten-off') patch({ straighten: null });
     else if (a === 'undo') guard(() => api('POST', 'undo', { scope: 'selection', ids: [ed.id] })).then(hooks.refresh);
+    else if (a === 'roll-size') rollSize();
     else if (a === 'prop-accept') guard(() => api('POST', 'proposals/accept', { ids: [ed.id] })).then(hooks.refresh);
     else if (a === 'prop-discard') guard(() => api('POST', 'proposals/discard', { ids: [ed.id] })).then(hooks.refresh);
     return;

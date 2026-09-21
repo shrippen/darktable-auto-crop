@@ -272,7 +272,7 @@ class Analyzer:
         aspects = {k: v["aspect_ratio"] for k, v in batch["film_aspects"].items()}
         self._stage("skew", 0, 0)          # Tilt-Erkennung und korrigierte Erkennung
         measure_skews(results, paths)
-        s.apply_detection(results, aspects)
+        s.apply_detection(results, aspects, batch.get("film_scales"))
         s.mark_analysis_done()
 
     # -- Neu-Erkennung ---------------------------------------------------------

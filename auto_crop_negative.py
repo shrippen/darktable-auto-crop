@@ -19,6 +19,11 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import cv2
 import numpy as np
 
+try:
+    import film_scale
+except ImportError:  # alte Installation ohne film_scale.py: Erkennung laeuft ohne Massstab
+    film_scale = None
+
 ASPECT_RATIOS = {
     "35mm": 3 / 2,
     "6x6": 1 / 1,
@@ -1391,6 +1396,79 @@ def _pass_b_worker(item):
     return result
 
 
+# Massstab aus der Perforation (film_scale.py). Physik: Lochabstand 4,7625 mm, Rahmen 36 x 24 mm. Gemessen an 52 Rollen mit
+# Referenz: darktable-Crops 35.99 x 23.95 mm (= 36 x 24), Handcrops (Film 27-35) 36.81 x 24.40 mm (etwa 0.4 mm je Seite
+# weiter aussen). CROP_MM ist deshalb die *Konvention* (lange, kurze Kante in mm), nicht die Physik; der Mittelwert liegt
+# bei beiden Referenzsaetzen innerhalb der 60-px-Toleranz.
+SCALE_CFG = {
+    "enabled": True,
+    "min_score": 0.30,           # Autokorrelations-Score, ab dem der Takt gilt
+    "small_extra": 0.20,         # Zuschlag fuer Rollen mit < 3 Bildern (weniger Bilder, weniger Evidenz fuer den Takt)
+    "crop_mm": (36.2, 24.1),     # (lang, kurz) der gewuenschten Crop-Groesse (Sweep 36.0-36.8: bester Wert auf beiden Referenzsaetzen)
+    "square_aspect": 1.037,      # quadratisch belichteter 35-mm-Film (Film 29/31: 24.9 x 24.0 mm)
+    "adapt": 0,                  # >0: Rollengroesse per Kantenevidenz um hoechstens so viele px nachfuehren (Zweitdurchlauf)
+    "adapt_min_n": 6,
+    "adapt_min_px": 4,
+    "hypothesis": True,          # bei unklarem Seitenverhaeltnis 3:2 gegen quadratisch per Kantenevidenz pruefen
+}
+
+
+def _scale_worker(item):
+    """Perforations-Takt einer Rolle. item = (film, [load_paths])."""
+    film, paths = item
+    try:
+        grays = [film_scale.load_gray(p) for p in paths]
+        return film, film_scale.measure_roll_pitch(grays)
+    except Exception as e:  # Messung ist optional, nie die Erkennung gefaehrden
+        return film, {"pitch": None, "pitch_frac": None, "score": 0.0, "error": str(e)}
+
+
+def _sample_paths(paths, n=12):
+    paths = sorted(paths)
+    step = max(1, len(paths) // n)
+    return paths[::step][:n]
+
+
+def _resolve_format(rs, load_paths, mm_px, aspect_a, cfg, raw_long_px=None):
+    """3:2 oder quadratisch? Ergebnis ('3:2'|'square', Begruendung).
+
+    Pass A liefert bei etwa jeder sechsten Rolle ein falsches Seitenverhaeltnis (Farbnegative). Liegt es nahe 1.5, gilt
+    3:2. Sonst werden beide Hypothesen an einigen Bildern der Rolle mit derselben Kantenbewertung geprueft, die auch
+    die Konfidenz nutzt: die Hypothese, deren Rahmen die schaerferen Kanten trifft, gewinnt.
+    """
+    if not cfg["hypothesis"] or 1.38 <= aspect_a <= 1.62:
+        return "3:2", "Seitenverhaeltnis %.2f" % aspect_a
+    long_mm, short_mm = cfg["crop_mm"]
+    # Die rohe Rollengroesse ist ein unabhaengiger Zeuge: passt sie auf genau eine Hypothese (Abstand < 8 %, die andere
+    # > 20 % daneben), entscheidet sie. Beispiel Film 25: Pass A misst 2.74, die Boxen sind aber 1.5x so lang wie ein
+    # Quadrat, also 3:2.
+    if raw_long_px:
+        d32 = abs(raw_long_px - long_mm * mm_px) / (long_mm * mm_px)
+        dsq = abs(raw_long_px - short_mm * mm_px * cfg["square_aspect"]) / (short_mm * mm_px * cfg["square_aspect"])
+        if d32 < 0.08 and dsq > 0.20:
+            return "3:2", "rohe Groesse passt zu 3:2 (%.0f %%), nicht zu quadratisch (%.0f %%)" % (100 * d32, 100 * dsq)
+        if dsq < 0.08 and d32 > 0.20:
+            return "square", "rohe Groesse passt zu quadratisch (%.0f %%), nicht zu 3:2 (%.0f %%)" % (100 * dsq, 100 * d32)
+    scores = {"3:2": [], "square": []}
+    for r in _sample_paths([x["input_file"] for x in rs], 6):
+        rr = next(x for x in rs if x["input_file"] == r)
+        try:
+            g = to_gray(load_image(load_paths.get(r, r)))
+        except Exception:
+            continue
+        ih, iw = g.shape
+        short = short_mm * mm_px
+        for name, longv in (("3:2", long_mm * mm_px), ("square", short * cfg["square_aspect"])):
+            w, h = (short, longv) if ih > iw else (longv, short)
+            w, h = int(min(round(w), iw)), int(min(round(h), ih))
+            x, y = (iw - w) // 2, (ih - h) // 2
+            scores[name].append(_refine_box(g, x, y, w, h)[4])
+    m32, msq = _median(scores["3:2"]), _median(scores["square"])
+    if msq > m32 + 0.05:
+        return "square", "Kanten: quadratisch %.2f gegen 3:2 %.2f" % (msq, m32)
+    return "3:2", "Kanten: 3:2 %.2f gegen quadratisch %.2f" % (m32, msq)
+
+
 def _consensus_worker(item):
     """Ein Bild lokal auf die Konsens-Box einpassen.
     item = (load_path, x, y, w, h)."""
@@ -1409,6 +1487,7 @@ def _consensus_worker(item):
 ROLL_TRUST = (0.55, 0.85, 0.15)     # Faktor 0.15 bei Vertrauen <= 0.55, linear bis 1.0 ab 0.85
 ROLL_CLAMP = (0.03, 0.07, 0.4)      # kein Abzug bis 3 % Abgleich, linear bis Faktor 0.4 ab 7 %
 ROLL_ASPECT = (0.03, 0.10, 0.4)     # kein Abzug bis 3 % Abweichung, linear bis Faktor 0.4 ab 10 %
+ROLL_SCALE = (0.30, 0.60, 0.6, 1.0)  # Rollen mit Massstab: Faktor 0.6 bei Takt-Score 0.30, 1.0 ab 0.60
 
 
 def _ramp(x, x0, x1, y0, y1):
@@ -1429,7 +1508,7 @@ def roll_reliability(film_trust, clamp, aspect_dev):
             * _ramp(aspect_dev, a0, a1, 1.0, amin))
 
 
-def apply_film_consensus(results, load_paths, report=None):
+def apply_film_consensus(results, load_paths, report=None, film_scales=None):
     """Fixiert die Crop-Groesse pro Filmrolle auf den robusten Median und
     loest je Bild nur noch die Position.
 
@@ -1454,8 +1533,11 @@ def apply_film_consensus(results, load_paths, report=None):
     film_stats = {}
     for film, rs in by_film.items():
         n = len(rs)
-        if n < 3:
-            continue  # zu wenig Bilder fuer einen verlaesslichen Median
+        sc0 = (film_scales or {}).get(film) or {}
+        has_scale = (SCALE_CFG["enabled"] and sc0.get("pitch_frac")
+                     and sc0.get("score", 0) >= SCALE_CFG["min_score"] + (0.0 if n >= 3 else SCALE_CFG["small_extra"]))
+        if n < 3 and not has_scale:
+            continue  # zu wenig Bilder fuer einen verlaesslichen Median (mit Perforationstakt genuegt auch ein Bild)
 
         # Lange/kurze Kante getrennt: eine Rolle kann Hoch- UND Querformat
         # mischen (Kamera pro Aufnahme gedreht).
@@ -1485,6 +1567,29 @@ def apply_film_consensus(results, load_paths, report=None):
         st_["bucket"] = bucket_id
         prev_aspect = a
 
+    # --- Massstab: Rollen mit gemessenem Perforationstakt bekommen ihre Groesse aus der Physik ---
+    # Der Takt (4,7625 mm) ist eine Konstante des Films; die Pixelgroesse des Rahmens ist damit fuer die Rolle in mm
+    # bekannt, ohne Stichprobe und ohne den Pool der anderen Rollen (dessen Cluster kippt schon bei einer weiteren Rolle).
+    cfg = SCALE_CFG
+    for film, st_ in film_stats.items():
+        st_["phys"] = None
+        sc = (film_scales or {}).get(film)
+        if not (cfg["enabled"] and sc and sc.get("pitch_frac") and sc.get("score", 0) >= cfg["min_score"]):
+            continue
+        r0 = st_["rs"][0]
+        pitch_px = sc["pitch_frac"] * max(r0["_img_w"], r0["_img_h"])
+        mm_px = pitch_px / film_scale.PITCH_MM
+        long_mm, short_mm = cfg["crop_mm"]
+        fmt, why = _resolve_format(st_["rs"], load_paths, mm_px, st_["bucket_aspect"], cfg, st_["raw_long_px"])
+        short_px = short_mm * mm_px
+        long_px = long_mm * mm_px if fmt == "3:2" else short_px * cfg["square_aspect"]
+        st_["phys"] = {"mm_px": mm_px, "score": sc["score"], "format": fmt}
+        st_["long_px"], st_["short_px"] = long_px, short_px
+        st_["bucket_aspect"] = long_px / short_px
+        st_["bucket"] = ("phys", fmt)
+        report(f"BATCHINFO scale film={film!r} pitch={pitch_px:.1f}px score={sc['score']:.2f} "
+               f"format={fmt} ({why}) -> {long_px:.0f}x{short_px:.0f}px (roh {st_['raw_long_px']:.0f}x{st_['raw_short_px']:.0f})")
+
     # --- Cross-Film-Sanity: Format-Gruppen ueber die gesamte Charge poolen ---
     # Grundannahme (Nutzer): dieselbe Digitalisierungs-Rigg fuer alle Rollen
     # -> Filme mit gleichem Seitenverhaeltnis sollten (fast) dieselbe
@@ -1500,6 +1605,8 @@ def apply_film_consensus(results, load_paths, report=None):
     MIN_POOL_SUPPORT = 10  # Bilder aus ANDEREN Filmen, damit der Pool zaehlt
     CLAMP_TOL = 1.03
     for film, st_ in film_stats.items():
+        if st_.get("phys"):
+            continue  # Groesse steht aus der Physik fest
         pool_longs, pool_shorts, pool_films = [], [], set()
         for f2, st2 in film_stats.items():
             if f2 != film and st2["bucket"] == st_["bucket"]:
@@ -1527,8 +1634,10 @@ def apply_film_consensus(results, load_paths, report=None):
         n = st_["n"]
         long_px = st_["long_px"]
         short_px = st_["short_px"]
-        mad_long = _median([abs(v - long_px) for v in st_["longs"]])
-        mad_short = _median([abs(v - short_px) for v in st_["shorts"]])
+        phys = st_.get("phys")
+        # Streuung der Roh-Detektionen um ihren eigenen Mittelpunkt (bei Physik-Rollen ist long_px nicht mehr aus ihnen abgeleitet)
+        mad_long = _median([abs(v - (st_["raw_long_px"] if phys else long_px)) for v in st_["longs"]])
+        mad_short = _median([abs(v - (st_["raw_short_px"] if phys else short_px)) for v in st_["shorts"]])
 
         # Dominante Orientierung der Rolle (Mehrheit der Roh-Detektionen).
         # Fuer Ausreisser, deren Groesse weit vom Konsens liegt, ist die
@@ -1550,7 +1659,7 @@ def apply_film_consensus(results, load_paths, report=None):
         cx_rel = _median(good_cx) if good_cx else None
         cy_rel = _median(good_cy) if good_cy else None
 
-        spread = mad_long / max(long_px, 1) + mad_short / max(short_px, 1)
+        spread = mad_long / max(st_["raw_long_px"] if phys else long_px, 1) + mad_short / max(st_["raw_short_px"] if phys else short_px, 1)
         film_trust = max(0.4, 1.0 - spread * 2) * min(1.0, n / 8.0)
 
         for r in rs:
@@ -1604,6 +1713,57 @@ def apply_film_consensus(results, load_paths, report=None):
     with ProcessPoolExecutor(max_workers=_worker_count(len(items))) as ex:
         refined = list(ex.map(_consensus_worker, items, chunksize=1))
 
+    # Rollenweite Evidenz aus dem Einpassen: wie scharf die Kanten am Rahmen der Physik sind und wie weit sie ihn
+    # verschieben mussten. Stimmt die Groesse fuer die Rolle, liegen die Kanten ohne Zug in dieselbe Richtung.
+    roll_fit = defaultdict(list)
+    for p, res in zip(plans, refined):
+        try:
+            p["fit"] = tuple(res)
+        except Exception:
+            p["fit"] = (p["x"], p["y"], p["w"], p["h"], 0.0)
+        roll_fit[p["r"]["film"]].append((p["fit"][4], p["fit"][2] - p["w"], p["fit"][3] - p["h"]))
+    roll_ev = {f: {"edge": _median([v[0] for v in vs]),
+                   "pull": max(abs(_median([v[1] for v in vs])), abs(_median([v[2] for v in vs])))}
+               for f, vs in roll_fit.items()}
+
+    # Zweiter Durchlauf (Evidenz ueber die Rolle aufsummieren): zieht das Einpassen die Kanten bei den meisten Bildern
+    # einer Rolle in dieselbe Richtung, ist die Physik-Groesse fuer diese Rolle zu gross/klein. Die Groesse wird dann
+    # um den Median dieses Zugs angepasst (hoechstens ADAPT_MAX_PX zusaetzlich) und noch einmal eingepasst.
+    adapt_max = SCALE_CFG.get("adapt", 0)
+    if adapt_max:
+        redo = {}
+        for f, vs in roll_fit.items():
+            if not film_stats.get(f, {}).get("phys") or len(vs) < SCALE_CFG["adapt_min_n"]:
+                continue
+            dw, dh = _median([v[1] for v in vs]), _median([v[2] for v in vs])
+            dw, dh = max(-adapt_max, min(adapt_max, dw)), max(-adapt_max, min(adapt_max, dh))
+            if max(abs(dw), abs(dh)) >= SCALE_CFG["adapt_min_px"]:
+                redo[f] = (dw, dh)
+        idx = [i for i, p in enumerate(plans) if p["r"]["film"] in redo]
+        if idx:
+            items2 = []
+            for i in idx:
+                p = plans[i]
+                dw, dh = redo[p["r"]["film"]]
+                # Startgroesse = Ergebnis des ersten Durchlaufs der Rolle (Mediangroesse + Zug), Mitte wie eingepasst
+                w2, h2 = int(round(p["w"] + dw)), int(round(p["h"] + dh))
+                fx, fy, fw, fh, _ = p["fit"]
+                cx, cy = fx + fw / 2, fy + fh / 2
+                iw, ih = p["r"]["_img_w"], p["r"]["_img_h"]
+                w2, h2 = min(w2, iw), min(h2, ih)
+                x2 = int(round(max(0, min(iw - w2, cx - w2 / 2))))
+                y2 = int(round(max(0, min(ih - h2, cy - h2 / 2))))
+                p["w2"], p["h2"] = w2, h2
+                items2.append((load_paths.get(p["r"]["input_file"], p["r"]["input_file"]), x2, y2, w2, h2))
+            with ProcessPoolExecutor(max_workers=_worker_count(len(items2))) as ex:
+                refined2 = list(ex.map(_consensus_worker, items2, chunksize=1))
+            for i, res2 in zip(idx, refined2):
+                p = plans[i]
+                p["fit"] = tuple(res2)
+                p["w"], p["h"] = p["w2"], p["h2"]
+            report(f"BATCHINFO scale_adapt rollen={len(redo)} bilder={len(idx)}")
+        refined = [p["fit"] for p in plans]
+
     for p, res in zip(plans, refined):
         r = p["r"]
         try:
@@ -1653,7 +1813,13 @@ def apply_film_consensus(results, load_paths, report=None):
         clamp = max((raw_l - long_px) / max(raw_l, 1.0), (raw_s - short_px) / max(raw_s, 1.0), 0.0)
         bucket_asp = fs_.get("bucket_aspect") or (long_px / max(short_px, 1.0))
         aspect_dev = abs(long_px / max(short_px, 1.0) - bucket_asp) / bucket_asp
-        roll_factor = roll_reliability(p["film_trust"], clamp, aspect_dev)
+        phys = fs_.get("phys")
+        if phys:
+            # Groesse aus dem Perforationstakt: Streuung/Abgleich/Seitenverhaeltnis der Roh-Detektionen sagen nichts mehr
+            # ueber die Rollengroesse, sondern die Guete der Takt-Messung.
+            roll_factor = _ramp(phys["score"], *ROLL_SCALE)
+        else:
+            roll_factor = roll_reliability(p["film_trust"], clamp, aspect_dev)
         conf = base_conf * exposure_factor * roll_factor
 
         r["confidence"] = float(round(min(1.0, max(0.0, conf)), 3))
@@ -1667,6 +1833,11 @@ def apply_film_consensus(results, load_paths, report=None):
             "exposure_factor": round(exposure_factor, 4),
             "roll_factor": round(roll_factor, 4),
         }
+        ev_ = roll_ev.get(r["film"])
+        if ev_:
+            r["_roll_evidence"] = {"edge": round(ev_["edge"], 4), "pull": round(ev_["pull"], 2),
+                                   "phys": bool(phys), "takt": round(phys["score"], 3) if phys else None,
+                                   "d_w": int(w - p["w"]), "d_h": int(h - p["h"])}
         if roll_factor < 1.0:
             weak = []
             if p["film_trust"] < ROLL_TRUST[1]:
@@ -1814,7 +1985,22 @@ def compute_batch(image_paths, confidence_threshold, debug, default_format,
     # Annahme: ein Ordner = eine Filmrolle, gleiche Kamera/Abstand -> die
     # Crop-Groesse (lange/kurze Kante) ist ueber die Rolle nahezu konstant
     # (gemessen: MAD ~10px). Der robuste Median ueberlebt >50% Fehldetektion.
-    apply_film_consensus(results, load_paths, report=report)
+    # Massstab je Rolle aus der Perforation (optional; ohne film_scale.py oder ohne Takt bleibt alles wie zuvor)
+    film_scales = {}
+    if film_scale is not None:
+        conv = film_scale.load_convention()     # aus den Handcrops der Web-UI gelernt (film_scale.update_convention)
+        if conv:
+            SCALE_CFG["crop_mm"] = (conv["long_mm"], conv["short_mm"])
+            report(f"BATCHINFO convention {conv['long_mm']}x{conv['short_mm']} mm (n={conv['n']})")
+    if film_scale is not None and SCALE_CFG["enabled"]:
+        paths_by_film = defaultdict(list)
+        for meas in measurements:
+            paths_by_film[meas["film"]].append(load_paths.get(meas["path"], meas["path"]))
+        scale_items = [(f, _sample_paths(ps)) for f, ps in paths_by_film.items() if ps]
+        if scale_items:
+            with ProcessPoolExecutor(max_workers=_worker_count(len(scale_items))) as ex:
+                film_scales = dict(ex.map(_scale_worker, scale_items))
+    apply_film_consensus(results, load_paths, report=report, film_scales=film_scales)
 
     for r in results:
         r["needs_review"] = r["confidence"] < confidence_threshold
@@ -1823,7 +2009,7 @@ def compute_batch(image_paths, confidence_threshold, debug, default_format,
     if export_dir:
         shutil.rmtree(export_dir, ignore_errors=True)
 
-    return {"film_aspects": film_aspects, "results": results}
+    return {"film_aspects": film_aspects, "film_scales": film_scales, "results": results}
 
 
 def _run_batch_pipeline(image_paths, t_yellow, t_green, debug, default_format):
@@ -1907,6 +2093,8 @@ def _run_batch_pipeline(image_paths, t_yellow, t_green, debug, default_format):
     output = {
         "film_aspects": {k: v["aspect_ratio"]
                          for k, v in film_aspects.items()},
+        "film_scales": {k: {"pitch_frac": v.get("pitch_frac"), "score": v.get("score", 0.0)}
+                        for k, v in (batch.get("film_scales") or {}).items()},
         "results": results,
     }
     print(json.dumps(output, indent=2, ensure_ascii=False), flush=True)

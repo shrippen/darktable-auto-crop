@@ -76,9 +76,10 @@ def run_pipeline(image_paths):
         out_path = os.path.join(tmp, "out.json")
         cmd = [python_bin(), SCRIPT, "--batch", *image_paths,
                "--confidence-threshold", "0.0"]
+        env = dict(os.environ, AUTOCROP_CONVENTION="")   # Messung unabhaengig von der gelernten Nutzer-Konvention
         tty = sys.stderr.isatty()
         with open(out_path, "w") as out_f:
-            proc = subprocess.Popen(cmd, cwd=tmp, stdout=out_f,
+            proc = subprocess.Popen(cmd, cwd=tmp, stdout=out_f, env=env,
                                     stderr=subprocess.PIPE, text=True)
             for line in proc.stderr:
                 if not line.startswith("PROGRESS"):

@@ -78,6 +78,10 @@ if [ -f "$SCRIPT_DIR/auto_crop_negative.py" ]; then
     cp "$SCRIPT_DIR/auto_crop_negative.py" "$PLUGIN_DIR/"
     chmod +x "$PLUGIN_DIR/auto_crop_negative.py"
     echo "  ✓ ${PLUGIN_DIR}/auto_crop_negative.py"
+    if [ -f "$SCRIPT_DIR/film_scale.py" ]; then
+        cp "$SCRIPT_DIR/film_scale.py" "$PLUGIN_DIR/"
+        echo "  ✓ ${PLUGIN_DIR}/film_scale.py"
+    fi
 else
     echo "  ✗ auto_crop_negative.py nicht gefunden"
     exit 1

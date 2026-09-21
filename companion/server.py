@@ -274,6 +274,8 @@ class Handler(BaseHTTPRequestHandler):
                 s._require_editable()
                 a.start_redetect(b.get("ids") or [], b.get("settings") or {})
                 return self._send(202, {"started": True})
+            if route == "roll-size":
+                return self._send(200, {"changed": s.apply_roll_size(b.get("id"))})
             if route == "proposals/accept":
                 s.accept_proposals(b.get("ids") or [])
                 return self._send(200, {"ok": True})
