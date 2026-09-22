@@ -14,6 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
+import auto_crop_negative as acn                # noqa: E402
 import film_scale as fs                         # noqa: E402
 from companion import session as sess           # noqa: E402
 from test_companion import make_session         # noqa: E402
@@ -78,6 +79,54 @@ class PitchTest(unittest.TestCase):
     def test_empty_input(self):
         self.assertIsNone(fs.measure_roll_pitch([])["pitch"])
         self.assertIsNone(fs.measure_roll_pitch([None, np.zeros((50, 50), np.uint8)])["pitch"])
+
+
+class AgreementTest(unittest.TestCase):
+    """Die Rolle bestaetigt ihren Takt, indem beide Haelften ihrer Bilder getrennt dasselbe messen."""
+
+    def test_consistent_roll_agrees(self):
+        grays = [synthetic_strip(pitch=118.4, phase=p, seed=i) for i, p in enumerate((0, 31, 77, 5, 60, 90))]
+        r = fs.measure_roll_pitch(grays)
+        self.assertIsNotNone(r["agree"])
+        self.assertLess(r["agree"], acn.SCALE_CFG["agree_strong"])
+
+    def test_halves_that_disagree_are_rejected(self):
+        # Bilder wandern abwechselnd in die zwei Haelften; hier misst jede Haelfte einen anderen Takt
+        grays = [synthetic_strip(pitch=118.4 if i % 2 == 0 else 132.0, phase=p, seed=i)
+                 for i, p in enumerate((0, 31, 77, 5, 60, 90))]
+        r = fs.measure_roll_pitch(grays)
+        self.assertGreater(r["agree"], acn.SCALE_CFG["agree_max"])
+        self.assertFalse(acn._scale_accepted(r, len(grays)))
+
+    def test_single_image_has_no_agreement(self):
+        r = fs.measure_roll_pitch([synthetic_strip(pitch=118.4)])
+        self.assertIsNone(r["agree"])
+
+
+class ScaleGateTest(unittest.TestCase):
+    """_scale_accepted: die Uebereinstimmung sticht die Peakhoehe in beide Richtungen."""
+
+    def gate(self, n=12, **kw):
+        sc = {"pitch_frac": 0.078, "score": 0.9}
+        sc.update(kw)
+        return acn._scale_accepted(sc, n)
+
+    def test_agreement_beats_high_score(self):
+        self.assertTrue(self.gate(agree=0.001))
+        self.assertFalse(self.gate(agree=0.05))                 # Fehlmessung trotz Score 0.9
+
+    def test_agreement_carries_low_score(self):
+        self.assertTrue(self.gate(score=0.15, agree=0.001))     # doppelt bestaetigt, Peak egal
+        self.assertFalse(self.gate(score=0.15, agree=0.008))    # nur mittelmaessig bestaetigt -> Score entscheidet
+
+    def test_without_agreement_the_score_decides(self):
+        self.assertTrue(self.gate(score=0.5))
+        self.assertFalse(self.gate(score=0.1))
+        self.assertFalse(self.gate(score=0.35, n=2))            # kleine Rolle braucht den Zuschlag
+
+    def test_needs_a_pitch(self):
+        self.assertFalse(acn._scale_accepted(None, 12))
+        self.assertFalse(acn._scale_accepted({"score": 0.9, "agree": 0.0}, 12))
 
 
 class ConventionTest(unittest.TestCase):
@@ -196,6 +245,16 @@ class LearnedConventionTest(unittest.TestCase):
         self.s.image(102)["manual"]["derived"] = "roll"
         self.s.image(103)["manual"]["derived"] = "roll"
         self.assertIsNone(self.s.learned_convention())          # nur noch eine echte Handarbeit
+
+    def test_agreement_overrides_the_score(self):
+        # bestaetigter Takt zaehlt auch mit schwachem Peak ...
+        self.s.state["film_scales"] = {"Film A": {"pitch_frac": 0.0784, "score": 0.2, "agree": 0.001}}
+        for iid in (101, 102, 103):
+            self.s.patch_images([iid], {"crop": [0.2, 0.2, 0.2 + 0.5993, 0.2 + 0.5976]})
+        self.assertIsNotNone(self.s.learned_convention())
+        # ... und eine Fehlmessung faellt trotz hohem Peak heraus, statt die Konvention um ihren Fehler zu verschieben
+        self.s.state["film_scales"]["Film A"].update(score=0.9, agree=0.05)
+        self.assertIsNone(self.s.learned_convention())
 
 
 if __name__ == "__main__":

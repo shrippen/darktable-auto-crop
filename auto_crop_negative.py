@@ -1404,6 +1404,10 @@ SCALE_CFG = {
     "enabled": True,
     "min_score": 0.30,           # Autokorrelations-Score, ab dem der Takt gilt
     "small_extra": 0.20,         # Zuschlag fuer Rollen mit < 3 Bildern (weniger Bilder, weniger Evidenz fuer den Takt)
+    "agree_max": 0.02,           # Haelften der Rolle duerfen hoechstens so weit auseinanderliegen, sonst gilt der Takt nicht
+                                 # (62 Rollen: groesste Abweichung einer richtigen Messung 0,0104, kleinste Fehlmessung 0,0326)
+    "agree_strong": 0.002,       # so genau bestaetigt, dass der Takt auch ohne hohen Score gilt
+    "no_scale_conf": 0.5,        # Konfidenz-Faktor fuer Rollen ohne bestaetigten Takt (Groesse kommt dort aus dem Pool)
     "crop_mm": (36.2, 24.1),     # (lang, kurz) der gewuenschten Crop-Groesse (Sweep 36.0-36.8: bester Wert auf beiden Referenzsaetzen)
     "square_aspect": 1.037,      # quadratisch belichteter 35-mm-Film (Film 29/31: 24.9 x 24.0 mm)
     "adapt": 0,                  # >0: Rollengroesse per Kantenevidenz um hoechstens so viele px nachfuehren (Zweitdurchlauf)
@@ -1411,6 +1415,25 @@ SCALE_CFG = {
     "adapt_min_px": 4,
     "hypothesis": True,          # bei unklarem Seitenverhaeltnis 3:2 gegen quadratisch per Kantenevidenz pruefen
 }
+
+
+def _scale_accepted(sc, n):
+    """Gilt der gemessene Takt als Massstab fuer diese Rolle?
+
+    Entscheidend ist nicht die Peakhoehe, sondern ob die Rolle ihre eigene Messung bestaetigt: die Bilder werden in
+    zwei Haelften geteilt und getrennt gemessen ("agree" = relativer Abstand beider Ergebnisse). Auf 62 Rollen liegt
+    die Wiederholbarkeit im Median bei 0,13 %, der Fehler gegen die Referenz-Crops dagegen bei 1,0 % - die Peakhoehe
+    trennt richtige von falschen Messungen schlecht, die Uebereinstimmung gut.
+    """
+    cfg = SCALE_CFG
+    if not (cfg["enabled"] and sc and sc.get("pitch_frac")):
+        return False
+    agree = sc.get("agree")
+    if agree is not None and agree > cfg["agree_max"]:
+        return False          # die Rolle widerspricht sich selbst (beobachtet bei Fremdmustern im Filmhalter)
+    if agree is not None and agree < cfg["agree_strong"]:
+        return True           # doppelt bestaetigt, auch ohne hohen Peak
+    return sc.get("score", 0) >= cfg["min_score"] + (0.0 if n >= 3 else cfg["small_extra"])
 
 
 def _scale_worker(item):
@@ -1534,8 +1557,7 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
     for film, rs in by_film.items():
         n = len(rs)
         sc0 = (film_scales or {}).get(film) or {}
-        has_scale = (SCALE_CFG["enabled"] and sc0.get("pitch_frac")
-                     and sc0.get("score", 0) >= SCALE_CFG["min_score"] + (0.0 if n >= 3 else SCALE_CFG["small_extra"]))
+        has_scale = _scale_accepted(sc0, n)
         if n < 3 and not has_scale:
             continue  # zu wenig Bilder fuer einen verlaesslichen Median (mit Perforationstakt genuegt auch ein Bild)
 
@@ -1574,7 +1596,7 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
     for film, st_ in film_stats.items():
         st_["phys"] = None
         sc = (film_scales or {}).get(film)
-        if not (cfg["enabled"] and sc and sc.get("pitch_frac") and sc.get("score", 0) >= cfg["min_score"]):
+        if not _scale_accepted(sc, st_["n"]):
             continue
         r0 = st_["rs"][0]
         pitch_px = sc["pitch_frac"] * max(r0["_img_w"], r0["_img_h"])
@@ -1583,7 +1605,7 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
         fmt, why = _resolve_format(st_["rs"], load_paths, mm_px, st_["bucket_aspect"], cfg, st_["raw_long_px"])
         short_px = short_mm * mm_px
         long_px = long_mm * mm_px if fmt == "3:2" else short_px * cfg["square_aspect"]
-        st_["phys"] = {"mm_px": mm_px, "score": sc["score"], "format": fmt}
+        st_["phys"] = {"mm_px": mm_px, "score": sc["score"], "agree": sc.get("agree"), "format": fmt}
         st_["long_px"], st_["short_px"] = long_px, short_px
         st_["bucket_aspect"] = long_px / short_px
         st_["bucket"] = ("phys", fmt)
@@ -1816,10 +1838,16 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
         phys = fs_.get("phys")
         if phys:
             # Groesse aus dem Perforationstakt: Streuung/Abgleich/Seitenverhaeltnis der Roh-Detektionen sagen nichts mehr
-            # ueber die Rollengroesse, sondern die Guete der Takt-Messung.
+            # ueber die Rollengroesse, sondern die Guete der Takt-Messung. Hat die Rolle ihren Takt auf beiden Haelften
+            # bestaetigt, ist das die staerkere Evidenz und die Peakhoehe zaehlt nicht mehr.
             roll_factor = _ramp(phys["score"], *ROLL_SCALE)
+            if phys.get("agree") is not None and phys["agree"] < SCALE_CFG["agree_strong"]:
+                roll_factor = 1.0
         else:
-            roll_factor = roll_reliability(p["film_trust"], clamp, aspect_dev)
+            # Ohne bestaetigten Massstab kommt die Groesse aus dem Pool der uebrigen Rollen. Der kann fuer eine ganze
+            # Rolle gleichmaessig danebenliegen, ohne dass Streuung oder Kantenschaerfe das zeigen (gemessen auf 62
+            # Rollen: 41 % Treffer gegen 93 %, und 61 % statt 96 % der Gruenen richtig) - daher gedeckelt.
+            roll_factor = roll_reliability(p["film_trust"], clamp, aspect_dev) * SCALE_CFG["no_scale_conf"]
         conf = base_conf * exposure_factor * roll_factor
 
         r["confidence"] = float(round(min(1.0, max(0.0, conf)), 3))
@@ -1837,6 +1865,7 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
         if ev_:
             r["_roll_evidence"] = {"edge": round(ev_["edge"], 4), "pull": round(ev_["pull"], 2),
                                    "phys": bool(phys), "takt": round(phys["score"], 3) if phys else None,
+                                   "agree": (phys or {}).get("agree"),
                                    "d_w": int(w - p["w"]), "d_h": int(h - p["h"])}
         if roll_factor < 1.0:
             weak = []
@@ -2093,7 +2122,8 @@ def _run_batch_pipeline(image_paths, t_yellow, t_green, debug, default_format):
     output = {
         "film_aspects": {k: v["aspect_ratio"]
                          for k, v in film_aspects.items()},
-        "film_scales": {k: {"pitch_frac": v.get("pitch_frac"), "score": v.get("score", 0.0)}
+        "film_scales": {k: {"pitch_frac": v.get("pitch_frac"), "score": v.get("score", 0.0),
+                            "agree": v.get("agree")}
                         for k, v in (batch.get("film_scales") or {}).items()},
         "results": results,
     }

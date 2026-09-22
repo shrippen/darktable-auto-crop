@@ -1,0 +1,204 @@
+diff --git a/auto_crop_negative.py b/auto_crop_negative.py
+index 4502635..1084475 100755
+--- a/auto_crop_negative.py
++++ b/auto_crop_negative.py
+@@ -1404,6 +1404,9 @@ SCALE_CFG = {
+     "enabled": True,
+     "min_score": 0.30,           # Autokorrelations-Score, ab dem der Takt gilt
+     "small_extra": 0.20,         # Zuschlag fuer Rollen mit < 3 Bildern (weniger Bilder, weniger Evidenz fuer den Takt)
++    "agree_max": 0.012,          # Haelften der Rolle duerfen hoechstens so weit auseinanderliegen, sonst gilt der Takt nicht
++    "agree_strong": 0.002,       # so genau bestaetigt, dass der Takt auch ohne hohen Score gilt
++    "no_scale_conf": 0.5,        # Konfidenz-Faktor fuer Rollen ohne bestaetigten Takt (Groesse kommt dort aus dem Pool)
+     "crop_mm": (36.2, 24.1),     # (lang, kurz) der gewuenschten Crop-Groesse (Sweep 36.0-36.8: bester Wert auf beiden Referenzsaetzen)
+     "square_aspect": 1.037,      # quadratisch belichteter 35-mm-Film (Film 29/31: 24.9 x 24.0 mm)
+     "adapt": 0,                  # >0: Rollengroesse per Kantenevidenz um hoechstens so viele px nachfuehren (Zweitdurchlauf)
+@@ -1413,6 +1416,25 @@ SCALE_CFG = {
+ }
+ 
+ 
++def _scale_accepted(sc, n):
++    """Gilt der gemessene Takt als Massstab fuer diese Rolle?
++
++    Entscheidend ist nicht die Peakhoehe, sondern ob die Rolle ihre eigene Messung bestaetigt: die Bilder werden in
++    zwei Haelften geteilt und getrennt gemessen ("agree" = relativer Abstand beider Ergebnisse). Auf 62 Rollen liegt
++    die Wiederholbarkeit im Median bei 0,13 %, der Fehler gegen die Referenz-Crops dagegen bei 1,0 % - die Peakhoehe
++    trennt richtige von falschen Messungen schlecht, die Uebereinstimmung gut.
++    """
++    cfg = SCALE_CFG
++    if not (cfg["enabled"] and sc and sc.get("pitch_frac")):
++        return False
++    agree = sc.get("agree")
++    if agree is not None and agree > cfg["agree_max"]:
++        return False          # die Rolle widerspricht sich selbst (beobachtet bei Fremdmustern im Filmhalter)
++    if agree is not None and agree < cfg["agree_strong"]:
++        return True           # doppelt bestaetigt, auch ohne hohen Peak
++    return sc.get("score", 0) >= cfg["min_score"] + (0.0 if n >= 3 else cfg["small_extra"])
++
++
+ def _scale_worker(item):
+     """Perforations-Takt einer Rolle. item = (film, [load_paths])."""
+     film, paths = item
+@@ -1534,8 +1556,7 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
+     for film, rs in by_film.items():
+         n = len(rs)
+         sc0 = (film_scales or {}).get(film) or {}
+-        has_scale = (SCALE_CFG["enabled"] and sc0.get("pitch_frac")
+-                     and sc0.get("score", 0) >= SCALE_CFG["min_score"] + (0.0 if n >= 3 else SCALE_CFG["small_extra"]))
++        has_scale = _scale_accepted(sc0, n)
+         if n < 3 and not has_scale:
+             continue  # zu wenig Bilder fuer einen verlaesslichen Median (mit Perforationstakt genuegt auch ein Bild)
+ 
+@@ -1574,7 +1595,7 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
+     for film, st_ in film_stats.items():
+         st_["phys"] = None
+         sc = (film_scales or {}).get(film)
+-        if not (cfg["enabled"] and sc and sc.get("pitch_frac") and sc.get("score", 0) >= cfg["min_score"]):
++        if not _scale_accepted(sc, st_["n"]):
+             continue
+         r0 = st_["rs"][0]
+         pitch_px = sc["pitch_frac"] * max(r0["_img_w"], r0["_img_h"])
+@@ -1583,7 +1604,7 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
+         fmt, why = _resolve_format(st_["rs"], load_paths, mm_px, st_["bucket_aspect"], cfg, st_["raw_long_px"])
+         short_px = short_mm * mm_px
+         long_px = long_mm * mm_px if fmt == "3:2" else short_px * cfg["square_aspect"]
+-        st_["phys"] = {"mm_px": mm_px, "score": sc["score"], "format": fmt}
++        st_["phys"] = {"mm_px": mm_px, "score": sc["score"], "agree": sc.get("agree"), "format": fmt}
+         st_["long_px"], st_["short_px"] = long_px, short_px
+         st_["bucket_aspect"] = long_px / short_px
+         st_["bucket"] = ("phys", fmt)
+@@ -1816,10 +1837,16 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
+         phys = fs_.get("phys")
+         if phys:
+             # Groesse aus dem Perforationstakt: Streuung/Abgleich/Seitenverhaeltnis der Roh-Detektionen sagen nichts mehr
+-            # ueber die Rollengroesse, sondern die Guete der Takt-Messung.
++            # ueber die Rollengroesse, sondern die Guete der Takt-Messung. Hat die Rolle ihren Takt auf beiden Haelften
++            # bestaetigt, ist das die staerkere Evidenz und die Peakhoehe zaehlt nicht mehr.
+             roll_factor = _ramp(phys["score"], *ROLL_SCALE)
++            if phys.get("agree") is not None and phys["agree"] < SCALE_CFG["agree_strong"]:
++                roll_factor = 1.0
+         else:
+-            roll_factor = roll_reliability(p["film_trust"], clamp, aspect_dev)
++            # Ohne bestaetigten Massstab kommt die Groesse aus dem Pool der uebrigen Rollen. Der kann fuer eine ganze
++            # Rolle gleichmaessig danebenliegen, ohne dass Streuung oder Kantenschaerfe das zeigen (gemessen auf 62
++            # Rollen: 41 % Treffer gegen 93 %, und 61 % statt 96 % der Gruenen richtig) - daher gedeckelt.
++            roll_factor = roll_reliability(p["film_trust"], clamp, aspect_dev) * SCALE_CFG["no_scale_conf"]
+         conf = base_conf * exposure_factor * roll_factor
+ 
+         r["confidence"] = float(round(min(1.0, max(0.0, conf)), 3))
+@@ -1837,6 +1864,7 @@ def apply_film_consensus(results, load_paths, report=None, film_scales=None):
+         if ev_:
+             r["_roll_evidence"] = {"edge": round(ev_["edge"], 4), "pull": round(ev_["pull"], 2),
+                                    "phys": bool(phys), "takt": round(phys["score"], 3) if phys else None,
++                                   "agree": (phys or {}).get("agree"),
+                                    "d_w": int(w - p["w"]), "d_h": int(h - p["h"])}
+         if roll_factor < 1.0:
+             weak = []
+diff --git a/film_scale.py b/film_scale.py
+index 135f392..e646a9f 100644
+--- a/film_scale.py
++++ b/film_scale.py
+@@ -87,32 +87,12 @@ def _peak(ac, lo):
+     return lo + bi + off, best
+ 
+ 
+-def measure_roll_pitch(grays, n_win=24):
+-    """Pitch in Pixeln aus den Graubildern EINER Rolle (alle in gleicher Aufloesung).
++def _pick_pitch(acc, lo, w, hi):
++    """Takt aus einer gemittelten AC-Matrix: je Streifenlage der staerkste Peak, dann Buendelung.
+ 
+-    Liefert {"pitch": px|None, "score": 0..1, "win": Streifenlage 0..1, "n": Bilder}.
+-    Je Streifenlage zaehlt der staerkste Peak (Pruefung: der zweite Oberton bei 2*Pitch muss ebenfalls vorhanden sein).
+-    Peaks mit aehnlichem Pitch aus verschiedenen Streifenlagen werden zu einem Buendel zusammengefasst; das Buendel mit der
+-    groessten Score-Summe gilt. Score = hoechster Einzelwert im Buendel. Ein einzelner starker Peak in einer Streifenlage
+-    (Randartefakt) entscheidet damit nicht allein.
++    Peaks mit aehnlichem Pitch aus verschiedenen Streifenlagen werden zu einem Buendel zusammengefasst; das Buendel
++    mit der groessten Score-Summe gilt. -> (pitch|None, score, win|None)
+     """
+-    acc, lo, w, hi, n = None, None, None, None, 0
+-    for g in grays:
+-        if g is None or min(g.shape) < 200:
+-            continue
+-        acs, lo_i, w_i, hi_i = _window_acs(g, n_win)
+-        if acc is None:
+-            acc, lo, w, hi = acs.copy(), lo_i, w_i, hi_i
+-        elif acs.shape == acc.shape:
+-            acc += acs
+-        else:
+-            continue
+-        n += 1
+-    if acc is None or n == 0:
+-        return {"pitch": None, "pitch_frac": None, "score": 0.0, "win": None, "n": 0}
+-    acc /= n
+-    # Konsens ueber Streifenlagen: Peaks mit aehnlichem Pitch buendeln, das Buendel mit der groessten Score-Summe gewinnt
+-    # (ein einzelner starker Peak in einer Streifenlage, z. B. am aeussersten Bildrand, entscheidet nicht allein)
+     pk = []
+     for i in range(acc.shape[0]):
+         p, sc = _peak(acc[i][:hi - lo], lo)
+@@ -122,21 +102,59 @@ def measure_roll_pitch(grays, n_win=24):
+         sc = min(sc, max(sc2 if sc2 is not None else 0.0, 0.0) * 1.6)
+         if sc >= 0.15:
+             pk.append((p, sc, i / max(acc.shape[0] - 1, 1)))
+-    best = (None, 0.0, None)
+     top = None
+     for p0, _, _ in pk:
+         cl = [c for c in pk if abs(c[0] - p0) < 0.004 * w]
+         tot = sum(c[1] for c in cl)
+         if top is None or tot > top[0]:
+             top = (tot, cl)
+-    if top:
+-        cl = top[1]
+-        pm = sum(c[0] * c[1] for c in cl) / sum(c[1] for c in cl)
+-        mx = max(cl, key=lambda c: c[1])
+-        best = (pm, mx[1], mx[2])
+-    pitch = None if best[0] is None else float(best[0])
++    if not top:
++        return None, 0.0, None
++    cl = top[1]
++    pm = sum(c[0] * c[1] for c in cl) / sum(c[1] for c in cl)
++    mx = max(cl, key=lambda c: c[1])
++    return float(pm), mx[1], mx[2]
++
++
++def measure_roll_pitch(grays, n_win=24):
++    """Pitch in Pixeln aus den Graubildern EINER Rolle (alle in gleicher Aufloesung).
++
++    Liefert {"pitch": px|None, "score": 0..1, "agree": 0..1|None, "win": Streifenlage 0..1, "n": Bilder}.
++    Je Streifenlage zaehlt der staerkste Peak (Pruefung: der zweite Oberton bei 2*Pitch muss ebenfalls vorhanden sein);
++    Peaks aus verschiedenen Streifenlagen werden gebuendelt (siehe _pick_pitch).
++
++    "agree": die Bilder der Rolle werden zusaetzlich in zwei Haelften geteilt und getrennt gemessen; der relative
++    Abstand beider Ergebnisse ist die Wiederholbarkeit der Messung an dieser Rolle. Auf 62 Rollen liegt sie im Median
++    bei 0,13 %, waehrend die Peakhoehe ("score") kaum etwas ueber die Richtigkeit aussagt - die Uebereinstimmung ist
++    daher das bessere Guetemass. None = weniger als zwei brauchbare Bilder oder eine Haelfte ohne Messung.
++    """
++    accs, lo, w, hi, shape, n = [None, None], None, None, None, None, 0
++    for g in grays:
++        if g is None or min(g.shape) < 200:
++            continue
++        acs, lo_i, w_i, hi_i = _window_acs(g, n_win)
++        if shape is None:
++            lo, w, hi, shape = lo_i, w_i, hi_i, acs.shape
++        elif acs.shape != shape:
++            continue
++        k = n % 2                      # abwechselnd in die zwei Haelften, damit beide ueber die ganze Rolle streuen
++        accs[k] = acs.copy() if accs[k] is None else accs[k] + acs
++        n += 1
++    if n == 0:
++        return {"pitch": None, "pitch_frac": None, "score": 0.0, "agree": None, "win": None, "n": 0}
++    n_half = [(n + 1) // 2, n // 2]
++    acc = sum(a for a in accs if a is not None) / n
++    pitch, score, win = _pick_pitch(acc, lo, w, hi)
++
++    agree = None
++    if n >= 2 and pitch:
++        halves = [_pick_pitch(a / k, lo, w, hi)[0] if a is not None and k else None
++                  for a, k in zip(accs, n_half)]
++        if all(halves):
++            agree = abs(halves[0] - halves[1]) / pitch
+     return {"pitch": pitch, "pitch_frac": None if pitch is None else pitch / w,
+-            "score": round(best[1], 4), "win": best[2], "n": n, "width": int(w)}
++            "score": round(score, 4), "agree": None if agree is None else round(agree, 5),
++            "win": win, "n": n, "width": int(w)}
+ 
+ 
+ def _value_at(ac, lo, lag):

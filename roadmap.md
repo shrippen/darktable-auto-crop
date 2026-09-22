@@ -384,6 +384,37 @@ Die Crop-Konvention (36,2 × 24,1 mm) wurde auf denselben Referenzen abgestimmt;
   (Abdeckung 13 %); 98 % erreicht keine Schwelle. Auf entwickelten Bildern reicht 0,50 für 93,5 %/79 % Abdeckung.
   Auswahl der Schwelle je auf ganzen Rollen (2-fold, Leave-One-Roll-Out), nicht auf demselben Bild.
 
+## Nachtrag: die Rolle als eigener Zeuge (2026-09-22, Details in `bericht-erkennung-2026-09-22.md`)
+
+Ein Durchgang mit dem Ziel, die Trefferquote zu heben, hat vor allem gezeigt, dass sie die falsche Zielgröße ist:
+
+- **Der Fehler ist ein konstanter Versatz je Rolle**, keine Streuung innerhalb der Rolle. Kennte man je Rolle nur den
+  richtigen Größen-Versatz, wären es 1553/1662 (93,4 %) statt 87,5 % — mehr als rund 6 Prozentpunkte ist an dieser Stelle
+  nicht zu holen, egal mit welchem Verfahren.
+- **Die Takt-Messung ist nicht der Engpass.** Zwei Hälften einer Rolle getrennt gemessen weichen im Median um 0,13 %
+  voneinander ab, der Fehler gegen die Referenz-Crops beträgt 1,03 %. Die Differenz korreliert mit 0,63 mit dem
+  Bildausschnitt des Scanners: zwei Digitalisier-Sitzungen mit unterschiedlicher Crop-Gewohnheit (36,49 mm gegen 35,82 mm,
+  Streuung innerhalb der Gruppe nur 0,51 % / 0,27 %). Der Rest ist Gewohnheit, nicht Physik. Stichprobengröße
+  (6/12/24/alle Bilder) ändert daran nichts.
+- **Übernommen** (siehe Changelog): die Übereinstimmung der Hälften als Gütemaß statt der Peakhöhe, und ein Deckel auf die
+  Konfidenz der Rollen ohne bestätigten Maßstab. Trefferquote gleich, aber AUC 0,749 → 0,835 und 98 % Präzision erstmals
+  erreichbar. Damit ist der Punkt „die Konfidenz lügt“ aus der Einleitung für die Rollen mit Maßstab weitgehend erledigt;
+  für die Rollen ohne Maßstab ist er nicht gelöst, sondern nur noch ehrlich ausgewiesen.
+
+**Geprüft und nicht übernommen:**
+- *Crop-Konvention neu abstimmen*: der Sweep ist um 36,2 mm herum flach (36,0–36,1 → 1459, 36,2 → 1454, 36,3 → 1449).
+  Zwei Konventionen je Scan-Gruppe brächten 1470 (88,4 %), eine je Rolle optimale 1507 (90,7 %) — beides Anpassung an die
+  Referenz, kein übertragbarer Gewinn. 36,2 bleibt.
+- *`REFINE_SIZE_SLACK`* (0/4/10/20 px): 1452/1457/1454/1446 Treffer, also Rauschen; es verschiebt nur Abdeckung gegen
+  Genauigkeit. Das erklärt auch, warum die frühere Nachführung (`adapt`) nichts brachte: der Zug der Kanten ist bei ±10 px
+  abgeschnitten (49 von 62 Rollen liegen in mindestens einer Achse am Anschlag) und korreliert nur mit 0,22 mit dem
+  tatsächlichen Fehler.
+- *Obertonkamm, gepoolte Autokorrelation, größere Stichprobe* für die Takt-Messung: ohne Gewinn, weil die Messung bereits
+  genauer ist als ihr Fehler.
+- **Nicht behebbar ohne neue Scans:** sechs Rollen (*Nachts Weihnachtsmarkt*, *Viktorianisches Wasser*, *Küste 1*, *Küste 2*,
+  *Freibad 3*, *Prag 3*) liefern gar keinen Takt. Die Sichtprüfung der Scans zeigt: die Perforation ist dort nicht mit
+  digitalisiert, der Rahmen füllt die Datei. Diese Rollen brauchen einen Neu-Scan mit Rand.
+
 ## Priorisierung
 
 Phase 0 ist zwingend zuerst (ohne Daten kein Fortschritt). Danach hat

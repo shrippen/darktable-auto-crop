@@ -124,6 +124,7 @@ def crop_to_pixels(crop, img_w, img_h):
 
 
 PITCH_MM = 4.7625                  # Lochabstand 35-mm-Film (siehe film_scale.py)
+SCALE_AGREE_MAX = 0.02             # Takt-Uebereinstimmung der zwei Rollenhaelften (wie SCALE_CFG["agree_max"])
 MAX_STRAIGHTEN_DEG = 10.0
 AUTO_STRAIGHTEN_MIN_DEG = 0.3      # ab diesem gemessenen Tilt wird standardmaessig geradegestellt
 AUTO_STRAIGHTEN_MIN_CONF = 0.4
@@ -636,13 +637,22 @@ class Session:
     def learned_convention(self):
         """Crop-Groesse in mm aus den von Hand gesetzten Crops dieser Sitzung (Median), oder None.
 
-        Nur Rollen mit gemessenem Perforationstakt (Score >= 0.4) und nur echte Handarbeit (keine abgeleiteten Crops).
+        Nur Rollen mit verlaesslich gemessenem Perforationstakt und nur echte Handarbeit (keine abgeleiteten Crops).
+        Verlaesslich heisst: die Rolle hat ihren Takt auf beiden Haelften bestaetigt (``agree``, siehe
+        ``film_scale.measure_roll_pitch``); eine Fehlmessung wuerde die gelernte mm-Konvention sonst um ihren
+        eigenen Fehler verschieben. Wo keine Uebereinstimmung vorliegt (aeltere Sitzungen), zaehlt der Score.
         Ergebnis: {"long_mm", "short_mm", "n"}; wird von ``auto_crop_negative`` als Voreinstellung gelesen."""
         longs, shorts = [], []
         for img in self.state["images"].values():
             man, size = img.get("manual"), img.get("export_size")
             sc = (self.state.get("film_scales") or {}).get(img["film"])
-            if not man or man.get("derived") or not size or not sc or sc.get("score", 0) < 0.4:
+            if not man or man.get("derived") or not size or not sc:
+                continue
+            agree = sc.get("agree")
+            if agree is None:
+                if sc.get("score", 0) < 0.4:
+                    continue
+            elif agree > SCALE_AGREE_MAX:
                 continue
             mm_px = sc["pitch_frac"] * max(size) / PITCH_MM
             c = man["crop"]
@@ -723,9 +733,9 @@ class Session:
             if film_aspects:
                 self.state.setdefault("film_aspects", {}).update(film_aspects)
             if film_scales:
-                # nur was fuer die Konvention gebraucht wird: Takt als Bruchteil der langen Bildkante und sein Score
+                # nur was fuer die Konvention gebraucht wird: Takt als Bruchteil der langen Bildkante und seine Guete
                 self.state.setdefault("film_scales", {}).update(
-                    {f: {"pitch_frac": v["pitch_frac"], "score": v.get("score", 0.0)}
+                    {f: {"pitch_frac": v["pitch_frac"], "score": v.get("score", 0.0), "agree": v.get("agree")}
                      for f, v in film_scales.items() if v.get("pitch_frac")})
             if self.phase == "analyzing" and not any(
                     i.get("status") == "pending" for i in self.state["images"].values()):

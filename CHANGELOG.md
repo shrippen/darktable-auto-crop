@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Die Rolle bestätigt ihren Maßstab selbst (`agree`)
+Ob der gemessene Perforations-Takt stimmt, entschied bisher die Höhe des Autokorrelations-Peaks. Sie taugt dafür nicht:
+*Film 8* hat Score 0,97 bei 2 % Fehler, *07.07.2014 – Leipzig* Score 0,22 bei 1,3 %. `measure_roll_pitch` teilt die Bilder
+einer Rolle jetzt zusätzlich abwechselnd in zwei Hälften und misst beide getrennt; ihr relativer Abstand (`agree`) ist die
+Wiederholbarkeit der Messung an genau dieser Rolle. Auf 62 Rollen liegt sie im Median bei **0,13 %**, während der Fehler
+gegen die Referenz-Crops 1,03 % beträgt — die Messung ist rund achtmal genauer, als ihr Fehler vermuten lässt. Der Rest ist
+nicht Messrauschen, sondern die Crop-Gewohnheit der jeweiligen Digitalisier-Sitzung (Korrelation 0,63 mit dem gemessenen
+Bildausschnitt; 36,5 mm gegen 35,8 mm in den zwei Stapeln).
+- Der Takt gilt jetzt, wenn die Hälften sich bestätigen (`agree` < 0,002), und gilt nicht, wenn sie sich widersprechen
+  (> 0,02) — dazwischen entscheidet weiter der Score. Kosten: ein zweiter Akkumulator je Rolle, kein zusätzliches Bildladen.
+- **Rollen ohne bestätigten Maßstab bekommen die Konfidenz halbiert** (`no_scale_conf`). Ihre Größe kommt aus dem Pool der
+  übrigen Rollen und kann für eine ganze Rolle gleichmäßig danebenliegen, ohne dass Streuung oder Kantenschärfe das zeigen:
+  41,3 % Treffer gegen 92,8 %, und nur 61,5 % ihrer Grünen sind richtig gegen 96,0 %. *Leipzig* allein lieferte 23 grüne
+  Ergebnisse, von denen **keines** stimmte — genau das „die Konfidenz lügt“ aus der Roadmap.
+- Wirkung auf den 62 darktable-Rollen: Treffer unverändert (1454 → 1453), aber **AUC 0,749 → 0,835**, Anteil richtiger
+  Grüner **93,4 % → 96,0 %**, falsche Grüne **80 → 47**. Auf den 209 Handcrops Bit für Bit unverändert (197 Treffer,
+  136 Grüne, keine falsch): dort bestätigt jede Rolle ihren Takt, es gibt nichts zu deckeln.
+- Wichtiger als die Trefferquote ist die Kalibrierung (Schwellen nie auf denselben Bildern gewählt): bei 95 % Ziel-Präzision
+  steigt die Abdeckung von 42,4 % auf **86,0 %**, und **98 % Präzision wird zum ersten Mal erreichbar** (t = 0,76,
+  Abdeckung 48,8 %, 2-fach out-of-sample 97,5 %) — vorher bei keiner Schwelle. Erst damit lässt sich „grün“ automatisch anwenden.
+- Der Konventions-Lerner der Web-UI (`learned_convention`) nutzt dasselbe Kriterium: eine Fehlmessung mit hohem Peak hätte die
+  gelernte mm-Konvention sonst um ihren eigenen Fehler verschoben.
+- Messungen und verworfene Ideen dazu: `bericht-erkennung-2026-09-22.md`.
+
 ### Crop-Größe aus der Perforation (`film_scale.py`)
 Der Lochabstand des 35-mm-Films (4,7625 mm) ist eine Konstante; `film_scale.py` misst ihn über die Autokorrelation der
 Randstreifen, aufsummiert über die Bilder einer Rolle. Daraus ergeben sich Maßstab (px/mm) und die Rahmengröße (36,2 × 24,1 mm,
