@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-label="Placeholder: a consistently scanned roll compared to a roll with mixed framing">
+<rect width="800" height="500" fill="#2a2826"/>
+<g font-family="'JetBrains Mono','Fira Code',monospace">
+
+<!-- CONSISTENT ROLL -->
+<text x="20" y="44" fill="#b8bb26" font-size="13" font-weight="700" letter-spacing="3">CONSISTENT ROLL</text>
+<g transform="translate(20,70)">
+<!-- 5 frames, same size, same hole spacing -->
+<g id="goodframe0">
+<rect width="140" height="130" fill="#1d2021" stroke="#504945"/>
+<rect x="10" y="24" width="120" height="82" fill="#5a4a3a"/>
+<circle cx="70" cy="65" r="16" fill="#d9b382"/>
+<g fill="#141312"><rect x="18" y="8" width="9" height="6" rx="1"/><rect x="18" y="116" width="9" height="6" rx="1"/><rect x="42" y="8" width="9" height="6" rx="1"/><rect x="42" y="116" width="9" height="6" rx="1"/><rect x="66" y="8" width="9" height="6" rx="1"/><rect x="66" y="116" width="9" height="6" rx="1"/><rect x="90" y="8" width="9" height="6" rx="1"/><rect x="90" y="116" width="9" height="6" rx="1"/><rect x="114" y="8" width="9" height="6" rx="1"/><rect x="114" y="116" width="9" height="6" rx="1"/></g>
+</g>
+<use href="#goodframe0" x="150"/>
+<use href="#goodframe0" x="300"/>
+<use href="#goodframe0" x="450"/>
+<use href="#goodframe0" x="600"/>
+</g>
+<!-- alignment guideline -->
+<line x1="20" y1="78" x2="760" y2="78" stroke="#b8bb26" stroke-width="1.5" stroke-dasharray="3,4"/>
+<line x1="20" y1="196" x2="760" y2="196" stroke="#b8bb26" stroke-width="1.5" stroke-dasharray="3,4"/>
+<text x="20" y="228" fill="#a89984" font-size="11" letter-spacing="1">same scanner setting, same framing — pitch adds up across the roll</text>
+
+<!-- INCONSISTENT ROLL -->
+<text x="20" y="290" fill="#fb4934" font-size="13" font-weight="700" letter-spacing="3">INCONSISTENT ROLL</text>
+<g transform="translate(20,316)">
+<rect width="140" height="130" fill="#1d2021" stroke="#504945"/>
+<rect x="10" y="24" width="120" height="82" fill="#5a4a3a"/>
+<circle cx="70" cy="65" r="16" fill="#d9b382"/>
+<g fill="#141312"><rect x="18" y="8" width="9" height="6" rx="1"/><rect x="18" y="116" width="9" height="6" rx="1"/><rect x="42" y="8" width="9" height="6" rx="1"/><rect x="42" y="116" width="9" height="6" rx="1"/><rect x="66" y="8" width="9" height="6" rx="1"/><rect x="66" y="116" width="9" height="6" rx="1"/><rect x="90" y="8" width="9" height="6" rx="1"/><rect x="90" y="116" width="9" height="6" rx="1"/><rect x="114" y="8" width="9" height="6" rx="1"/><rect x="114" y="116" width="9" height="6" rx="1"/></g>
+
+<!-- shifted / smaller frame -->
+<g transform="translate(150,10)">
+<rect width="110" height="102" fill="#1d2021" stroke="#504945"/>
+<rect x="8" y="18" width="94" height="66" fill="#5a4a3a"/>
+<circle cx="55" cy="51" r="13" fill="#d9b382"/>
+</g>
+
+<!-- rotated frame -->
+<g transform="translate(300,20) rotate(-8 70 65)">
+<rect width="140" height="130" fill="#1d2021" stroke="#504945"/>
+<rect x="10" y="24" width="120" height="82" fill="#5a4a3a"/>
+<circle cx="70" cy="65" r="16" fill="#d9b382"/>
+<g fill="#141312"><rect x="18" y="8" width="9" height="6" rx="1"/><rect x="18" y="116" width="9" height="6" rx="1"/><rect x="42" y="8" width="9" height="6" rx="1"/><rect x="42" y="116" width="9" height="6" rx="1"/><rect x="66" y="8" width="9" height="6" rx="1"/><rect x="66" y="116" width="9" height="6" rx="1"/><rect x="90" y="8" width="9" height="6" rx="1"/><rect x="90" y="116" width="9" height="6" rx="1"/><rect x="114" y="8" width="9" height="6" rx="1"/><rect x="114" y="116" width="9" height="6" rx="1"/></g>
+</g>
+
+<!-- tight frame, no perforation -->
+<rect x="470" y="8" width="100" height="114" fill="#1d2021" stroke="#fb4934" stroke-width="2"/>
+<rect x="470" y="8" width="100" height="114" fill="#5a4a3a"/>
+<circle cx="520" cy="65" r="17" fill="#d9b382"/>
+
+<use href="#goodframe0" x="620"/>
+</g>
+<line x1="20" y1="324" x2="760" y2="324" stroke="#fb4934" stroke-width="1.5" stroke-dasharray="3,4"/>
+<line x1="20" y1="442" x2="760" y2="442" stroke="#fb4934" stroke-width="1.5" stroke-dasharray="3,4"/>
+<text x="20" y="474" fill="#a89984" font-size="11" letter-spacing="1">mixed size, rotation and framing — the pitch measurement gets weaker or fails</text>
+
+</g>
+</svg>

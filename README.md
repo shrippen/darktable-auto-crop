@@ -163,6 +163,7 @@ Die JSON-Ausgabe enthält x, y, width, height, confidence, needs_review.
 | `tests/` | Unit-/Integrationstests, Lua-Stub, Browser-Smoke-Test |
 | `install.sh` | Installations-Skript |
 | `README.md` | Diese Dokumentation |
+| `scan-howto.md` / `scan-howto.en.md` | Wie man Negative scannt, damit die Erkennung gut funktioniert (deutsch/englisch) |
 
 ## License
 
