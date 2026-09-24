@@ -18,7 +18,7 @@ sys.path.insert(0, ROOT)
 
 from companion import converters, pp3, targets          # noqa: E402
 from companion import session as sess                   # noqa: E402
-from companion.__main__ import main, _latest_standalone  # noqa: E402
+from companion.__main__ import main, _resume_standalone  # noqa: E402
 from companion.orientation import crop_to_stored, raw_orientation   # noqa: E402
 from companion.sources import standalone_job            # noqa: E402
 from companion.targets.xmp import update_xmp            # noqa: E402
@@ -202,6 +202,60 @@ class SessionTargetTest(Tmp):
         self.assertEqual((st["name"], st["external"], st["out"]), ("copies", False, s.out_dir))
         with self.assertRaises(sess.SessionError):
             targets.get("nope")
+
+    def test_set_target_only_while_editable_and_only_standalone(self):
+        p = self.file("a.jpg")
+        s = self.session("copies", [(p, 0.9, [100, 100])])
+        s.set_target("xmp")
+        self.assertEqual(s.target_name, "xmp")
+        with self.assertRaises(sess.SessionError):
+            s.set_target("nope")
+        s.finish()
+        with self.assertRaises(sess.SessionError):
+            s.set_target("json")                                   # gesperrt
+        d = sess.Session.create({"mode": "darktable", "images": [{"id": 1, "path": p}]},
+                                os.path.join(self.tmp, "root2"))
+        with self.assertRaises(sess.SessionError):
+            d.set_target("json")                                   # nicht eigenstaendig
+
+    def test_xmp_target_is_incompatible_with_non_raw_images(self):
+        raw, jpg = self.file("F/a.nef"), self.file("F/b.jpg")
+        s = self.session("xmp", [(raw, 0.9, [100, 100]), (jpg, 0.9, [100, 100])])
+        pub = {i["id"]: i for i in s.public_state()["images"]}
+        self.assertEqual(pub[1]["target_ok"], True)
+        self.assertEqual((pub[2]["target_ok"], pub[2]["target_reason"]), (False, "not_raw"))
+        self.assertFalse(pub[2]["apply"])                            # zaehlt nicht mehr zu "Anwenden"
+        opts = {o["name"]: o for o in s.public_state()["target_options"]}
+        self.assertEqual((opts["xmp"]["total"], opts["xmp"]["incompatible"]), (2, 1))
+        self.assertEqual(opts["copies"]["incompatible"], 0)          # copies nimmt jedes Bild
+
+    def test_add_images_keeps_decisions_and_reopens_locked_session(self):
+        a = self.file("F/a.jpg")
+        s = self.session("copies", [(a, 0.9, [100, 100])])
+        s.patch_images([1], {"decision": "accept"})
+        s.finish()
+        self.assertEqual(s.phase, "applied")
+        b = self.file("F/b.jpg")
+        added = s.add_images([{"id": 1, "path": a, "film": "F"}, {"id": 1, "path": b, "film": "F"}])
+        self.assertEqual(added, 1)
+        self.assertEqual(len(s.state["images"]), 2)
+        self.assertEqual(s.phase, "analyzing")                       # zurueck zur Analyse
+        self.assertEqual(s.image(1)["decision"], "accept")           # alte Entscheidung unangetastet
+        new_img = [i for i in s.state["images"].values() if i["path"] == b][0]
+        self.assertEqual(new_img["status"], "pending")
+        with self.assertRaises(sess.SessionError):
+            self.session("reviews", []).add_images([])               # nur eigenstaendig
+
+    def test_applied_target_warns_after_switch(self):
+        p = self.file("a.jpg")
+        s = self.session("copies", [(p, 0.9, [100, 100])])
+        s.finish()
+        self.assertIsNone(s.public_state()["applied_target"])
+        s.reopen()
+        s.set_target("json")
+        self.assertEqual(s.public_state()["applied_target"], "copies")
+        s.finish()
+        self.assertIsNone(s.public_state()["applied_target"])        # jetzt wieder auf dem Stand
 
     def test_darktable_stays_locked_until_lua_reports(self):
         s = self.session("darktable", [(self.file("a.arw"), 0.9, [300, 200])])
@@ -437,7 +491,38 @@ class CliTest(Tmp):
             self.assertNotEqual(run.call_args[0][0].dir, first.dir)          # anderes Ziel -> neu
             self.run_main(["open", self.tmp, "--root", root, "--new"])
             self.assertNotEqual(run.call_args[0][0].dir, first.dir)
-        self.assertIsNone(_latest_standalone(root, "/anders", "copies", []))
+        self.assertEqual(_resume_standalone(root, "/anders", "copies", []), (None, 0))
+
+    def test_open_resumes_and_adds_new_images_without_touching_old_ones(self):
+        """Ordner waechst zwischen zwei Aufrufen: die alte Sitzung wird ergaenzt statt neu
+        analysiert, bestehende Entscheidungen bleiben (Problem 4/6 aus der QoL-Analyse)."""
+        self.file("Film/a.jpg")
+        root = os.path.join(self.tmp, "root")
+        with unittest.mock.patch("companion.__main__._run", return_value=0) as run:
+            self.run_main([self.tmp, "--root", root, "--no-browser"])
+            first = run.call_args[0][0]
+            first.mark_analysis_done()
+            first.patch_images([1], {"decision": "accept"}, log=False)   # simuliert Nutzerarbeit
+            self.file("Film/b.jpg")                                      # Ordner waechst
+            self.run_main([self.tmp, "--root", root, "--no-browser"])
+            second = run.call_args[0][0]
+        self.assertEqual(second.dir, first.dir)                          # dieselbe Sitzung
+        self.assertEqual(len(second.state["images"]), 2)
+        self.assertEqual(second.phase, "analyzing")                      # neues Bild muss analysiert werden
+        self.assertEqual(second.image(1)["decision"], "accept")          # alte Entscheidung erhalten
+        self.assertEqual(second.image(2)["status"], "pending")
+
+    def test_open_starts_new_session_when_a_file_disappeared(self):
+        self.file("Film/a.jpg")
+        p_b = self.file("Film/b.jpg")
+        root = os.path.join(self.tmp, "root")
+        with unittest.mock.patch("companion.__main__._run", return_value=0) as run:
+            self.run_main([self.tmp, "--root", root, "--no-browser"])
+            first = run.call_args[0][0]
+            os.remove(p_b)
+            self.run_main([self.tmp, "--root", root, "--no-browser"])
+            second = run.call_args[0][0]
+        self.assertNotEqual(second.dir, first.dir)
 
     def test_open_without_raw_converter_fails_clearly(self):
         self.file("Film/a.nef")
@@ -446,7 +531,41 @@ class CliTest(Tmp):
                 contextlib.redirect_stderr(err):
             code, _ = self.run_main(["open", self.tmp, "--root", os.path.join(self.tmp, "root")])
         self.assertEqual(code, 1)
-        self.assertIn("kein RAW-Konverter", err.getvalue())
+        self.assertIn("nicht verfuegbar", err.getvalue())
+
+    def test_open_with_explicit_unavailable_converter_fails_before_starting(self):
+        """--converter rawtherapee, aber rawtherapee-cli fehlt: soll sofort scheitern, nicht erst
+        beim Export (Problem 5 aus der QoL-Analyse)."""
+        self.file("Film/a.nef")
+        err = io.StringIO()
+        only_darktable = {converters.DARKTABLE: True, converters.RAWTHERAPEE: False, converters.RAWPY: False}
+        with unittest.mock.patch("companion.converters.available", return_value=only_darktable), \
+                unittest.mock.patch("companion.export.find_darktable_cli", return_value=None), \
+                contextlib.redirect_stderr(err):
+            code, _ = self.run_main(["open", self.tmp, "--converter", "rawtherapee",
+                                     "--root", os.path.join(self.tmp, "root")])
+        self.assertEqual(code, 1)
+        self.assertIn("rawtherapee", err.getvalue())
+        self.assertIn("nicht verfuegbar", err.getvalue())
+
+    def test_second_open_on_same_session_does_not_start_a_second_server(self):
+        """Zwei Prozesse auf demselben Sitzungsordner: der zweite bedient nicht mit, sondern
+        meldet die laufende URL (Problem 1 aus der QoL-Analyse)."""
+        self.file("Film/a.jpg")
+        root = os.path.join(self.tmp, "root")
+        with unittest.mock.patch("companion.__main__._run", return_value=0) as run:
+            self.run_main([self.tmp, "--root", root, "--no-browser"])
+            s = run.call_args[0][0]
+        sess.atomic_write_json(os.path.join(s.dir, "server.json"),
+                               {"pid": os.getpid(), "port": 1, "token": "t", "url": "http://x/live"})
+        from companion.server import acquire_lock
+        held = acquire_lock(s.dir)               # simuliert den laufenden ersten Server
+        self.addCleanup(held.close)
+        with unittest.mock.patch("companion.__main__.make_server") as ms:
+            code, out = self.run_main([self.tmp, "--root", root, "--no-browser"])
+        self.assertEqual(code, 0)
+        ms.assert_not_called()                    # kein zweiter Server gestartet
+        self.assertIn("http://x/live", out)
 
 
 @needs_cv2
