@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Eigenständig nutzbar, darktable optional (`roadmap-standalone.md`, Phase 1–4)
+Erkennung und Web-UI waren schon werkzeugneutral; nur Ein- und Ausgang hingen an darktable. Beide Enden sind jetzt
+austauschbare Adapter.
+- **Neuer Befehl** `auto-crop-negative ORDNER` (`python -m companion ORDNER`): durchsucht den Ordner (Unterordner = Rollen,
+  auch RAWs), analysiert, öffnet die Web-UI; **Fertig** wendet den Plan sofort an. Erneuter Start setzt die Sitzung fort
+  (`--new` für Neuanalyse). `auto-crop-negative check ORDNER` zeigt Konverter und vorgeschlagenes Ziel.
+- **Ziele** (`companion/targets/`): `copies` (zugeschnittene, ggf. geradegestellte Kopien; ICC/EXIF bleiben, 16 Bit bleibt),
+  `json` (`crops.json` + `crops.csv`), `xmp` (Adobe-Sidecar für Lightroom/Camera Raw), `rawtherapee` (`.pp3`), dazu die
+  bisherigen Wege als `darktable` (unverändert über Lua) und `reviews` (Kalibrierung). Das Ziel wird aus vorhandenen
+  Sidecars vorgeschlagen. Differenz-Anwenden gilt für alle: nur Geändertes wird neu geschrieben, zurückgenommene Crops
+  werden entfernt. Farblabel rot/gelb/grün gehen an darktable, RawTherapee und Lightroom.
+- **RAW-Konverter** (`companion/converters.py`): `darktable` (wie bisher), `rawtherapee` (`rawtherapee-cli`) und `rawpy`
+  (LibRaw, kein externes Programm). Gewählt nach den Sidecars neben den RAWs, sonst der erste verfügbare.
+- **Web-UI**: Kopf und Ablaufleiste zeigen das Ziel; Fertig-Dialog, Ergebnis (mit Hinweisen je Bild) und Server-Ende-
+  Meldung ohne darktable-Bezug, wenn eigenständig. Der Schräglagen-Editor weist darauf hin, wenn ein Ziel nicht drehen kann.
+- **Installation ohne darktable**: `pyproject.toml` (`pip install ".[raw]"`) und `./install.sh --standalone`.
+- **README** umgebaut: Kern zuerst, darktable als eine Integration. Namensvorschläge in `roadmap-standalone.md`.
+- Ausgabeordner tragen `.autocrop-output` und werden von der Bildsuche übersprungen (auch im Kalibriermodus).
+- Ungeprüft gegen die echten Programme: RawTherapee (Export und `.pp3`) und Lightroom (Crop-Koordinaten in Sensorlage).
+
 ### Die Rolle bestätigt ihren Maßstab selbst (`agree`)
 Ob der gemessene Perforations-Takt stimmt, entschied bisher die Höhe des Autokorrelations-Peaks. Sie taugt dafür nicht:
 *Film 8* hat Score 0,97 bei 2 % Fehler, *07.07.2014 – Leipzig* Score 0,22 bei 1,3 %. `measure_roll_pitch` teilt die Bilder

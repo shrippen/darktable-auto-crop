@@ -11,7 +11,20 @@ Projekt als eigenständiges Werkzeug positionieren, das eine Bildmenge nimmt,
 Filmrahmen erkennt und Crops liefert – mit darktable als einer von mehreren
 optionalen Andockstellen, nicht als Voraussetzung.
 
-## Ist-Zustand: was schon unabhängig ist, was nicht
+## Stand der Umsetzung (2026-09-24)
+
+| Phase | Erledigt | Offen / bewusst zurückgestellt |
+| --- | --- | --- |
+| 1 Ordner-Unabhängigkeit sichtbar | Befehl `auto-crop-negative ORDNER`, Ausgabe im Ordnermodus (Ziele `json`, `copies`), README-Abschnitt | – |
+| 2 Output-Adapter | `companion/targets/` mit gemeinsamer Schnittstelle; darktable dahinter ohne Verhaltensänderung; `json`, `copies`; Farblabel je Ziel | – |
+| 3 Input-Adapter | RAW-Konverter `darktable`/`rawtherapee`/`rawpy`; Ziele `xmp` (Lightroom/ACR) und `rawtherapee` (.pp3); automatische Wahl von Ziel und Konverter | Capture One (kein Bedarf belegt); RawTherapee und Lightroom nicht gegen die echten Programme geprüft |
+| 4 Eigenständiges Produkt | `pyproject.toml` (Befehl `auto-crop-negative`), `install.sh --standalone`, README umgebaut, Namensvorschläge | Umbenennung selbst (Entscheidung offen); Watch-Ordner-Dienst (zurückgestellt) |
+
+Messung: 26 neue Tests in `tests/test_standalone.py`, darunter ein echter Durchlauf (Erkennung auf `test.jpg`, Kopie) und
+ein RAW-Durchlauf mit einer erzeugten DNG über rawpy. Die Web-UI wurde für alle drei Modi (eigenständig, Kalibrierung,
+darktable-Job) im Browser durchgeklickt.
+
+## Ist-Zustand vor der Umsetzung: was schon unabhängig war, was nicht
 
 **Bereits darktable-unabhängig:**
 - Erkennung (`auto_crop_negative.py`, `film_analysis.py`, `film_scale.py`) –
@@ -73,77 +86,81 @@ darktable-Code in `export.py`/`session.py`/`server.py`.
 Kein Architektur-Umbau, nur Framing und Lücken schließen – macht das
 Projekt *heute schon* für Nutzer ohne darktable brauchbar.
 
-- [ ] Eigener Einstiegspunkt/Kurzanleitung für den reinen Ordnermodus
-      (`python -m companion folder <pfad>`), unabhängig vom
-      darktable-Installationsabschnitt in README.
-- [ ] Prüfen, ob der Ordnermodus mit **bereits entwickelten/exportierten**
-      Bildern (nicht nur RAW-Testfotos) aus beliebiger Quelle sauber läuft
-      (Lightroom/Capture-One-JPEG-Export, Scanner-Software-Export).
-- [ ] Anwenden im Ordnermodus: aktuell schreibt "Fertig" nur `reviews.json`/
-      Referenzdaten für die Kalibrierung, aber keinen nutzbaren Crop auf ein
-      reales Bild. Einen einfachen Output-Weg ergänzen (z. B. zugeschnittene
-      Kopien schreiben, oder Crop-Koordinaten als generisches JSON/CSV
-      neben den Bildern ablegen).
-- [ ] README-Abschnitt "Ohne darktable nutzen" ergänzen.
+- [x] Eigener Einstiegspunkt/Kurzanleitung für den reinen Ordnermodus,
+      unabhängig vom darktable-Installationsabschnitt in README.
+      **Umgesetzt:** `auto-crop-negative ORDNER` (Kurzform von `open`), `auto-crop-negative check [ORDNER]`;
+      erneuter Start mit demselben Ordner setzt die Sitzung fort. `serve --folder` bleibt der Kalibriermodus.
+- [x] Prüfen, ob der Ordnermodus mit **bereits entwickelten/exportierten**
+      Bildern aus beliebiger Quelle sauber läuft.
+      **Geprüft:** JPEG/TIFF/PNG beliebiger Herkunft, EXIF-Orientierung (Anzeige und Kopie im selben Rahmen),
+      16-Bit-TIFF (Bittiefe bleibt; Pillow hätte stillschweigend auf 8 Bit gekürzt, deshalb liest der Kopien-Adapter
+      mit OpenCV). RAW+JPEG gleichen Namens zählen einmal (als RAW).
+- [x] Anwenden im Ordnermodus: einen einfachen Output-Weg ergänzen.
+      **Umgesetzt:** Ziele `copies` (zugeschnittene Kopien) und `json` (`crops.json` + `crops.csv`).
+- [x] README-Abschnitt "Ohne darktable nutzen" ergänzen.
 
 ## Phase 2: Output-Adapter abstrahieren
 
-Der riskantere, aber wertvollere Schritt: das "Anwenden" von einer
-darktable-Operation zu einer austauschbaren Aktion machen.
-
-- [ ] Gemeinsame Schnittstelle definieren: `apply(image, crop, straighten_deg,
-      group) -> ok/error`, die heutige darktable-Lua-Logik dahinter kapseln
+- [x] Gemeinsame Schnittstelle definieren, die heutige darktable-Lua-Logik dahinter kapseln
       (kein Verhaltenswechsel für bestehende Nutzer).
-- [ ] Adapter **"Sidecar generisch"**: schreibt Crop (+ optional Rotation)
-      als eigenes, werkzeugneutrales XMP/JSON neben das Bild, ohne dt.styles.
-      Deckt Nutzer ab, die ihre eigene Pipeline haben.
-- [ ] Adapter **"Direkt zuschneiden"**: schreibt sofort zugeschnittene
-      Ausgabedateien (für Nutzer ganz ohne RAW-Entwickler, z. B. reine
-      Scan-Workflows mit JPEG/TIFF).
-- [ ] Farblabel-Konzept von darktable lösen: intern bleibt es
-      rot/gelb/grün (Konfidenzstufen), aber die *Anwendung* dieser Stufen
-      wird adapterabhängig (darktable: Farblabel; generisch: z. B.
-      Ordner-Sortierung `review/`, `ok/`, oder Suffix im Dateinamen).
+      **Umgesetzt:** `Target.apply(session, plan) -> {id: {status, message}}` in `companion/targets/`. Die Schnittstelle
+      arbeitet auf dem ganzen Plan statt je Bild, weil Adapter wie `json` eine Datei für alle Bilder schreiben.
+      darktable ist ein *externes* Ziel (Lua liest `plan.json`, schreibt `result.json`, unverändert); lokale Ziele wendet
+      `Session.finish()` sofort an und führt `result.json`/`applied.json` genauso, sodass Differenz-Anwenden nach
+      „Zurück zur Prüfung“ für alle Ziele gilt. Der bisherige Kalibriermodus ist jetzt das Ziel `reviews`.
+- [x] Adapter **"Sidecar generisch"**. **Umgesetzt als `json`:** eine Datei je Lauf im Ausgabeordner statt einer Datei je
+      Bild – leichter weiterzuverarbeiten und ohne fremde Dateien neben den Originalen.
+- [x] Adapter **"Direkt zuschneiden"**. **Umgesetzt als `copies`**, inklusive Geradestellen (gleiche Drehung wie die
+      Vorschau). ICC-Profil und EXIF bleiben bei 8 Bit erhalten.
+- [x] Farblabel-Konzept von darktable lösen. **Umgesetzt:** Die Gruppe geht als `label` in jeden Plan; darktable,
+      RawTherapee (`ColorLabel`) und Lightroom (`xmp:Label`) setzen ein Farblabel, `json`/`copies` schreiben die Spalte
+      `label`. Eine Ordner-Sortierung nach Gruppe wurde verworfen: rote Bilder werden ohnehin nicht kopiert.
 
 ## Phase 3: Input-Adapter für andere RAW-Entwickler
 
-Erst nach Phase 2 sinnvoll, weil sonst nur die Erkennung, nicht der
-Rückweg, an einem zweiten Werkzeug hinge.
-
-- [ ] **RawTherapee**: RAW-Export via `rawtherapee-cli` (Analogon zu
-      `darktable-cli`), Sidecar `.pp3` statt `.xmp` lesen/schreiben
-      (Crop-Sektion `[Crop]`).
-- [ ] **Lightroom / generisches XMP**: viele RAW-Entwickler benutzen
-      dieselbe Adobe-XMP-Crop-Konvention (`crs:CropTop` etc.) – ein
-      gemeinsamer XMP-Adapter deckt potenziell mehrere Werkzeuge ab, bevor
-      werkzeugspezifische CLI-Exporte gebaut werden.
-- [ ] **Capture One** (falls Nachfrage): eigenes Sidecar-Format, höherer
-      Aufwand, niedrigere Priorität ohne konkreten Bedarf.
-- [ ] Adapter-Erkennung: Companion soll aus dem Ordnerinhalt ableiten
-      können, welcher Input-Adapter zuständig ist (vorhandene Sidecar-Typen),
-      statt dass der Modus von Hand gewählt werden muss.
+- [x] **RawTherapee**: RAW-Export via `rawtherapee-cli`, Sidecar `.pp3` lesen/schreiben (`[Crop]`, `ColorLabel`).
+      **Umgesetzt**, aber **nicht gegen RawTherapee getestet** (nicht in der Testumgebung); auch der Aufruf
+      `rawtherapee-cli -d -p <profil> -o <datei> -j95 -Y -c <raw>` ist ungeprüft.
+- [x] **Lightroom / generisches XMP**: Ziel `xmp` schreibt `crs:HasCrop`/`crs:Crop*`/`xmp:Label` in `<Name>.xmp` und lässt
+      vorhandene Werte, Präfixe und das xpacket stehen. Annahme: Adobe speichert den Crop in Sensorlage; die Orientierung
+      kommt aus dem RAW-Kopf (TIFF-basierte RAWs) oder über rawpy. **Nicht gegen Lightroom geprüft.** Kein Winkel.
+- [x] Zusätzlich (nicht in der ursprünglichen Liste): **RAW ohne externes Programm** über `rawpy` (LibRaw). Damit läuft
+      das Werkzeug mit RAWs, ohne dass darktable oder RawTherapee installiert sind. Getestet mit einer erzeugten DNG.
+- [ ] **Capture One**: **zurückgestellt.** Eigenes Sidecar-Format (`.cos` in `CaptureOne/Settings*`), ohne Nutzer mit
+      Bedarf nicht zu rechtfertigen – wie in der Roadmap vorgesehen.
+- [x] Adapter-Erkennung: **Umgesetzt:** Ziel aus dem Ordnerinhalt (`.pp3` → `rawtherapee`, Adobe-XMP → `xmp`, sonst RAWs →
+      `json`, nur JPEG/TIFF → `copies`); Konverter nach den Sidecars neben den RAWs (darktable-XMP oder `.pp3`), sonst der
+      erste verfügbare. `auto-crop-negative check ORDNER` zeigt beide Vorschläge.
 
 ## Phase 4: Companion als eigenständiges Produkt
 
-Erst wenn Phase 1–3 stehen, macht es Sinn, das Projekt auch *so zu
-präsentieren* und zu benennen.
+- [x] Namensfrage klären. **Vorschläge unten**; entschieden ist noch nichts, umbenannt wurde nichts außer dem
+      Untertitel „– Darktable-Plugin“ im README.
+- [x] README/Architektur-Doku umstrukturieren: Kernstück zuerst, darktable als Integration gleichrangig neben den
+      anderen Zielen. `auto_crop_negative.lua` bleibt unverändert.
+- [x] Installationsweg ohne darktable: `pyproject.toml` (Befehl `auto-crop-negative`, Extra `[raw]` für rawpy) und
+      `./install.sh --standalone` (eigene venv unter `~/.local/share/auto-crop-negative/`, Link nach `~/.local/bin`).
+- [ ] Companion-Server dauerhaft im Hintergrund / Watch-Ordner: **zurückgestellt.** Die Roadmap macht das von
+      Nutzungsdaten des Ordner-Szenarios abhängig; die gibt es noch nicht. Ein erneuter Start mit demselben Ordner setzt die
+      Sitzung fort, das deckt den häufigsten Fall („weiter prüfen“) ab.
 
-- [ ] Namensfrage klären: "Auto Crop Negative – Darktable-Plugin" impliziert
-      im Titel bereits die Abhängigkeit. Entweder zwei Pakete (Kern +
-      darktable-Plugin als eines von mehreren Frontends) oder ein
-      Produktname, der die Erkennung in den Vordergrund stellt.
-- [ ] README/Architektur-Doku umstrukturieren: Kernstück zuerst
-      beschreiben (Erkennung + Companion), darktable als "Integration",
-      gleichrangig neben Ordnermodus und ggf. RawTherapee.
-      `auto_crop_negative.lua` bleibt bestehen, wird aber als *ein*
-      Frontend dokumentiert statt als das Projekt selbst.
-- [ ] Installationsweg ohne darktable: `install.sh` derzeit auf
-      `~/.config/darktable/lua/` fixiert – ein zweiter, einfacherer Pfad nur
-      für Companion (pip-Paket/venv, kein Lua-Schritt).
-- [ ] Erwägen: Companion-Server dauerhaft im Hintergrund statt aus dem
-      darktable-Panel gestartet (Watch-Ordner statt Import-Trigger) – nur
-      falls das reine Ordner-Szenario genug Nutzung bekommt, um den Aufwand
-      zu rechtfertigen.
+### Namensvorschläge
+
+Ausgangslage: „Auto Crop Negative“ selbst ist bereits werkzeugneutral und steckt in Paketname, Befehl
+(`auto-crop-negative`), Cache (`~/.cache/auto-crop-negative`), Konfiguration (`~/.config/auto-crop-negative`), Web-UI und
+Script-Manager-Eintrag. Abhängig von darktable ist nur der Repository-Name `darktable-auto-crop`.
+
+| Vorschlag | Für | Gegen |
+| --- | --- | --- |
+| **Auto Crop Negative** behalten, Repo → `auto-crop-negative` (**Empfehlung**) | keine Migration von Cache, Konfiguration, gelernten Konventionen oder darktable-Installationen; Name sagt, was es tut | beschreibend statt einprägsam |
+| **negcrop** | kurz, gut als Befehl | Abkürzung; „neg“ allein ist mehrdeutig |
+| **Framefinder** / **Rahmenfinder** | beschreibt den Kern (Rahmen finden), nicht nur das Schneiden | generisch, Namenskollisionen wahrscheinlich |
+| **Filmframe** | kurz, international | sagt nicht, dass geschnitten wird |
+| **Negative Frame** | eindeutig Film-bezogen | lang, als Befehl unhandlich |
+
+Empfehlung: Namen behalten und nur das Repository umbenennen (GitHub leitet alte URLs weiter). Vor einer Wahl mit neuem
+Namen prüfen, ob der Name auf PyPI und GitHub frei ist; ein neuer Name hieße auch Cache- und Konfigurationsordner
+umzuziehen (gelernte Crop-Konvention in `~/.config/auto-crop-negative/convention.json`).
 
 ## Was explizit nicht angetastet wird
 
@@ -164,3 +181,7 @@ ob die Idee überhaupt Nachfrage hat, bevor in Adapter-Architektur (Phase 2)
 investiert wird. Phase 3/4 nur bei konkretem Bedarf (eigene Nutzung mit
 einem anderen RAW-Entwickler, oder Nutzer, die danach fragen) – sonst bleibt
 es spekulative Arbeit an Werkzeugen, die niemand nutzt.
+
+Nachtrag 2026-09-24: Auf Wunsch wurden Phase 1 bis 4 zusammen umgesetzt, nicht nacheinander mit Nachfragetest. Der Test
+bleibt trotzdem sinnvoll: Die ungeprüften Teile (RawTherapee, Lightroom) sollten erst mit einem echten Nutzer dieses
+Werkzeugs geprüft werden, bevor sie als verlässlich gelten.
