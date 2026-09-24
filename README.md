@@ -241,7 +241,11 @@ Weiteres nicht an `127.0.0.1` des NAS heran. `--bind ADRESSE` öffnet den Server
 ```bash
 auto-crop-negative open ~/Scans/Film-12 --tui --bind 0.0.0.0    # auf allen Netzwerkschnittstellen lauschen
 auto-crop-negative open ~/Scans/Film-12 --tui --bind 192.168.1.50   # nur auf dieser einen Adresse
+auto-crop-negative open ~/Scans/Film-12 --bind :: --port 8080       # IPv6 (URL dann mit [Adresse])
 ```
+
+Lässt sich die Adresse nicht binden (gehört der Maschine nicht, Port belegt, kein IPv6), endet der Aufruf mit einer
+klaren Fehlermeldung. Mit `--port 80` funktioniert auch der Aufruf ohne Portangabe in der URL.
 
 Danach zeigt `--tui` (bzw. die normale Ausgabe ohne `--tui`) die URL mit einer im Netzwerk erreichbaren Adresse statt
 `127.0.0.1` – bei `--bind 0.0.0.0` wird sie erraten (`guess_lan_ip()`): eine echte, physische Netzwerkschnittstelle mit
@@ -260,6 +264,8 @@ noch die Portprüfung. `--tui` zeigt deshalb dauerhaft eine rote Warnzeile, sola
 (auch ohne `--tui` erscheint die Warnung einmal beim Start). Folgen:
 - Nicht in unsicheren oder fremden Netzen (offenes WLAN, Firmennetz mit anderen Nutzern) binden.
 - Die URL (mit Token) ist ein Geheimnis wie ein Passwort – nicht in Chatverläufe, Tickets o. Ä. kopieren.
+- Abgewiesene Anfragen (falscher Token, fremder Host) zählen nicht als Aktivität: ein Scanner im Netz verhindert das
+  automatische Beenden nach 30 Minuten Leerlauf nicht.
 - Nur für den eigenständigen `open`-Weg; `serve --job`/`serve --folder` (darktable, Kalibrierung) binden weiterhin
   ausschließlich an `127.0.0.1`, das Flag existiert dort nicht.
 

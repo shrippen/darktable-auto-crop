@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Korrekturen aus dem Code-Review (Companion-Server und CLI)
+- **Laufende Sitzung verlor neue Bilder**: ein zweiter `open`-Aufruf mit gewachsenem Ordner schrieb die neuen Bilder
+  in `state.json`, bevor er die Sitzungssperre prüfte; der laufende Server überschrieb sie beim nächsten Speichern.
+  Jetzt erst sperren, dann ergänzen (`_find_standalone` ändert nichts, `add_images` erst unter der Sperre).
+- **`--bind ::`/IPv6 stürzte beim Start ab** (`gaierror`, der Server war fest IPv4): IPv6-Adressen bekommen jetzt einen
+  IPv6-Server, die URL setzt die Adresse in Klammern. Nicht bindbare Adressen (fremd, Port belegt, kein IPv6) enden mit
+  klarer Meldung statt Traceback.
+- **Abgewiesene Anfragen hielten den Server am Leben**: der Leerlauf-Zeitstempel wurde vor Host- und Token-Prüfung
+  gesetzt; bei `--bind` genügte ein Scanner, um das Beenden nach 30 Minuten zu verhindern. Jetzt zählen nur
+  angenommene Anfragen.
+- **Retry konnte die Sitzung in "analyzing" festsetzen**: lief schon eine Neu-Erkennung, blieb nach dem Busy-Fehler die
+  Phase stehen und Fertig blockiert. Jetzt wird Busy vorher geprüft, die Änderung läuft unter der Sitzungssperre
+  (`Session.retry`), und bei einem Rennen geht die Phase zurück.
+- **`--port 80` gab immer 403**: Browser lassen `:80` im Host-Header weg. `split_host` versteht jetzt fehlende Ports
+  und IPv6-Klammern.
+- **`guess_lan_ip()`**: stürzte unter Windows ab (`fcntl`-Import außerhalb der Fehlerbehandlung) und zog eine
+  VPN-Schnittstelle einer physischen vor, wenn das echte LAN in 172.16.0.0/12 liegt. Eine physische Schnittstelle
+  gewinnt jetzt immer; die Route des Betriebssystems wird mit dem Namen ihrer Schnittstelle bewertet (eine Route über
+  `docker0` gilt nicht mehr als physisch).
+
 ### Im Netzwerk erreichbar machen (`--bind`)
 `auto-crop-negative open ORDNER --bind 0.0.0.0` (oder eine konkrete LAN-Adresse) lässt den Server auf mehr als nur
 `127.0.0.1` lauschen, damit man z. B. von seinem eigenen Rechner aus auf die Web-UI eines per SSH betriebenen NAS
