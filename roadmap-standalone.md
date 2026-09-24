@@ -259,9 +259,19 @@ ohne SSH-Tunnel kam ein Browser auf einem anderen Rechner gar nicht erst bis zum
   mehr Komplexität für einen Schutz, der bei `0.0.0.0` ohnehin nur einen Teil der Fälle abdecken könnte und leicht
   falsch-negativ ausfallen kann (falsche Schnittstelle geraten); der Token bleibt die tragende Kontrolle, transparent
   dokumentiert statt stillschweigend geschwächt.
-- **Für die Anzeige:** `guess_lan_ip()` (UDP-Verbindungsversuch ohne Datenversand, nur um die vom Betriebssystem
-  gewählte Route zu erfahren) füllt bei `--bind 0.0.0.0` eine echte Adresse in die angezeigte URL statt der nutzlosen
-  `0.0.0.0`; kann bei mehreren Netzwerkschnittstellen danebenliegen, dann muss die Adresse von Hand ersetzt werden.
+- **Für die Anzeige:** `guess_lan_ip()` füllt bei `--bind 0.0.0.0` eine echte Adresse in die angezeigte URL statt der
+  nutzlosen `0.0.0.0`.
+  **Nachtrag (auf Wunsch verbessert):** zunaechst nur ein einzelner UDP-Verbindungsversuch (welche Route das
+  Betriebssystem waehlen wuerde) - in einer Docker-Umgebung waere das oft die Docker-Bruecke, nicht das echte LAN.
+  Jetzt werden alle Netzwerkschnittstellen (`socket.if_nameindex` + `SIOCGIFADDR`, nur Linux) bewertet: physische
+  Interfaces mit privater LAN-Adresse (192.168.0.0/16, 10.0.0.0/8) gewinnen gegen Docker-/Bruecken-/VPN-Interfaces
+  (am Namen erkannt: `docker`, `br-`, `veth`, `tun`, `wg`, ...) und deren ueblichen Adressbereich (172.16-31.0.0/12,
+  Dockers Standard-Spielwiese); die Routenwahl bleibt als zusaetzlicher, leicht bevorzugter Kandidat, falls die
+  Interface-Aufzaehlung nichts liefert (z. B. nicht Linux) oder mehrdeutig ist. Im Sandbox-Testnetz bestaetigt
+  (`eth0` schlaegt simulierte `docker0`/`br-*`/`veth*`-Kandidaten klar). Bleibt ein Raten - bei mehreren echten
+  LAN-Schnittstellen oder ungewoehnlicher Netzwerktopologie kann die Adresse danebenliegen, dann muss sie von Hand
+  ersetzt werden.
 - **Getestet:** `tests/test_companion.py` `BindTest` (Standard bleibt eng; `0.0.0.0` fuellt eine erratene Adresse;
-  ein echter Server auf `127.0.0.2` beweist per HTTP-Anfragen mit unterschiedlichen `Host`-Headern, dass der
-  Hostname jetzt egal ist, der Port aber weiterhin geprüft wird und ein falscher Token weiterhin 403 gibt).
+  die Bewertungsfunktion bevorzugt echte Interfaces gegenueber Docker/VPN, auch wenn die Routenwahl selbst auf ein
+  Docker-Netz zeigt; ein echter Server auf `127.0.0.2` beweist per HTTP-Anfragen mit unterschiedlichen `Host`-Headern,
+  dass der Hostname jetzt egal ist, der Port aber weiterhin geprüft wird und ein falscher Token weiterhin 403 gibt).

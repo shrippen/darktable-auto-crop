@@ -244,9 +244,12 @@ auto-crop-negative open ~/Scans/Film-12 --tui --bind 192.168.1.50   # nur auf di
 ```
 
 Danach zeigt `--tui` (bzw. die normale Ausgabe ohne `--tui`) die URL mit einer im Netzwerk erreichbaren Adresse statt
-`127.0.0.1` – bei `--bind 0.0.0.0` wird sie bestmöglich erraten (die Route, die das Betriebssystem für ausgehende
-Pakete wählen würde); stimmt das nicht mit der Adresse überein, unter der du das NAS tatsächlich erreichst, ersetze sie
-in der URL von Hand.
+`127.0.0.1` – bei `--bind 0.0.0.0` wird sie erraten (`guess_lan_ip()`): eine echte, physische Netzwerkschnittstelle mit
+privater LAN-Adresse wird bevorzugt, Docker-/Brücken-/VPN-Interfaces (`docker0`, `br-…`, `veth…`, `tun…` usw.) und
+deren üblicher Adressbereich (172.16–31.0.0/12, Dockers Standard-Spielwiese) werden bewusst nach hinten gestellt, nicht
+ausgeschlossen – auf einer reinen Docker-Netzwerkumgebung ohne echtes LAN ist eine wahrscheinlich falsche Adresse
+besser als gar keine. Stimmt die geratene Adresse dennoch nicht mit der, unter der du die Maschine tatsächlich
+erreichst, überein, ersetze sie in der URL von Hand.
 
 **Sicherheit:** Der **Token** in der URL (`?t=...`) ist ab dann die einzige Zugriffskontrolle – er wird bei **jedem
 Start neu ausgewürfelt** (`secrets.token_urlsafe`, 128 Bit Zufall) und nirgends gespeichert außer in der angezeigten

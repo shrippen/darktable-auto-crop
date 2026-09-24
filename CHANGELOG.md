@@ -9,8 +9,11 @@ zugreifen kann, ohne einen SSH-Tunnel aufzusetzen. Der **Token** (bei jedem Star
 bleibt dabei die Zugriffskontrolle; die engere Host-Header-Prüfung (Schutz gegen DNS-Rebinding), die nur bei
 `127.0.0.1`/`localhost` greift, entfällt zwangsläufig, sobald die Adresse variieren kann (`App.loopback_only`,
 `companion/server.py`). `--tui` und die normale Ausgabe zeigen dann dauerhaft eine deutliche Warnung samt Adresse; bei
-`--bind 0.0.0.0` wird die angezeigte URL bestmöglich mit einer echten LAN-Adresse statt `0.0.0.0` gefüllt (`guess_lan_ip()`,
-ermittelt die Route ohne ein Paket zu senden). Nur für den eigenständigen `open`-Weg.
+`--bind 0.0.0.0` wird die angezeigte URL mit einer echten LAN-Adresse statt `0.0.0.0` gefüllt (`guess_lan_ip()`):
+alle Netzwerkschnittstellen mit IPv4-Adresse werden bewertet, physische Interfaces mit privater LAN-Adresse
+(192.168.0.0/16, 10.0.0.0/8) gewinnen gegen Docker-/Brücken-/VPN-Interfaces (`docker0`, `br-…`, `veth…`, `tun…`, `wg…`
+usw., an Namen erkannt) und deren üblichen Adressbereich (172.16–31.0.0/12); die vom Betriebssystem für eine
+ausgehende Verbindung gewählte Route zählt als zusätzlicher Kandidat. Nur für den eigenständigen `open`-Weg.
 
 ### Terminal-Statusanzeige für NAS/SSH (`--tui`)
 `auto-crop-negative open ORDNER --tui` zeigt eine laufende Statusanzeige im Terminal statt nur der einmal ausgegebenen
