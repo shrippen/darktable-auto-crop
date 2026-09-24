@@ -8,6 +8,9 @@ import { initEditor, openEditor, refreshEditor, isOpen } from './editor.js';
 
 const $ = (id) => document.getElementById(id);
 const PILL = { analyzing: 'analyzing', reviewing: 'reviewing', locked: 'locked', applied: 'applied', apply_failed: 'failed' };
+const standalone = () => !!store.s && store.s.mode === 'standalone';
+// Ziel als Elementpaar, bei Ausgabeordner mit Pfad
+const targetHtml = (s) => T('tgt_' + s.target.name) + (s.target.out ? ` <code>${esc(s.target.out)}</code>` : '');
 let settingsBuilt = false;
 let refreshTimer = null;
 let logLines = [];
@@ -44,8 +47,8 @@ function renderAll() {
 function renderHeader() {
   const s = store.s;
   $('phase-pill').innerHTML = `<span class="pill" data-state="${PILL[s.phase]}">${T(s.phase)}${s.revision > 1 ? ` · r${s.revision}` : ''}</span>`;
-  $('session-label').textContent = s.session;
-  $('session-label').title = s.session;
+  $('session-label').textContent = `${s.session} · ${s.target.name}`;
+  $('session-label').title = `${s.session} · ${S('target')}: ${S('tgt_' + s.target.name)}${s.target.out ? ' ' + s.target.out : ''}`;
 }
 
 function renderFlow() {
@@ -53,7 +56,8 @@ function renderFlow() {
   const folder = store.s.mode === 'folder';
   const step = (key, hl, done) => {
     const k = folder && (key === 'done' || key === 'apply') ? key + '_folder' : key;
-    return `<div class="flow-node${hl ? ' hl' : ''}${done ? ' is-done' : ''}"><b>${T('step_' + k)}</b><span>${T('step_' + k + '_d')}</span></div>`;
+    const desc = key === 'apply' && standalone() ? T('tgt_' + store.s.target.name) : T('step_' + k + '_d');
+    return `<div class="flow-node${hl ? ' hl' : ''}${done ? ' is-done' : ''}"><b>${T('step_' + k)}</b><span>${desc}</span></div>`;
   };
   const arrow = '<span class="flow-arrow"></span>';
   const analyzed = p !== 'analyzing';
@@ -69,22 +73,30 @@ function renderSummary() {
 function renderNotice() {
   const s = store.s, host = $('notice');
   if (store.offline) {
-    const key = { idle: 'server_stopped_idle', parent: 'server_stopped_parent' }[store.offline] || 'server_stopped';
+    const std = standalone() ? '_std' : '';
+    const key = { idle: 'server_stopped_idle' + std, parent: 'server_stopped_parent' }[store.offline] || 'server_stopped' + std;
     host.innerHTML = `<div class="callout callout-danger notice"><div><strong>${T(key)}</strong></div></div>`;
     return;
   }
   const reopen = `<button type="button" class="btn btn-outline btn-sm" data-act="reopen">${T('reopen')}</button>`;
   if (s.phase === 'locked') {
-    host.innerHTML = `<div class="callout callout-ok notice"><div><strong>${T(s.mode === 'folder' ? 'locked_msg_folder' : 'locked_msg')}</strong></div>${reopen}</div>`;
+    const key = { folder: 'locked_msg_folder', standalone: 'locked_msg_standalone' }[s.mode] || 'locked_msg';
+    host.innerHTML = `<div class="callout callout-ok notice"><div><strong>${T(key)}</strong></div>${reopen}</div>`;
   } else if (s.phase === 'applied' || s.phase === 'apply_failed') {
     const res = store.result || {};
     const imgs = Object.values(res.images || {});
     const cnt = (k) => imgs.filter((i) => i.status === k).length;
-    const errs = Object.entries(res.images || {}).filter(([, v]) => v.status === 'error');
+    // Fehler zuerst, dann Hinweise (etwa "Winkel nicht uebertragen")
+    const msgs = Object.entries(res.images || {}).filter(([, v]) => v.message && (v.status === 'error' || standalone()))
+      .sort(([, a], [, b]) => (b.status === 'error') - (a.status === 'error'));
     const ok = s.phase === 'applied';
-    host.innerHTML = `<div class="callout ${ok ? 'callout-ok' : 'callout-danger'} notice"><div><strong>${T(ok ? (s.mode === 'folder' ? 'applied_msg_folder' : 'applied_msg') : 'failed_msg')}</strong>
+    const sfx = { folder: '_folder', standalone: '_standalone' }[s.mode] || '';
+    const title = ok ? 'applied_msg' + sfx : (standalone() ? 'failed_msg_standalone' : 'failed_msg');
+    host.innerHTML = `<div class="callout ${ok ? 'callout-ok' : 'callout-danger'} notice"><div><strong>${T(title)}</strong>
+      ${standalone() ? `<div class="notice-list">${T('target')}: ${targetHtml(s)}</div>` : ''}
+      ${res.message ? `<div class="notice-list">${esc(res.message)}</div>` : ''}
       ${imgs.length ? `<div class="notice-list">${T('result_ok')}: ${cnt('ok')} · ${T('result_skipped')}: ${cnt('skipped')} · ${T('result_error')}: ${cnt('error')}</div>` : ''}
-      ${errs.length ? `<ul class="notice-list">${errs.slice(0, 8).map(([id, v]) => `<li>${esc((byId(id) || {}).filename || id)}: ${esc(v.message || '')}</li>`).join('')}</ul>` : ''}
+      ${msgs.length ? `<ul class="notice-list">${msgs.slice(0, 8).map(([id, v]) => `<li>${esc((byId(id) || {}).filename || id)}: ${esc(v.message)}</li>`).join('')}</ul>` : ''}
       </div>${reopen}</div>`;
   } else if (s.mode === 'folder') {
     const ref = s.summary.ref;
@@ -203,7 +215,7 @@ async function finish() {
   const sum = await guard(() => api('GET', 'summary'));
   if (!sum) return;
   const notes = [];
-  if (sum.changed && store.s.applied_revision) notes.push(esc(S('finish_changed', sum.changed)));
+  if (sum.changed && store.s.applied_revision) notes.push(esc(S(standalone() ? 'finish_changed_standalone' : 'finish_changed', sum.changed)));
   if (sum.warnings.length) notes.push(esc(S('finish_stale', sum.warnings.length)));
   const folder = store.s.mode === 'folder';
   const imgs = store.s.images;
@@ -214,8 +226,10 @@ async function finish() {
     : [{ value: sum.summary.apply, label: 'apply_n' }, { value: sum.summary.red, label: 'flagged_red', color: 'red' },
        { value: sum.summary.skipped, label: 'skipped', color: 'fg3' }];
   if (folder) notes.push(T('finish_folder_note'));
+  if (standalone()) notes.push(`${T('target')}: ${targetHtml(store.s)}`);
+  const body = folder ? 'finish_body_folder' : standalone() ? 'finish_body_standalone' : 'finish_body';
   const ok = await dialog({
-    title: folder ? 'finish_title_folder' : 'finish_title', body: folder ? 'finish_body_folder' : 'finish_body',
+    title: folder ? 'finish_title_folder' : 'finish_title', body,
     confirm: folder ? 'finish_folder' : 'finish', cancel: 'back', notes, facts,
   });
   if (!ok) return;

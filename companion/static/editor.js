@@ -214,7 +214,7 @@ function refDevHtml(img) {
 
 const fmtDeg = (d) => `${d > 0 ? '+' : ''}${d.toFixed(2)}°`;
 
-// Schraeglage des Filmrahmens (gemessen an den vier Crop-Kanten) und Geradestellen in darktable.
+// Schraeglage des Filmrahmens (gemessen an den vier Crop-Kanten) und Geradestellen beim Anwenden.
 function skewHtml(img) {
   const sk = img.skew, locked = !isEditable();
   if (!sk || sk.deg == null) return `<div><h3>${T('skew')}</h3><p class="field-hint">${T('skew_none')}</p></div>`;
@@ -225,18 +225,23 @@ function skewHtml(img) {
     <p class="field-hint">${esc(sides)}</p>`;
   let ctl;
   const corrected = img.straighten != null && sk.straight && Math.abs(sk.straight.deg - img.straighten) < 0.15;
-  const target = store.s.mode === 'darktable' ? 'skew_on_h' : 'skew_on_folder_h';
+  // Texte je Modus: darktable dreht selbst, Kalibrierung speichert den Winkel, eigenstaendig je nach Ziel
+  const sfx = { darktable: '', folder: '_folder', standalone: '_std' }[store.s.mode] ?? '';
+  const onKey = { darktable: 'skew_on', folder: 'skew_on_folder', standalone: 'skew_on_std' }[store.s.mode] || 'skew_on';
+  const target = sfx === '' ? 'skew_on_h' : `skew_on${sfx}_h`;
+  const noRotate = store.s.target && !store.s.target.straightens
+    ? `<p class="field-hint">${T('skew_no_target')}</p>` : '';
   if (img.straighten != null) {
-    ctl = `<div class="callout callout-ok"><strong>${T(store.s.mode === 'darktable' ? 'skew_on' : 'skew_on_folder')} ${fmtDeg(img.straighten)}</strong>
+    ctl = `<div class="callout callout-ok"><strong>${T(onKey)} ${fmtDeg(img.straighten)}</strong>
       <div class="chips" style="margin-top:.5rem;align-items:center">
         <label class="toolbar-label" for="ed-deg">${T('skew_angle')}</label>
         <input class="input" id="ed-deg" data-deg type="number" step="0.1" min="-10" max="10" value="${img.straighten}" style="width:6rem"${locked ? ' disabled' : ''}>
         <button type="button" class="btn btn-outline btn-sm" data-act="straighten-off"${locked ? ' disabled' : ''}>${T('skew_off')}</button></div>
-      <p class="field-hint" style="margin-top:.5rem">${T(target)}</p>
+      <p class="field-hint" style="margin-top:.5rem">${T(target)}</p>${noRotate}
       ${!img.manual_crop ? `<p class="field-hint">${T(corrected ? 'skew_corrected' : 'skew_transformed')}</p>` : ''}</div>`;
   } else {
-    ctl = `<button type="button" class="btn ${strong ? 'btn-accent' : 'btn-outline'} btn-sm" data-act="straighten-on"${locked ? ' disabled' : ''}>${S('skew_do', fmtDeg(sk.deg))}</button>
-      <p class="field-hint">${T(store.s.mode === 'darktable' ? 'skew_off_h' : 'skew_off_folder_h')}</p>`;
+    ctl = `<button type="button" class="btn ${strong ? 'btn-accent' : 'btn-outline'} btn-sm" data-act="straighten-on"${locked ? ' disabled' : ''}>${S(sfx === '' ? 'skew_do' : 'skew_do_std', fmtDeg(sk.deg))}</button>
+      <p class="field-hint">${T(sfx === '' ? 'skew_off_h' : `skew_off${sfx}_h`)}</p>${noRotate}`;
   }
   return `<div><h3>${T('skew')}</h3>${rows}${ctl}</div>`;
 }
