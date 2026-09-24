@@ -22,6 +22,10 @@ if [ "${1:-}" = "--standalone" ]; then
     if ! "$VENV_DIR/bin/pip" install rawpy; then
         echo "  ! rawpy nicht installiert: RAWs brauchen dann darktable-cli oder rawtherapee-cli"
     fi
+    # rich: Terminal-Statusanzeige (--tui) fuer SSH/NAS-Sitzungen ohne lokalen Browser; optional
+    if ! "$VENV_DIR/bin/pip" install rich; then
+        echo "  ! rich nicht installiert: --tui (Terminal-Statusanzeige) steht dann nicht zur Verfuegung"
+    fi
     ln -sf "$VENV_DIR/bin/auto-crop-negative" "$BIN_DIR/auto-crop-negative"
     echo "  ✓ ${BIN_DIR}/auto-crop-negative"
     case ":${PATH}:" in
@@ -31,6 +35,7 @@ if [ "${1:-}" = "--standalone" ]; then
     echo ""
     echo "Start:  auto-crop-negative ~/Scans/Film-12"
     echo "Prüfen: auto-crop-negative check ~/Scans/Film-12"
+    echo "Per SSH/NAS ohne lokalen Browser: auto-crop-negative ~/Scans/Film-12 --tui"
     exit 0
 fi
 LUA_DIR="${HOME}/.config/darktable/lua"

@@ -13,6 +13,7 @@ dependencies = ["opencv-python-headless", "numpy", "pillow"]
 
 [project.optional-dependencies]
 raw = ["rawpy"]           # RAWs ohne darktable/RawTherapee entwickeln
+tui = ["rich"]            # Terminal-Statusanzeige (--tui), fuer SSH/NAS-Sitzungen
 
 [project.scripts]
 auto-crop-negative = "companion.__main__:main"
