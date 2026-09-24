@@ -1,7 +1,7 @@
 """Analyse und Neu-Erkennung fuer eine Sitzung.
 
 Die eigentliche Erkennung bleibt in ``auto_crop_negative.py``; dieses Modul
-- exportiert Raws (``export.py``) in einen Ordner je Filmrolle, damit der
+- exportiert Raws (``converters.py``) in einen Ordner je Filmrolle, damit der
   Film-Konsens (ein Ordner = eine Rolle) weiter funktioniert,
 - ruft ``compute_batch`` fuer die Standardanalyse auf,
 - bietet eine Einzelbild-Erkennung mit frei waehlbaren Parametern
@@ -19,6 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from . import converters             # noqa: E402
 from . import export as exp          # noqa: E402
 from .session import SessionError, crop_from_pixels, crop_to_straight   # noqa: E402
 from .thumbs import image_size       # noqa: E402
@@ -240,7 +241,7 @@ class Analyzer:
                 if err:
                     failed[iid] = err
 
-            exp.export_many(jobs, on_done)
+            converters.export_many(jobs, on_done, s.converter_name)
             for iid, err in failed.items():
                 s.image(iid)["export"] = None
                 s.apply_detection({iid: {"error": f"Export: {err}"}})

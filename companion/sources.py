@@ -1,25 +1,56 @@
-"""Eingabequellen: Ordner mit Bildern (Kalibrier-/Entwicklungsmodus ohne darktable)."""
+"""Eingabequellen ohne darktable: ein Ordner mit Bildern.
+
+- ``folder_job``:     Kalibrierung (JPEG/TIFF/PNG, Referenzen aus reviews.json)
+- ``standalone_job``: eigenstaendige Nutzung (zusaetzlich RAWs; Ziel siehe targets/)
+"""
 import os
 
+from .export import RAW_EXTENSIONS
 from .session import crop_from_pixels, read_json, SessionError
+from .targets import OUTPUT_MARKER
 from .thumbs import image_size
 
 IMG_EXT = (".jpg", ".jpeg", ".tif", ".tiff", ".png")
+RAW_EXT = tuple(sorted(RAW_EXTENSIONS))
 
 
-def _images_in(folder):
-    """Bilder direkt im Ordner oder in dessen Unterordnern (eine Ebene = Filmrollen)."""
+def _images_in(folder, exts=IMG_EXT):
+    """Bilder direkt im Ordner oder in dessen Unterordnern (eine Ebene = Filmrollen).
+    Ausgabeordner (mit OUTPUT_MARKER) werden uebersprungen, sonst kaemen Kopien wieder hinein."""
     found = []
     entries = sorted(os.listdir(folder))
-    subdirs = [e for e in entries if os.path.isdir(os.path.join(folder, e))]
+    subdirs = [e for e in entries if os.path.isdir(os.path.join(folder, e))
+               and not os.path.exists(os.path.join(folder, e, OUTPUT_MARKER))]
     dirs = [os.path.join(folder, d) for d in subdirs] or [folder]
-    if any(e.lower().endswith(IMG_EXT) for e in entries) and subdirs:
+    if any(e.lower().endswith(exts) for e in entries) and subdirs:
         dirs.insert(0, folder)
     for d in dirs:
         for f in sorted(os.listdir(d)):
-            if f.lower().endswith(IMG_EXT):
+            if f.lower().endswith(exts) and not f.startswith("."):
                 found.append(os.path.join(d, f))
     return found
+
+
+def _drop_raw_twins(paths):
+    """RAW+JPEG der Kamera: nur das RAW behalten (gleicher Name im selben Ordner)."""
+    raws = {os.path.splitext(p)[0].lower() for p in paths if p.lower().endswith(RAW_EXT)}
+    return [p for p in paths if p.lower().endswith(RAW_EXT) or os.path.splitext(p)[0].lower() not in raws]
+
+
+def standalone_job(folder, films=None, settings=None):
+    """Job fuer die eigenstaendige Nutzung: alle Bilder und RAWs im Ordner (eine Ebene Rollen).
+    Ziel, Konverter und Ausgabeordner setzt der Aufrufer."""
+    folder = os.path.abspath(folder)
+    if not os.path.isdir(folder):
+        raise SessionError(f"Ordner nicht gefunden: {folder}", 404)
+    paths = _drop_raw_twins(_images_in(folder, IMG_EXT + RAW_EXT))
+    if films:
+        paths = [p for p in paths if _film_matches(os.path.basename(os.path.dirname(p)), films)]
+    if not paths:
+        raise SessionError(f"keine Bilder in {folder}", 404)
+    images = [{"id": i, "path": p, "film": os.path.basename(os.path.dirname(p))}
+              for i, p in enumerate(paths, start=1)]
+    return {"mode": "standalone", "folder": folder, "settings": settings or {}, "images": images}
 
 
 def _film_matches(film, wanted):
