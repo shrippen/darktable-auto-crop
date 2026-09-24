@@ -222,3 +222,23 @@ siehe `CHANGELOG.md`:
 **Bewusst nicht angegangen:** Ziel-Wahl bleibt pro Sitzung global, nicht pro Bild/Unterordner – ein Sammelordner mit
 Rollen unterschiedlicher Herkunft (Journey 7) braucht weiterhin mehrere Aufrufe auf Unterordnern, wenn die Rollen
 verschiedene Ziele brauchen. Das wird jetzt aber vor Fertig sichtbar gemacht statt stillschweigend falsch zu laufen.
+
+## Nachtrag: Terminal-Statusanzeige für NAS/SSH-Nutzung (2026-09-24)
+
+Journey 5 („reiner Kommandozeilen-Nutzer ohne GUI-Programme, NAS/Server") war zwar nicht *kaputt*, aber dünn: nach dem
+Start gab `open` nur einmal die URL aus, danach lief der Prozess still weiter – ohne die Web-UI im Browser (der
+Normalfall bei SSH auf ein NAS) sah man nichts vom Fortschritt.
+
+- **Umgesetzt:** `--tui` (nur beim eigenständigen `open`-Weg, siehe README-Abschnitt „Terminal-Statusanzeige").
+  Läuft im selben Prozess wie der Server (kein HTTP-Umweg), zeigt Sitzung/Ziel/Zähler/Fortschritt/Ergebnis/URL, zwei
+  Tasten (`O` Browser, `Q` beenden). Optionale Abhängigkeit `rich` (Extra `[tui]`), sonst kein neuer Bedarf.
+- **Entscheidung dokumentiert** (siehe Gespräch): `rich`/`textual` statt reinem `curses`, weil deutlich weniger
+  eigener Layout-Code für den Preis einer zusätzlichen, gut gepflegten reinen Python-Abhängigkeit – das Projekt hat mit
+  OpenCV/NumPy/Pillow/rawpy für die eigenständige Nutzung ohnehin schon nicht-stdlib-Abhängigkeiten, „nur Stdlib" gilt
+  explizit nur für `companion/server.py` selbst. Start nur mit explizitem `--tui`, kein automatisches Erkennen eines
+  Terminals, um bestehende Skripte/Automatisierung nicht durch ein plötzliches Vollbild-UI zu überraschen.
+- **Getestet:** `tests/test_tui.py`, darunter ein echter Durchlauf in einem Pseudo-Terminal (stdlib `pty`) – Prozess
+  starten, Ausgabe bis zum ersten Frame abwarten, `Q` senden, sauberes Ende samt Abbau der Terminal-Sperre prüfen. Dabei
+  zwei echte Bugs gefunden und behoben: `Live.update()` aktualisiert ohne `refresh=True` gar nichts (nur der
+  Konstruktor-Frame wäre je sichtbar geworden), und lange Ausgabepfade brachen die Kopfzeile hässlich um (jetzt
+  `no_wrap`/`overflow="ellipsis"`).

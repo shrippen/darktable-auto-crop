@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Terminal-Statusanzeige für NAS/SSH (`--tui`)
+`auto-crop-negative open ORDNER --tui` zeigt eine laufende Statusanzeige im Terminal statt nur der einmal ausgegebenen
+URL: Sitzung, Ziel, Zähler (grün/gelb/rot/anwenden), Fortschrittsbalken bei Export/Erkennung, Ergebnis nach „Fertig“,
+die URL groß in der Mitte. Taste `O` versucht, den Browser zu öffnen (mit Hinweis, wenn keiner da ist – der NAS-
+Regelfall), `Q` beendet den Server. Läuft im selben Prozess wie der HTTP-Server (der wandert dafür in einen
+Hintergrund-Thread, `companion/server.py` `serve(..., tui=True)`), liest Sitzung/Fortschritt direkt statt über HTTP.
+Neue optionale Abhängigkeit `rich` (Extra `[tui]`, `install.sh --standalone` installiert sie mit); ohne `rich`, ohne
+POSIX-Terminal (`termios`/`tty`, kein Windows) oder ohne TTY an stdin/stdout meldet `--tui` das sofort und klar
+(`companion/tui.py` `unavailable_reason()`), statt mittendrin zu scheitern. Nur für den eigenständigen `open`-Weg;
+`serve --job`/`serve --folder` (darktable, Kalibrierung) bleiben unverändert ohne Terminal-Oberfläche – das Flag
+existiert dort argparse-seitig gar nicht erst.
+
 ### Ziel-Auswahl in der Web-UI, Lücken aus der Journey-Analyse geschlossen
 Eine Durchsicht typischer Abläufe der eigenständigen Nutzung (Erstnutzer, Lightroom-Digitalisierer, mehrtägige Sitzungen,
 gemischte Ordner, …) fand sechs konkrete Lücken; alle behoben.

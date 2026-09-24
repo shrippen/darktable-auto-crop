@@ -153,6 +153,7 @@ auto-crop-negative open ~/Scans --target xmp --films 33 34 --converter rawpy --o
 | `--new` | neu analysieren statt fortsetzen | aus |
 | `--no-browser` | Browser nicht öffnen (URL steht in der Ausgabe) | aus |
 | `--idle-minutes` | Server endet nach so viel Leerlauf | 30 |
+| `--tui` | Terminal-Statusanzeige statt nur der URL (siehe unten) | aus |
 
 ### Ziele
 
@@ -204,6 +205,25 @@ Grenzen der Ziele (ehrlicher Stand):
 Tabelle. Eine Sitzung nutzt genau einen Konverter, damit alle Bilder einer Rolle denselben Rahmen haben. Die Erkennung
 funktioniert auch auf nicht invertierten Negativen, ist dort aber etwas schwächer (Trefferquote 84 % gegen 87 % auf
 entwickelten Bildern, siehe `roadmap.md`, Nachtrag 2026-09-22).
+
+### Terminal-Statusanzeige (`--tui`)
+
+Ohne `--tui` gibt `open` die URL einmal aus und der Prozess läuft still im Hintergrund weiter – auf einem NAS oder per
+SSH sieht man danach nichts mehr vom Fortschritt, außer man öffnet die Web-UI selbst. `--tui` zeigt stattdessen eine
+laufende Statusanzeige direkt im Terminal: Sitzung und Ziel, Zähler (grün/gelb/rot/anwenden), einen Fortschrittsbalken
+während Export/Erkennung, danach das Ergebnis nach „Fertig“, und die URL groß in der Mitte. Zwei Tasten:
+
+| Taste | Wirkung |
+|-------|---------|
+| `O` | versucht, die URL im Browser zu öffnen; ohne lokalen Browser (der NAS-Regelfall) erscheint ein Hinweis, die URL auf einem anderen Gerät zu öffnen |
+| `Q` | beendet den Server (wie „Server beenden“ in der Web-UI) |
+
+Kein Ersatz für die Web-UI: Prüfen, Korrigieren und Fertig laufen weiterhin nur dort. `--tui` ist reine Statusanzeige,
+läuft im selben Prozess (kein zusätzlicher Netzwerk-Umweg) und braucht das Paket `rich`
+(`pip install "auto-crop-negative[tui]"`, bei `--standalone` von `install.sh` mitinstalliert) sowie ein echtes Terminal
+(funktioniert über SSH; nicht unter Windows, nicht in einer Pipe/einem Skript). Fehlt eine Voraussetzung, meldet
+`--tui` das sofort und klar (`auto-crop-negative check` zeigt den Stand auch ohne `--tui` an). Nur für diesen
+eigenständigen Weg – über darktable oder `serve --folder` bleibt es wie bisher ganz ohne Terminal-Oberfläche.
 
 ## Nutzung mit darktable
 
@@ -295,7 +315,9 @@ python3 auto_crop_negative.py --debug -o /tmp/debug_crop.jpg '/path/to/ablichtun
 
 Die JSON-Ausgabe enthält x, y, width, height, confidence, needs_review. Browser-Test: `tests/ui_smoke.py` (benötigt
 Playwright und `Testphotos/`). `tests/test_standalone.py` deckt Ziele, Konverter-Wahl, Bildsuche und CLI ab; der
-rawpy-Test erzeugt dafür eine DNG (benötigt `rawpy` und `tifffile`, sonst übersprungen).
+rawpy-Test erzeugt dafür eine DNG (benötigt `rawpy` und `tifffile`, sonst übersprungen). `tests/test_tui.py` prüft die
+Statusanzeige, darunter ein echter Durchlauf in einem Pseudo-Terminal (`pty`): startet `--tui`, drückt `Q`, prüft das
+saubere Ende (benötigt `rich`, sonst übersprungen).
 
 ## Dateien
 
@@ -306,6 +328,7 @@ rawpy-Test erzeugt dafür eine DNG (benötigt `rawpy` und `tifffile`, sonst übe
 | `companion/` | Companion: lokaler Server, Sitzungen, Web-Oberfläche (`static/`), CLI (`__main__.py`) |
 | `companion/converters.py` | RAW-Konverter (Eingabe-Adapter): darktable, RawTherapee, rawpy |
 | `companion/targets/` | Ziele (Ausgabe-Adapter): darktable, reviews, json, copies, xmp, rawtherapee |
+| `companion/tui.py` | Terminal-Statusanzeige (`--tui`), nur eigenständige Nutzung |
 | `auto_crop_negative.lua` | darktable-Integration (Lua-Plugin) |
 | `pyproject.toml` | Python-Paket, Befehl `auto-crop-negative` |
 | `tests/` | Unit-/Integrationstests, Lua-Stub, Browser-Smoke-Test |
