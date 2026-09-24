@@ -524,6 +524,26 @@ class CliTest(Tmp):
             second = run.call_args[0][0]
         self.assertNotEqual(second.dir, first.dir)
 
+    def test_bind_defaults_to_loopback_and_is_passed_through(self):
+        self.file("Film/a.jpg")
+        root = os.path.join(self.tmp, "root")
+        with unittest.mock.patch("companion.__main__._run", return_value=0) as run:
+            self.run_main([self.tmp, "--root", root, "--no-browser"])
+            self.assertEqual(run.call_args.kwargs["bind"], "127.0.0.1")
+            self.run_main(["open", self.tmp, "--root", root, "--no-browser", "--bind", "0.0.0.0"])
+            self.assertEqual(run.call_args.kwargs["bind"], "0.0.0.0")
+
+    def test_non_loopback_bind_prints_security_warning(self):
+        self.file("Film/a.jpg")
+        root = os.path.join(self.tmp, "root")
+        started = {}
+        with unittest.mock.patch("companion.__main__.serve", side_effect=lambda app, **k: started.update(app=app)):
+            code, out = self.run_main([self.tmp, "--root", root, "--no-browser", "--bind", "127.0.0.2"])
+        self.addCleanup(started["app"].httpd.server_close)
+        self.assertEqual(code, 0)
+        self.assertIn("im Netzwerk erreichbar", out)
+        self.assertIn("127.0.0.2", out)
+
     def test_open_without_raw_converter_fails_clearly(self):
         self.file("Film/a.nef")
         err = io.StringIO()

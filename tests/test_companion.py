@@ -394,6 +394,56 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(data["images"][0]["group"], "green")
 
 
+class BindTest(unittest.TestCase):
+    """``--bind``: Server im Netzwerk erreichbar machen (nur eigenstaendige Nutzung)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_default_bind_is_loopback_only(self):
+        app = make_server(make_session(self.tmp))
+        self.addCleanup(app.httpd.server_close)
+        self.assertTrue(app.loopback_only)
+        self.assertTrue(app.url.startswith("http://127.0.0.1:"))
+
+    def test_wildcard_bind_uses_guessed_lan_ip_for_display(self):
+        from companion.server import App
+        app = App(make_session(self.tmp, mode="darktable"), bind="0.0.0.0")
+        app.port = 12345
+        self.assertFalse(app.loopback_only)
+        self.assertNotEqual(app.display_host, "0.0.0.0")   # kein Browser koennte das oeffnen
+        self.assertIn(app.display_host, app.url)
+
+    def test_non_loopback_bind_relaxes_host_check_but_keeps_token(self):
+        # 127.0.0.2 ist im ganzen 127.0.0.0/8 gueltig und lokal bindbar, ohne echtes Netzwerk
+        # zu beruehren - simuliert hier bewusst nur die Host-Pruefung, nicht echte LAN-Erreichbarkeit.
+        app = make_server(make_session(self.tmp), bind="127.0.0.2")
+        self.addCleanup(app.httpd.server_close)
+        self.assertFalse(app.loopback_only)
+        self.assertEqual(app.display_host, "127.0.0.2")
+        t = threading.Thread(target=app.httpd.serve_forever, daemon=True)
+        t.start()
+        self.addCleanup(app.httpd.shutdown)
+        base = f"http://127.0.0.2:{app.port}"
+
+        def get(host, token):
+            req = urllib.request.Request(base + "/api/session")
+            if host:
+                req.add_header("Host", host)
+            if token:
+                req.add_header("X-Token", token)
+            try:
+                return urllib.request.urlopen(req, timeout=5).status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        self.assertEqual(get(f"127.0.0.2:{app.port}", app.token), 200)
+        self.assertEqual(get(f"irgendein-name:{app.port}", app.token), 200)   # Hostname egal
+        self.assertEqual(get(f"127.0.0.2:{app.port}", "falsch"), 403)         # Token bleibt Pflicht
+        self.assertEqual(get("127.0.0.2:9999", app.token), 403)               # Port muss stimmen
+
+
 @unittest.skipUnless(PHOTOS, "Testfotos fehlen")
 class AnalysisTest(unittest.TestCase):
     """Echte Erkennung im Ordnermodus (cv2), auf sechs Bildern."""
