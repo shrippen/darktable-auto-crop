@@ -158,9 +158,17 @@ def _open(args):
     out = os.path.abspath(args.out or os.path.join(folder, targets.DEFAULT_OUT_DIR))
     job.update(target=target, converter=converter, out=out)
 
-    s, added = (None, 0) if args.new else _resume_standalone(args.root, folder, target, job["images"])
-    resumed = s is not None
-    if s is None:
+    s = None if args.new else _find_standalone(args.root, folder, target, job["images"])
+    resumed, added, lock = s is not None, 0, None
+    if resumed:
+        # Erst sperren, dann ergaenzen: laeuft schon ein Server auf dieser Sitzung, darf dieser
+        # Prozess state.json nicht anfassen - der laufende Server kennt die neuen Bilder nicht
+        # und wuerde sie beim naechsten Speichern wieder ueberschreiben.
+        lock = acquire_lock(s.dir)
+        if lock is None:
+            return _report_running(s, not args.no_browser)
+        added = s.add_images(job["images"])
+    else:
         s = sess.Session.create(job, args.root)
 
     films = len({i["film"] for i in job["images"]})
@@ -174,15 +182,14 @@ def _open(args):
         print(f"Sitzung:    {s.state['session']} (fortgesetzt{extra}; --new fuer Neuanalyse)")
     else:
         print(f"Sitzung:    {s.state['session']}")
-    return _run(s, args, not args.no_browser, None, use_tui=args.tui, bind=args.bind)
+    return _run(s, args, not args.no_browser, None, use_tui=args.tui, bind=args.bind, lock=lock)
 
 
-def _resume_standalone(root, folder, target, items):
+def _find_standalone(root, folder, target, items):
     """Juengste Sitzung fuer denselben Ordner und dasselbe Ziel, deren Bilder eine Teilmenge der
     jetzt gefundenen sind (sonst: fehlen ihr Bilder, die es jetzt nicht mehr gibt, passt sie nicht
-    mehr -> neue Sitzung). Neue Bilder (Ordner ist gewachsen) werden ergaenzt, ohne die
-    bestehenden Entscheidungen anzutasten. Rueckgabe: ``(Session, Zahl neuer Bilder)`` oder
-    ``(None, 0)``."""
+    mehr -> neue Sitzung). Aendert nichts; neue Bilder ergaenzt der Aufrufer erst unter der
+    Sitzungssperre (``Session.add_images``). Rueckgabe: Session oder None."""
     have = {i["path"] for i in items}
     for d in reversed(sess.list_sessions(root)):
         st = sess.read_json(os.path.join(d, "state.json"), {}) or {}
@@ -193,26 +200,34 @@ def _resume_standalone(root, folder, target, items):
         known = {i["path"] for i in st.get("images", {}).values()}
         if not known or not known.issubset(have):
             continue
-        s = sess.Session(d)
-        return s, s.add_images(items)
-    return None, 0
+        return sess.Session(d)
+    return None
 
 
-def _run(s, args, open_browser, watch_pid, use_tui=False, bind="127.0.0.1"):
-    lock = acquire_lock(s.dir)                    # gehalten, solange dieser Prozess laeuft
+def _report_running(s, open_browser):
+    """Ein anderer Prozess bedient die Sitzung schon: dessen URL nennen statt mitzubedienen."""
+    info = sess.read_json(os.path.join(s.dir, "server.json"))
+    url = info and info.get("url")
+    if url:
+        print(f"Sitzung wird bereits bedient: {url}", flush=True)
+        if open_browser:
+            webbrowser.open(url)
+    else:
+        print("Sitzung wird bereits von einem anderen Prozess bedient.", file=sys.stderr)
+    return 0
+
+
+def _run(s, args, open_browser, watch_pid, use_tui=False, bind="127.0.0.1", lock=None):
+    lock = lock or acquire_lock(s.dir)           # gehalten, solange dieser Prozess laeuft
     if lock is None:
-        info = sess.read_json(os.path.join(s.dir, "server.json"))
-        url = info and info.get("url")
-        if url:
-            print(f"Sitzung wird bereits bedient: {url}", flush=True)
-            if open_browser:
-                webbrowser.open(url)
-        else:
-            print("Sitzung wird bereits von einem anderen Prozess bedient.", file=sys.stderr)
-        return 0
+        return _report_running(s, open_browser)
     sess.cleanup_old(args.root)                  # 14-Tage-Regel, nebenbei
-    app = make_server(s, args.port, watch_pid=watch_pid,
-                      idle_seconds=args.idle_minutes * 60, bind=bind)
+    try:
+        app = make_server(s, args.port, watch_pid=watch_pid,
+                          idle_seconds=args.idle_minutes * 60, bind=bind)
+    except OSError as e:                         # Adresse fremd, Port belegt, kein IPv6 ...
+        print(f"Fehler: Server kann nicht auf {bind}:{args.port or 'auto'} lauschen: {e}", file=sys.stderr)
+        return 1
     if not app.loopback_only:
         # Erscheint bei --tui zusaetzlich dauerhaft im Statuspanel (der Alt-Screen verdeckt sonst
         # jede Ausgabe von hier); ohne --tui bleibt es einfach im Terminal stehen.

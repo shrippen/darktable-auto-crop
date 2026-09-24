@@ -579,6 +579,18 @@ class Session:
             self.state["target"] = name
             self.save()
 
+    def retry(self, ids):
+        """Bilder erneut zur Analyse vormerken (Phase zurueck auf "analyzing")."""
+        with self.lock:
+            self._require_editable()
+            if not ids:
+                raise SessionError("keine Bilder angegeben")
+            imgs = [self.image(iid) for iid in ids]      # erst alle pruefen, dann aendern
+            for img in imgs:
+                img["status"], img["error"] = "pending", None
+            self.state["phase"] = "analyzing"
+            self.save()
+
     def set_settings(self, patch):
         with self.lock:
             self._require_editable()
