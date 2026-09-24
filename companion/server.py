@@ -79,10 +79,49 @@ def acquire_lock(session_dir):
     return fh
 
 
-def guess_lan_ip():
-    """Beste Vermutung fuer eine im LAN erreichbare eigene Adresse, nur fuer die Anzeige bei
-    ``--bind 0.0.0.0``: welche Route das Betriebssystem fuer ausgehende Pakete waehlen wuerde
-    (verbindet ohne Daten zu senden). ``None`` ohne Route (z. B. offline)."""
+_VIRTUAL_IFACE_PREFIXES = (          # Docker/Container/Bruecken/VPN - nachrangig, nicht ausgeschlossen
+    "lo", "docker", "br-", "veth", "cni", "flannel", "virbr", "vmnet", "vboxnet",
+    "tun", "tap", "wg", "zt", "utun", "awdl", "llw", "gif", "stf", "bridge", "ifb",
+)
+SIOCGIFADDR = 0x8915
+
+
+def _iface_ipv4(name):
+    """IPv4-Adresse einer Netzwerkschnittstelle per ``ioctl`` (nur Linux; anderswo/ohne
+    zugewiesene Adresse liefert der Aufruf einen OSError, die Schnittstelle wird dann
+    uebersprungen statt das Raten scheitern zu lassen)."""
+    import fcntl
+    import socket
+    import struct
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        packed = struct.pack("256s", name[:15].encode())
+        return socket.inet_ntoa(fcntl.ioctl(s.fileno(), SIOCGIFADDR, packed)[20:24])
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+def _score_candidate(name, ip):
+    """Hoeher = eher die richtige, von aussen erreichbare LAN-Adresse. Docker-/Bruecken-/VPN-
+    Schnittstellen (am Namen erkannt) und ihr ueblicher Adressbereich (172.16-31.0.0/12, Dockers
+    Standard-Spielwiese) werden bewusst nach hinten gestellt, nicht ausgeschlossen: bei einer
+    reinen Docker-Netzwerkumgebung ohne echtes LAN ist "wahrscheinlich falsch" besser als nichts."""
+    octets = [int(o) for o in ip.split(".")]
+    virtual_name = name.lower().startswith(_VIRTUAL_IFACE_PREFIXES)
+    docker_range = octets[0] == 172 and 16 <= octets[1] <= 31
+    private_lan = (octets[0] == 192 and octets[1] == 168) or octets[0] == 10
+    score = 0 if virtual_name else 10
+    score += 5 if private_lan else 0
+    score -= 8 if docker_range else 0
+    return score
+
+
+def _route_ip():
+    """Welche eigene Adresse das Betriebssystem fuer eine ausgehende Verbindung waehlen wuerde
+    (verbindet ohne Daten zu senden). Funktioniert auch, wo ``_iface_ipv4`` nicht geht (kein
+    Linux); ``None`` ganz ohne Route (z. B. offline und ohne jedes Interface)."""
     import socket
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -92,6 +131,31 @@ def guess_lan_ip():
         return None
     finally:
         s.close()
+
+
+def guess_lan_ip():
+    """Beste Vermutung fuer eine im LAN erreichbare eigene Adresse, nur fuer die Anzeige bei
+    ``--bind 0.0.0.0`` (das Lauschen selbst betrifft das nicht, das laeuft auf allen Interfaces).
+    Bevorzugt eine physische Netzwerkschnittstelle mit privater LAN-Adresse gegenueber Docker-/
+    Bruecken-/VPN-Interfaces; die vom Betriebssystem fuer eine ausgehende Verbindung gewaehlte
+    Route zaehlt als zusaetzlicher Kandidat (kleiner Bonus: sie spiegelt echtes Routing), damit bei
+    mehreren echten LAN-Interfaces das wahrscheinlichere gewinnt. ``None`` ganz ohne Kandidaten."""
+    import socket
+    candidates = []
+    route_ip = _route_ip()
+    if route_ip:
+        candidates.append((_score_candidate("", route_ip) + 3, route_ip))
+    try:
+        for _, name in socket.if_nameindex():
+            ip = _iface_ipv4(name)
+            if ip and not ip.startswith("127.") and not ip.startswith("169.254."):
+                candidates.append((_score_candidate(name, ip), ip))
+    except (OSError, AttributeError):
+        pass          # kein POSIX-if_nameindex (z. B. Windows) - route_ip bleibt als Kandidat
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: -c[0])
+    return candidates[0][1]
 
 
 def pid_alive(pid):
