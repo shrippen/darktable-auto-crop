@@ -49,7 +49,7 @@ function tileMarkup(img) {
 function updateTile(el, img) {
   const sig = JSON.stringify([img.group, img.confidence, img.crop, img.decision, img.status, img.error,
     img.proposal && (img.proposal.crop || img.proposal.error), img.manual_crop, img.export_size,
-    img.has_export, img.apply, img.ref && [img.ref.hit, img.ref.score], store.s.mode,
+    img.has_export, img.apply, img.target_ok, img.ref && [img.ref.hit, img.ref.score], store.s.mode,
     store.selected.has(String(img.id)), store.s.phase]);
   if (el._sig === sig) return;
   el._sig = sig;
@@ -95,6 +95,7 @@ function updateTile(el, img) {
   else if (sk && sk.deg != null && Math.abs(sk.deg) >= 0.5 && sk.conf >= 0.4) badges.push(`<span class="tile-badge">${T('skewed')} ${fmtDeg(sk.deg)}</span>`);
   if (img.decision === 'skip') badges.push(`<span class="tile-badge is-off">${T('skip')}</span>`);
   if (img.decision === 'accept') badges.push(`<span class="tile-badge">${T('accept')}</span>`);
+  if (store.s.mode === 'standalone' && !img.target_ok) badges.push(`<span class="tile-badge is-off">${T('target_skip_badge')}</span>`);
   el.querySelector('.tile-badges').innerHTML = badges.join('');
   // Vorschlag der Neu-Erkennung als zweites Overlay ist im Editor; hier nur die Marke.
 }

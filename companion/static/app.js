@@ -11,6 +11,8 @@ const PILL = { analyzing: 'analyzing', reviewing: 'reviewing', locked: 'locked',
 const standalone = () => !!store.s && store.s.mode === 'standalone';
 // Ziel als Elementpaar, bei Ausgabeordner mit Pfad
 const targetHtml = (s) => T('tgt_' + s.target.name) + (s.target.out ? ` <code>${esc(s.target.out)}</code>` : '');
+// Zahl der "tgt_<name>_limitN"-Zeilen je Ziel (siehe i18n.js)
+const TARGET_LIMITS = { copies: 3, json: 2, xmp: 4, rawtherapee: 4 };
 let settingsBuilt = false;
 let refreshTimer = null;
 let logLines = [];
@@ -37,7 +39,7 @@ function renderAll() {
   const s = store.s;
   const editable = isEditable();
   document.body.classList.toggle('is-locked', !editable);
-  renderHeader(); renderFlow(); renderSummary(); renderNotice(); renderProgress();
+  renderHeader(); renderFlow(); renderSummary(); renderNotice(); renderTargetPanel(); renderProgress();
   renderToolbar(); renderSettings(); renderGallery(); renderActionbar();
   $('keyhint').innerHTML = `${T('keys')}: <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> ${T('band_green')}/${T('band_yellow')}/${T('band_red')} · <kbd>A</kbd> ${T('accept')} · <kbd>S</kbd> ${T('skip')} · <kbd>E</kbd> ${T('k_edit').replace(/^E: /, '')} · <kbd>Z</kbd> ${T('undo')}`;
   if (isOpen()) refreshEditor();
@@ -107,6 +109,52 @@ function renderNotice() {
       ${ref.n ? `<div class="notice-list">${T('ref_hits', ref.hits, ref.n, pct)}${groups ? ' · ' + groups : ''}</div>` : ''}
       <div class="field-hint" style="margin-top:.4rem">${T('ref_hint')}</div></div></div>`;
   } else host.innerHTML = '';
+}
+
+// Ziel-Auswahl: eigenstaendiger Modus, immer sichtbar und (solange editierbar) anklickbar.
+// Erklaert je Option ausfuehrlich, was "Fertig" damit tut, und warnt, wenn Bilder dabei
+// uebersprungen wuerden oder ein frueheres Ziel dieser Sitzung Dateien hinterlassen hat.
+function renderTargetPanel() {
+  const s = store.s, host = $('target-panel');
+  if (s.mode !== 'standalone') { host.innerHTML = ''; return; }
+  const editable = isEditable();
+  const cards = (s.target_options || []).map((o) => targetCardHtml(o, s.target.name, editable)).join('');
+  const warn = s.applied_target
+    ? `<div class="callout callout-warn"><strong>${T('target_switch_warn', S('tgt_' + s.applied_target))}</strong></div>` : '';
+  host.innerHTML = `<div class="target-panel">
+    <h3>${T('target_panel_title')}</h3>
+    <p class="field-hint">${T('target_panel_intro')}</p>
+    <div class="target-options" role="radiogroup" aria-label="${esc(S('target'))}">${cards}</div>
+    ${warn}
+  </div>`;
+}
+
+function targetCardHtml(o, current, editable) {
+  const sel = o.name === current;
+  const n = TARGET_LIMITS[o.name] || 0;
+  const limits = Array.from({ length: n }, (_, i) => `<li>${T(`tgt_${o.name}_limit${i + 1}`)}</li>`).join('');
+  const incompat = o.incompatible
+    ? `<p class="callout callout-warn target-card-warn">${T('target_incompatible_n', o.incompatible, o.total, S('target_reason_' + (o.incompatible_reason || 'not_raw')))}</p>`
+    : '';
+  return `<button type="button" class="target-card" role="radio" aria-checked="${sel}" aria-pressed="${sel}" data-target="${o.name}"${editable ? '' : ' disabled'}>
+    <div class="target-card-head">
+      <span class="target-card-title">${T('tgt_' + o.name)}</span>
+      ${sel ? `<span class="tile-badge is-hl">${T('target_current')}</span>` : ''}
+      ${o.recommended ? `<span class="tile-badge" title="${esc(S('target_recommended_why'))}">${T('target_recommended')}</span>` : ''}
+    </div>
+    <p class="target-card-tagline">${T('tgt_' + o.name + '_tagline')}</p>
+    <p class="field-hint">${T('tgt_' + o.name + '_desc')}</p>
+    <ul class="target-limits">${limits}</ul>
+    <p class="field-hint">${T(o.straightens ? 'target_straightens_yes' : 'target_straightens_no')}</p>
+    ${o.out ? `<p class="field-hint">${T('target_out_hint', o.out)}</p>` : ''}
+    ${incompat}
+  </button>`;
+}
+
+async function setTarget(name) {
+  if (name === store.s.target.name) return;
+  await guard(() => api('POST', 'target', { name }), refresh);
+  await refresh();
 }
 
 function renderProgress() {
@@ -308,6 +356,8 @@ function wire() {
     if (z) { store.size = z.dataset.size; setLS('acn-size', store.size); return renderAll(); }
     const f = e.target.closest('#st-format [data-format]');
     if (f && isEditable()) { await guard(() => api('POST', 'settings', { format: f.dataset.format }), refresh); return refresh(); }
+    const tc = e.target.closest('.target-card[data-target]');
+    if (tc && !tc.disabled) return setTarget(tc.dataset.target);
     const sw = e.target.closest('.switch');
     if (sw && !sw.disabled) return sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true'));
     const th = e.target.closest('[data-theme-set]');

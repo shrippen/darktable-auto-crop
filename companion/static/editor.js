@@ -205,6 +205,13 @@ function confPartsHtml(img) {
   return `<div><h3>${T('conf_parts')}</h3><div class="cp">${rows}</div><p class="field-hint">${T('conf_parts_h')}</p></div>`;
 }
 
+function targetSkipHtml(img) {
+  if (store.s.mode !== 'standalone' || img.target_ok) return '';
+  const reason = S('target_reason_' + (img.target_reason || 'not_raw'));
+  return `<div class="callout callout-warn"><strong>${T('target_skip_badge')}</strong>
+    <div class="notice-list">${T('target_skip_note', S('tgt_' + store.s.target.name), reason)}</div></div>`;
+}
+
 function refDevHtml(img) {
   if (!img.ref || store.s.mode !== 'folder') return '';
   const r = img.ref, f = (v) => (v > 0 ? '+' : '') + v;
@@ -277,6 +284,7 @@ function renderSide() {
       <button type="button" class="btn btn-outline btn-sm" data-act="undo"${locked ? ' disabled' : ''}>${T('undo')} · Z</button>
       <button type="button" class="btn btn-outline btn-sm" data-act="roll-size" title="${esc(S('roll_size_h'))}"${locked || !img.manual_crop ? ' disabled' : ''}>${T('roll_size')}</button>
     </div>
+    ${targetSkipHtml(img)}
     ${refDevHtml(img)}
     ${skewHtml(img)}
     ${confPartsHtml(img)}
