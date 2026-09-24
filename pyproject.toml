@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auto-crop-negative"
+version = "0.2.0"
+description = "Erkennt den Bildrahmen abfotografierter Filmnegative und schneidet zu; Web-UI zur Pruefung, Ausgabe fuer darktable, RawTherapee, Lightroom (XMP) oder als Dateien."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = ["opencv-python-headless", "numpy", "pillow"]
+
+[project.optional-dependencies]
+raw = ["rawpy"]           # RAWs ohne darktable/RawTherapee entwickeln
+
+[project.scripts]
+auto-crop-negative = "companion.__main__:main"
+
+[tool.setuptools]
+py-modules = ["auto_crop_negative", "film_scale"]
+packages = ["companion", "companion.targets"]
+
+[tool.setuptools.package-data]
+companion = ["static/*", "static/vendor/*", "static/vendor/fonts/*"]
