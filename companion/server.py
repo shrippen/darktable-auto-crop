@@ -55,6 +55,27 @@ class Broker:
                     pass
 
 
+def acquire_lock(session_dir):
+    """Exklusive Dateisperre fuer eine Sitzung: verhindert zwei Server auf demselben Ordner
+    (z. B. zweimal ``auto-crop-negative ORDNER`` gestartet, oder zweimal "Pruefung oeffnen").
+
+    Gibt das offene Dateiobjekt zurueck (muss vom Aufrufer gehalten werden, solange der Server
+    laeuft) oder ``None``, wenn schon ein anderer Prozess die Sperre haelt. Der Prozess gibt die
+    Sperre beim Beenden automatisch frei (auch bei Absturz), ohne Aufraeum-Code noetig ist.
+    Ohne ``fcntl`` (nicht-POSIX) wird nicht gesperrt (kein Fehler, nur kein Schutz)."""
+    try:
+        import fcntl
+    except ImportError:            # pragma: no cover - kein POSIX (Windows)
+        return open(os.devnull, "a")
+    fh = open(os.path.join(session_dir, "server.lock"), "a")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
 def pid_alive(pid):
     """Lebt der Prozess? (Linux/Unix: Signal 0)"""
     try:
@@ -269,6 +290,9 @@ class Handler(BaseHTTPRequestHandler):
                                                           b.get("ids"))})
             if route == "settings":
                 s.set_settings(b)
+                return self._send(200, {"ok": True})
+            if route == "target":
+                s.set_target(b.get("name"))
                 return self._send(200, {"ok": True})
             if route == "redetect":
                 s._require_editable()

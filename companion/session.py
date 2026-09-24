@@ -188,6 +188,26 @@ def new_session_id():
     return datetime.now().strftime("%Y-%m-%dT%H-%M-%S") + "-" + uuid.uuid4().hex[:4]
 
 
+def _image_entry(item, iid):
+    """Ein Bild-Eintrag in ``state["images"]`` aus einem Job-Item (``create``/``add_images``)."""
+    path = item["path"]
+    return {
+        "id": iid if not str(iid).isdigit() else int(iid),
+        "path": path,
+        "filename": os.path.basename(path),
+        "film": item.get("film") or os.path.basename(os.path.dirname(path)),
+        "fingerprint": fingerprint(path),
+        "export": item.get("export"),      # relativ zur Sitzung oder absolut
+        "export_size": item.get("export_size"),
+        "detected": item.get("detected"),
+        "manual": item.get("manual"),      # {"crop": [...]}
+        "group_override": item.get("group_override"),
+        "decision": None,
+        "status": "done" if item.get("detected") else "pending",
+        "error": None,
+    }
+
+
 # ── Sitzung ──────────────────────────────────────────────────────────────────
 
 class Session:
@@ -223,22 +243,7 @@ class Session:
         images = {}
         for i, item in enumerate(job.get("images") or []):
             iid = str(item.get("id", i + 1))
-            path = item["path"]
-            images[iid] = {
-                "id": iid if not iid.isdigit() else int(iid),
-                "path": path,
-                "filename": os.path.basename(path),
-                "film": item.get("film") or os.path.basename(os.path.dirname(path)),
-                "fingerprint": fingerprint(path),
-                "export": item.get("export"),      # relativ zur Sitzung oder absolut
-                "export_size": item.get("export_size"),
-                "detected": item.get("detected"),
-                "manual": item.get("manual"),      # {"crop": [...]}
-                "group_override": item.get("group_override"),
-                "decision": None,
-                "status": "done" if item.get("detected") else "pending",
-                "error": None,
-            }
+            images[iid] = _image_entry(item, iid)
         state = {
             "v": 1, "session": sid, "mode": mode, "phase": "analyzing",
             "target": target, "converter": job.get("converter"), "out": job.get("out"),
@@ -384,7 +389,7 @@ class Session:
         return "red"
 
     def will_apply(self, img):
-        """Wird der Crop in darktable angewendet? (skip / ungeprueftes Rot: nein)"""
+        """Wird der Crop geschrieben? (skip / ungeprueftes Rot / vom Ziel nicht unterstuetzt: nein)"""
         if img.get("decision") == "skip" or img.get("status") == "error":
             return False
         if self.effective_crop(img) is None:
@@ -392,11 +397,16 @@ class Session:
         if self.group_of(img) == "red" and not img.get("manual") \
                 and img.get("decision") != "accept":
             return False
+        if not self.target.compatible(img)[0]:
+            return False
         return True
 
     def public_image(self, img):
         det = img.get("detected") or {}
+        target_ok, target_reason = (True, None) if self.mode != targets.MODE_STANDALONE \
+            else self.target.compatible(img)
         return {
+            "target_ok": target_ok, "target_reason": target_reason,
             "id": img["id"], "filename": img["filename"], "film": img["film"],
             "status": img.get("status"), "error": img.get("error"),
             "group": self.group_of(img),
@@ -478,16 +488,21 @@ class Session:
     def public_state(self):
         with self.lock:
             imgs = [self.public_image(i) for i in self.state["images"].values()]
+            applied = read_json(self.path("applied.json"), {}) or {}
+            applied_target = applied.get("target")
             return {
                 "session": self.state["session"], "mode": self.mode,
                 "target": self.target.describe(self), "converter": self.converter_name,
+                "target_options": targets.options_for(self) if self.mode == targets.MODE_STANDALONE else None,
                 "phase": self.phase, "revision": self.revision,
                 "settings": self.state["settings"],
                 "film_aspects": self.state.get("film_aspects", {}),
                 "images": imgs, "summary": self._summary(),
                 "can_undo": bool(self.history),
-                "applied_revision": (read_json(self.path("applied.json"), {})
-                                     or {}).get("revision"),
+                "applied_revision": applied.get("revision"),
+                # frueheres Ziel dieser Sitzung, falls seither gewechselt (dessen Dateien bleiben
+                # beim naechsten Anwenden unangetastet liegen, siehe i18n "target_switch_warn")
+                "applied_target": applied_target if applied_target and applied_target != self.target_name else None,
             }
 
     def _summary(self):
@@ -524,6 +539,45 @@ class Session:
     def _require_editable(self):
         if self.phase not in EDITABLE:
             raise SessionError("Sitzung ist gesperrt", 409, phase=self.phase)
+
+    def add_images(self, items):
+        """Neue Bilder zu einer bestehenden eigenstaendigen Sitzung hinzufuegen (Ordner beim
+        Fortsetzen gewachsen). Bereits bekannte Pfade werden uebersprungen, vorhandene Bilder und
+        ihre Entscheidungen bleiben unberuehrt. War die Sitzung gesperrt/angewendet, geht sie
+        zurueck zur Analyse (wie ``reopen``, aber ohne die alten Bilder anzutasten oder die
+        Revision zu erhoehen: ihr ``applied.json``-Stand bleibt gueltig).
+        Rueckgabe: Zahl der neu hinzugefuegten Bilder."""
+        with self.lock:
+            if self.mode != targets.MODE_STANDALONE:
+                raise SessionError("nur in eigenstaendigen Sitzungen moeglich")
+            existing = {img["path"] for img in self.state["images"].values()}
+            next_id = 1 + max((i["id"] for i in self.state["images"].values()
+                               if isinstance(i["id"], int)), default=0)
+            added = 0
+            for item in items:
+                if item["path"] in existing:
+                    continue
+                iid = str(next_id)
+                self.state["images"][iid] = _image_entry(item, iid)
+                next_id += 1
+                added += 1
+            if added:
+                # immer zurueck zu "analyzing", auch aus "reviewing": sonst holt der Server die neuen
+                # (pending) Bilder nicht automatisch ab (serve() startet die Analyse nur in dieser Phase)
+                self.state["phase"] = "analyzing"
+                self.save()
+            return added
+
+    def set_target(self, name):
+        """Ziel wechseln (nur eigenstaendige Sitzungen, nur waehrend der Pruefung editierbar)."""
+        with self.lock:
+            self._require_editable()
+            if self.mode != targets.MODE_STANDALONE:
+                raise SessionError("Ziel kann in diesem Modus nicht geaendert werden")
+            if name not in targets.standalone_names():
+                raise SessionError(f"unbekanntes Ziel: {name}")
+            self.state["target"] = name
+            self.save()
 
     def set_settings(self, patch):
         with self.lock:
@@ -989,6 +1043,7 @@ class Session:
                     "apply": e["apply"], "crop": e["crop"], "label": e["label"],
                     "angle": e.get("angle")}
         applied["revision"] = self.revision
+        applied["target"] = target.name
         atomic_write_json(self.path("applied.json"), applied)
         atomic_write_json(self.path("result.json"), {
             "revision": self.revision, "status": "ok", "target": target.name,

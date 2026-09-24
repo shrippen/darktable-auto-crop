@@ -25,7 +25,7 @@ from . import converters
 from . import session as sess
 from . import targets
 from .export import is_raw
-from .server import make_server, serve
+from .server import acquire_lock, make_server, serve
 from .sources import folder_job, standalone_job
 
 COMMANDS = ("open", "check", "serve", "cleanup")
@@ -125,14 +125,17 @@ def _open(args):
     target = targets.suggest(paths) if args.target == targets.AUTO else args.target
     raws = [p for p in paths if is_raw(p)]
     converter = converters.resolve(args.converter, raws)
-    if raws and not converter:
-        print("Fehler: kein RAW-Konverter gefunden. Moeglich: darktable-cli, rawtherapee-cli "
-              "oder 'pip install rawpy'.", file=sys.stderr)
-        return 1
+    if raws:
+        avail = converters.available()
+        if not converter or not avail.get(converter):
+            bad = converter or args.converter
+            print(f"Fehler: RAW-Konverter '{bad}' nicht verfuegbar. Moeglich: darktable-cli, "
+                  "rawtherapee-cli oder 'pip install rawpy'.", file=sys.stderr)
+            return 1
     out = os.path.abspath(args.out or os.path.join(folder, targets.DEFAULT_OUT_DIR))
     job.update(target=target, converter=converter, out=out)
 
-    s = None if args.new else _latest_standalone(args.root, folder, target, paths)
+    s, added = (None, 0) if args.new else _resume_standalone(args.root, folder, target, job["images"])
     resumed = s is not None
     if s is None:
         s = sess.Session.create(job, args.root)
@@ -140,28 +143,50 @@ def _open(args):
     films = len({i["film"] for i in job["images"]})
     print(f"Ordner:     {folder} ({len(paths)} Bilder, {films} Rolle(n), davon {len(raws)} RAW)")
     print(f"Ziel:       {target}" + (f" -> {out}" if targets.get(target).writes_out else ""))
+    print("            (in der Web-UI jederzeit aenderbar)")
     if raws:
         print(f"Konverter:  {converter}")
-    print(f"Sitzung:    {s.state['session']}" + (" (fortgesetzt; --new fuer Neuanalyse)" if resumed else ""))
+    if resumed:
+        extra = f", davon {added} neu" if added else ""
+        print(f"Sitzung:    {s.state['session']} (fortgesetzt{extra}; --new fuer Neuanalyse)")
+    else:
+        print(f"Sitzung:    {s.state['session']}")
     return _run(s, args, not args.no_browser, None)
 
 
-def _latest_standalone(root, folder, target, paths):
-    """Juengste Sitzung fuer denselben Ordner, dasselbe Ziel und dieselben Bilder."""
-    want = set(paths)
+def _resume_standalone(root, folder, target, items):
+    """Juengste Sitzung fuer denselben Ordner und dasselbe Ziel, deren Bilder eine Teilmenge der
+    jetzt gefundenen sind (sonst: fehlen ihr Bilder, die es jetzt nicht mehr gibt, passt sie nicht
+    mehr -> neue Sitzung). Neue Bilder (Ordner ist gewachsen) werden ergaenzt, ohne die
+    bestehenden Entscheidungen anzutasten. Rueckgabe: ``(Session, Zahl neuer Bilder)`` oder
+    ``(None, 0)``."""
+    have = {i["path"] for i in items}
     for d in reversed(sess.list_sessions(root)):
         st = sess.read_json(os.path.join(d, "state.json"), {}) or {}
         if st.get("mode") != targets.MODE_STANDALONE or st.get("target") != target:
             continue
         if (st.get("source") or {}).get("folder") != folder:
             continue
-        if {i["path"] for i in st.get("images", {}).values()} != want:
+        known = {i["path"] for i in st.get("images", {}).values()}
+        if not known or not known.issubset(have):
             continue
-        return sess.Session(d)
-    return None
+        s = sess.Session(d)
+        return s, s.add_images(items)
+    return None, 0
 
 
 def _run(s, args, open_browser, watch_pid):
+    lock = acquire_lock(s.dir)                    # gehalten, solange dieser Prozess laeuft
+    if lock is None:
+        info = sess.read_json(os.path.join(s.dir, "server.json"))
+        url = info and info.get("url")
+        if url:
+            print(f"Sitzung wird bereits bedient: {url}", flush=True)
+            if open_browser:
+                webbrowser.open(url)
+        else:
+            print("Sitzung wird bereits von einem anderen Prozess bedient.", file=sys.stderr)
+        return 0
     sess.cleanup_old(args.root)                  # 14-Tage-Regel, nebenbei
     app = make_server(s, args.port, watch_pid=watch_pid,
                       idle_seconds=args.idle_minutes * 60)

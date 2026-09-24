@@ -56,6 +56,13 @@ def has_adobe_xmp(image_path):
 
 class XmpTarget(Target):
     name = "xmp"
+    raw_only = True
+
+    def compatible(self, img):
+        path = img["path"]
+        if not is_raw(path) or path.lower().endswith(".dng"):
+            return False, "not_raw"
+        return True, None
 
     def apply(self, session, plan):
         report = {}
@@ -66,7 +73,8 @@ class XmpTarget(Target):
     def _one(self, session, e):
         img = session.image(e["id"])
         path = img["path"]
-        if not is_raw(path) or path.lower().endswith(".dng"):
+        ok, _ = self.compatible(img)
+        if not ok:
             return {"status": "skipped", "message": "XMP-Sidecar nur fuer proprietaere RAWs"}
         side = sidecar_path(path)
         if e.get("skip_reason"):

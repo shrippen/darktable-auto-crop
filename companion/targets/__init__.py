@@ -40,13 +40,19 @@ class Target:
     straightens = False     # setzt einen Drehwinkel um; sonst wird im Originalrahmen ausgegeben
     calibration = False     # Referenz-Test in der UI
     writes_out = False      # nutzt den Ausgabeordner
+    raw_only = False        # schreibt nur fuer RAW-Dateien (Adobe/RawTherapee-Sidecars)
 
     def apply(self, session, plan):
         raise NotImplementedError
 
+    def compatible(self, img):
+        """Schreibt dieses Ziel ueberhaupt etwas fuer ``img``? (True, None) oder (False, Grund-Schluessel
+        fuer die UI, z. B. "not_raw"). Reine Vorschau; ``apply()`` trifft dieselbe Entscheidung selbst."""
+        return True, None
+
     def describe(self, session):
         return {"name": self.name, "external": self.external, "straightens": self.straightens,
-                "calibration": self.calibration,
+                "calibration": self.calibration, "raw_only": self.raw_only,
                 "out": session.out_dir if self.writes_out else None}
 
 
@@ -94,7 +100,9 @@ def mode_for(name):
 def suggest(paths):
     """Ziel aus dem Ordnerinhalt: vorhandene Sidecars verraten den RAW-Entwickler.
 
-    .pp3 -> rawtherapee, Adobe-XMP -> xmp, sonst RAWs -> json, nur JPEG/TIFF -> copies."""
+    .pp3 -> rawtherapee, Adobe-XMP -> xmp, sonst RAWs -> json, nur JPEG/TIFF -> copies.
+    Ohne Sidecars (der haeufigste Fall bei frisch digitalisierten Rollen) ist das nur ein
+    Vorschlag: die Web-UI zeigt alle Ziele gleichberechtigt zur Wahl, siehe ``options_for``."""
     raws = [p for p in paths if is_raw(p)]
     if any(os.path.isfile(pp3.sidecar_path(p)) for p in paths):
         return "rawtherapee"
@@ -102,6 +110,27 @@ def suggest(paths):
     if any(has_adobe_xmp(p) for p in raws):
         return "xmp"
     return "json" if raws else "copies"
+
+
+def options_for(session):
+    """Alle eigenstaendigen Ziele mit Empfehlung und Kompatibilitaet fuer die aktuellen Bilder der
+    Sitzung, fuer die Ziel-Auswahl in der Web-UI. Reine Anzeige, keine Mutation."""
+    images = list(session.state["images"].values())
+    paths = [i["path"] for i in images]
+    recommended = suggest(paths) if paths else None
+    out = []
+    for name in standalone_names():
+        t = get(name)
+        compat = [t.compatible(i) for i in images]
+        incompatible = [r for ok, r in compat if not ok]
+        out.append({
+            "name": name, "recommended": name == recommended,
+            "straightens": t.straightens, "writes_out": t.writes_out,
+            "out": session.out_dir if t.writes_out else None,
+            "total": len(images), "incompatible": len(incompatible),
+            "incompatible_reason": incompatible[0] if incompatible else None,
+        })
+    return out
 
 
 def file_action(entry, exists):
