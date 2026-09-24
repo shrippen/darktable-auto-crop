@@ -374,11 +374,14 @@ def write_server_info(app):
         "url": app.url, "started": sess.now_iso()})
 
 
-def serve(app, start_analysis=True):
+def serve(app, start_analysis=True, tui=False):
     """Startet Watcher-Threads und blockiert, bis der Server beendet wird.
 
     Automatisches Ende: Web-UI 30 Minuten ohne Aktivitaet, Elternprozess (darktable)
-    beendet, SIGTERM/SIGINT (Stop-Knopf in darktable), "Server beenden" in der UI."""
+    beendet, SIGTERM/SIGINT (Stop-Knopf in darktable), "Server beenden" in der UI.
+
+    ``tui=True`` (nur eigenstaendige Nutzung, siehe ``companion/tui.py``): der HTTP-Server
+    laeuft dann in einem Hintergrund-Thread, der Hauptthread gehoert der Terminal-Anzeige."""
     write_server_info(app)
     try:
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -412,7 +415,19 @@ def serve(app, start_analysis=True):
     if start_analysis and app.session.phase == "analyzing":
         app.analyzer.start_analysis()
     try:
-        app.httpd.serve_forever()
+        if tui:
+            server_thread = threading.Thread(target=app.httpd.serve_forever, daemon=True)
+            server_thread.start()
+            from . import tui as tui_mod
+            try:
+                tui_mod.run(app)
+            finally:
+                if app.stop_reason is None:
+                    app.stop("quit")
+                app.httpd.shutdown()
+                server_thread.join(timeout=5)
+        else:
+            app.httpd.serve_forever()
     finally:
         try:
             os.remove(app.session.path("server.json"))

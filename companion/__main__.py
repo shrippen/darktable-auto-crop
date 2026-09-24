@@ -4,8 +4,13 @@ Eigenstaendig, ohne darktable:
   auto-crop-negative ORDNER                     = open ORDNER
   auto-crop-negative open ORDNER [--target auto|json|copies|xmp|rawtherapee]
                             [--out DIR] [--converter auto|darktable|rawtherapee|rawpy]
-                            [--films 33 34] [--new] [--no-browser]
+                            [--films 33 34] [--new] [--no-browser] [--tui]
   auto-crop-negative check [ORDNER]             Konverter, Ziele, Vorschlag fuer ORDNER
+
+  --tui zeigt statt der einmaligen URL-Ausgabe eine laufende Statusanzeige im Terminal
+  (Fortschritt, Zähler, URL, Taste O öffnet den Browser, Q beendet den Server) - gedacht für
+  SSH/NAS-Sitzungen ohne lokalen Browser. Braucht das Paket "rich": pip install "auto-crop-negative[tui]".
+  Nur für diesen eigenständigen Weg; über darktable/serve bleibt es wie bisher ohne Terminal-UI.
 
 darktable und Kalibrierung:
   python -m companion serve --job job.json       neue Sitzung aus einem Job (Lua)
@@ -24,6 +29,7 @@ import webbrowser
 from . import converters
 from . import session as sess
 from . import targets
+from . import tui
 from .export import is_raw
 from .server import acquire_lock, make_server, serve
 from .sources import folder_job, standalone_job
@@ -50,6 +56,8 @@ def main(argv=None):
     op.add_argument("--films", nargs="+", help="nur diese Rollen (Unterordner, z. B. 33 34)")
     op.add_argument("--new", action="store_true", help="neu analysieren statt die letzte Sitzung fortzusetzen")
     op.add_argument("--no-browser", action="store_true", help="Browser nicht oeffnen")
+    op.add_argument("--tui", action="store_true",
+                    help="Statusanzeige im Terminal statt nur der URL (braucht 'rich'; fuer SSH/NAS)")
     _server_args(op)
 
     cp = sub.add_parser("check", help="verfuegbare Konverter und Ziele anzeigen")
@@ -115,6 +123,11 @@ def _serve(args):
 
 def _open(args):
     """Eigenstaendig: Ordner -> Sitzung (neu oder fortgesetzt) -> Web-UI."""
+    if args.tui:
+        reason = tui.unavailable_reason()
+        if reason:
+            print(f"Fehler: --tui geht hier nicht: {reason}.", file=sys.stderr)
+            return 1
     try:
         job = standalone_job(args.folder, films=args.films)
     except sess.SessionError as e:
@@ -151,7 +164,7 @@ def _open(args):
         print(f"Sitzung:    {s.state['session']} (fortgesetzt{extra}; --new fuer Neuanalyse)")
     else:
         print(f"Sitzung:    {s.state['session']}")
-    return _run(s, args, not args.no_browser, None)
+    return _run(s, args, not args.no_browser, None, use_tui=args.tui)
 
 
 def _resume_standalone(root, folder, target, items):
@@ -175,7 +188,7 @@ def _resume_standalone(root, folder, target, items):
     return None, 0
 
 
-def _run(s, args, open_browser, watch_pid):
+def _run(s, args, open_browser, watch_pid, use_tui=False):
     lock = acquire_lock(s.dir)                    # gehalten, solange dieser Prozess laeuft
     if lock is None:
         info = sess.read_json(os.path.join(s.dir, "server.json"))
@@ -190,6 +203,9 @@ def _run(s, args, open_browser, watch_pid):
     sess.cleanup_old(args.root)                  # 14-Tage-Regel, nebenbei
     app = make_server(s, args.port, watch_pid=watch_pid,
                       idle_seconds=args.idle_minutes * 60)
+    if use_tui:
+        serve(app, tui=True)                     # eigene Anzeige; URL/Browser regelt sie selbst
+        return 0
     print(app.url, flush=True)
     if open_browser:
         webbrowser.open(app.url)
@@ -203,6 +219,8 @@ def _check(folder):
     for name in converters.NAMES:
         print(f"  {name:12} {'ja' if avail[name] else 'nein'}")
     print("Ziele: " + ", ".join(targets.standalone_names()) + " (darktable: Lua-Plugin)")
+    tui_reason = tui.unavailable_reason()
+    print("Terminal-Statusanzeige (--tui): " + ("ja" if not tui_reason else f"nein ({tui_reason})"))
     if not folder:
         return 0
     try:
