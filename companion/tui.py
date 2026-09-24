@@ -88,6 +88,12 @@ def _renderable(app, message=None):
 
     body.append(Panel(Align.center(Text(app.url, style="bold underline cyan")),
                       title="In einem Browser oeffnen", border_style="cyan", padding=(0, 1)))
+    if not app.loopback_only:
+        # Steht dauerhaft hier, nicht nur einmal beim Start: der Alt-Screen der TUI verdeckt jede
+        # Ausgabe von davor, solange sie laeuft - genau dann muss der Hinweis sichtbar bleiben.
+        body.append(Panel(Text(f"Im Netzwerk erreichbar ({app.bind}). Nur der Token oben "
+                               "schuetzt den Zugriff - nicht in unsicheren Netzen freigeben.",
+                               style="bold red"), border_style="red", padding=(0, 1)))
     if message:
         body.append(Text(message, style="italic yellow"))
     body.append(Text("O  Browser oeffnen      Q  Server beenden", style="dim"))

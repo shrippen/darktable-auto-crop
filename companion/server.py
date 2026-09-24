@@ -1,7 +1,10 @@
 """Lokaler HTTP-Server der Companion-UI (nur Stdlib).
 
-- bindet nur an 127.0.0.1, prueft einen zufaelligen Token und den Host-Header
-  (Schutz gegen fremde Webseiten und DNS-Rebinding), kein CORS
+- bindet standardmaessig nur an 127.0.0.1, prueft einen zufaelligen Token (bei jedem Start neu)
+  und den Host-Header (Schutz gegen fremde Webseiten und DNS-Rebinding), kein CORS. Mit
+  ``--bind`` (siehe ``companion/__main__.py``, nur eigenstaendige Nutzung) laesst sich der Server
+  im Netzwerk erreichbar machen; dann bleibt allein der Token die Zugriffskontrolle, die enge
+  Host-Pruefung entfaellt (siehe ``App.loopback_only``).
 - liefert die statische Oberflaeche, eine JSON-API und Server-Sent-Events
 - nach "Fertig" antworten alle Schreibzugriffe mit 409 (Sitzung gesperrt)
 """
@@ -76,6 +79,21 @@ def acquire_lock(session_dir):
     return fh
 
 
+def guess_lan_ip():
+    """Beste Vermutung fuer eine im LAN erreichbare eigene Adresse, nur fuer die Anzeige bei
+    ``--bind 0.0.0.0``: welche Route das Betriebssystem fuer ausgehende Pakete waehlen wuerde
+    (verbindet ohne Daten zu senden). ``None`` ohne Route (z. B. offline)."""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
 def pid_alive(pid):
     """Lebt der Prozess? (Linux/Unix: Signal 0)"""
     try:
@@ -90,9 +108,9 @@ def pid_alive(pid):
 
 
 class App:
-    def __init__(self, session, token=None, watch_pid=None, idle_seconds=IDLE_SECONDS):
+    def __init__(self, session, token=None, watch_pid=None, idle_seconds=IDLE_SECONDS, bind="127.0.0.1"):
         self.session = session
-        self.token = token or secrets.token_urlsafe(16)
+        self.token = token or secrets.token_urlsafe(16)      # neu bei jedem Start, siehe url()
         self.broker = Broker()
         self.analyzer = Analyzer(session, self.broker.publish)
         session.subscribe(self.broker.publish)
@@ -102,6 +120,11 @@ class App:
         self.stop_reason = None
         self.httpd = None
         self.port = None
+        self.bind = bind
+        # nur an 127.0.0.1/localhost gilt die enge Host-Pruefung (siehe Handler._host_ok);
+        # bei jeder anderen Bind-Adresse ist der Token die einzige Zugriffskontrolle
+        self.loopback_only = bind in ("127.0.0.1", "localhost")
+        self.display_host = guess_lan_ip() or "127.0.0.1" if bind in ("0.0.0.0", "::") else bind
 
     def stop(self, reason):
         """Faehrt den Server geordnet herunter; die UI erfaehrt vorher den Grund."""
@@ -118,7 +141,7 @@ class App:
 
     @property
     def url(self):
-        return f"http://127.0.0.1:{self.port}/?t={self.token}"
+        return f"http://{self.display_host}:{self.port}/?t={self.token}"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -152,7 +175,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _host_ok(self):
         host = (self.headers.get("Host") or "").lower()
-        return host in (f"127.0.0.1:{self.app.port}", f"localhost:{self.app.port}")
+        if self.app.loopback_only:
+            return host in (f"127.0.0.1:{self.app.port}", f"localhost:{self.app.port}")
+        # im Netzwerk erreichbar (--bind): der Hostname variiert (mehrere Interfaces, 0.0.0.0),
+        # eine feste Zuordnung waere bruechig. Nur der Port wird noch geprueft; der Token bleibt
+        # die eigentliche Zugriffskontrolle (siehe App.loopback_only, README "Terminal-Statusanzeige").
+        return bool(host) and host.endswith(f":{self.app.port}")
 
     def _token_ok(self, query):
         tok = self.headers.get("X-Token") or (query.get("t") or [""])[0]
@@ -358,10 +386,14 @@ class Handler(BaseHTTPRequestHandler):
             self.app.broker.unsubscribe(q)
 
 
-def make_server(session, port=0, token=None, watch_pid=None, idle_seconds=IDLE_SECONDS):
-    app = App(session, token, watch_pid, idle_seconds)
+def make_server(session, port=0, token=None, watch_pid=None, idle_seconds=IDLE_SECONDS, bind="127.0.0.1"):
+    """``bind``: Adresse zum Lauschen. Standard ``127.0.0.1`` (nur diese Maschine, engste
+    Host-Pruefung). Jede andere Adresse (eine LAN-IP oder ``0.0.0.0`` fuer alle Interfaces) macht
+    den Server im Netzwerk erreichbar; dann ist allein der Token (in der URL, bei jedem Start neu
+    ausgewuerfelt) die Zugriffskontrolle, siehe ``App.loopback_only``/``Handler._host_ok``."""
+    app = App(session, token, watch_pid, idle_seconds, bind)
     handler = type("BoundHandler", (Handler,), {"app": app})
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd = ThreadingHTTPServer((bind, port), handler)
     httpd.daemon_threads = True
     app.httpd = httpd
     app.port = httpd.server_address[1]

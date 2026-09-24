@@ -4,13 +4,20 @@ Eigenstaendig, ohne darktable:
   auto-crop-negative ORDNER                     = open ORDNER
   auto-crop-negative open ORDNER [--target auto|json|copies|xmp|rawtherapee]
                             [--out DIR] [--converter auto|darktable|rawtherapee|rawpy]
-                            [--films 33 34] [--new] [--no-browser] [--tui]
+                            [--films 33 34] [--new] [--no-browser] [--tui] [--bind ADRESSE]
   auto-crop-negative check [ORDNER]             Konverter, Ziele, Vorschlag fuer ORDNER
 
   --tui zeigt statt der einmaligen URL-Ausgabe eine laufende Statusanzeige im Terminal
   (Fortschritt, Zähler, URL, Taste O öffnet den Browser, Q beendet den Server) - gedacht für
   SSH/NAS-Sitzungen ohne lokalen Browser. Braucht das Paket "rich": pip install "auto-crop-negative[tui]".
-  Nur für diesen eigenständigen Weg; über darktable/serve bleibt es wie bisher ohne Terminal-UI.
+
+  --bind ADRESSE macht den Server im Netzwerk erreichbar (Standard 127.0.0.1: nur diese Maschine).
+  Beispiel: --bind 0.0.0.0 auf einem NAS, dann die angezeigte URL/den Token von einem anderen
+  Geraet im selben Netz öffnen. Der Token wird bei jedem Start neu ausgewürfelt und ist dann die
+  einzige Zugriffskontrolle (siehe README, Abschnitt "Terminal-Statusanzeige").
+
+  Beide Optionen nur für diesen eigenständigen Weg; über darktable/serve bleibt es wie bisher
+  (nur 127.0.0.1, kein Terminal-UI).
 
 darktable und Kalibrierung:
   python -m companion serve --job job.json       neue Sitzung aus einem Job (Lua)
@@ -58,6 +65,9 @@ def main(argv=None):
     op.add_argument("--no-browser", action="store_true", help="Browser nicht oeffnen")
     op.add_argument("--tui", action="store_true",
                     help="Statusanzeige im Terminal statt nur der URL (braucht 'rich'; fuer SSH/NAS)")
+    op.add_argument("--bind", default="127.0.0.1",
+                    help="Lauschadresse; 0.0.0.0 oder eine LAN-IP macht den Server im Netzwerk "
+                         "erreichbar (Standard: nur diese Maschine, siehe Sicherheitshinweis in der README)")
     _server_args(op)
 
     cp = sub.add_parser("check", help="verfuegbare Konverter und Ziele anzeigen")
@@ -164,7 +174,7 @@ def _open(args):
         print(f"Sitzung:    {s.state['session']} (fortgesetzt{extra}; --new fuer Neuanalyse)")
     else:
         print(f"Sitzung:    {s.state['session']}")
-    return _run(s, args, not args.no_browser, None, use_tui=args.tui)
+    return _run(s, args, not args.no_browser, None, use_tui=args.tui, bind=args.bind)
 
 
 def _resume_standalone(root, folder, target, items):
@@ -188,7 +198,7 @@ def _resume_standalone(root, folder, target, items):
     return None, 0
 
 
-def _run(s, args, open_browser, watch_pid, use_tui=False):
+def _run(s, args, open_browser, watch_pid, use_tui=False, bind="127.0.0.1"):
     lock = acquire_lock(s.dir)                    # gehalten, solange dieser Prozess laeuft
     if lock is None:
         info = sess.read_json(os.path.join(s.dir, "server.json"))
@@ -202,7 +212,12 @@ def _run(s, args, open_browser, watch_pid, use_tui=False):
         return 0
     sess.cleanup_old(args.root)                  # 14-Tage-Regel, nebenbei
     app = make_server(s, args.port, watch_pid=watch_pid,
-                      idle_seconds=args.idle_minutes * 60)
+                      idle_seconds=args.idle_minutes * 60, bind=bind)
+    if not app.loopback_only:
+        # Erscheint bei --tui zusaetzlich dauerhaft im Statuspanel (der Alt-Screen verdeckt sonst
+        # jede Ausgabe von hier); ohne --tui bleibt es einfach im Terminal stehen.
+        print(f"Achtung: im Netzwerk erreichbar ({bind}). Nur der Token in der URL schuetzt "
+              "den Zugriff - nicht in unsicheren/fremden Netzen freigeben.")
     if use_tui:
         serve(app, tui=True)                     # eigene Anzeige; URL/Browser regelt sie selbst
         return 0
