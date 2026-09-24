@@ -415,6 +415,45 @@ class BindTest(unittest.TestCase):
         self.assertNotEqual(app.display_host, "0.0.0.0")   # kein Browser koennte das oeffnen
         self.assertIn(app.display_host, app.url)
 
+    def test_score_prefers_real_lan_over_docker_and_vpn_interfaces(self):
+        from companion.server import _score_candidate
+        eth0 = _score_candidate("eth0", "192.168.1.50")
+        docker0 = _score_candidate("docker0", "172.17.0.1")
+        br = _score_candidate("br-9f3a2b1c", "172.18.0.1")
+        veth = _score_candidate("veth3f2a1", "172.19.0.1")
+        wg = _score_candidate("wg0", "10.6.0.1")
+        self.assertGreater(eth0, docker0)
+        self.assertGreater(eth0, br)
+        self.assertGreater(eth0, veth)
+        self.assertGreater(eth0, wg)                          # echtes LAN vor VPN-Interface
+        self.assertGreater(wg, docker0)                        # VPN immerhin vor Docker
+
+    def test_guess_lan_ip_picks_real_interface_over_docker(self):
+        from companion.server import guess_lan_ip
+
+        def fake_ipv4(name):
+            return {"eth0": "192.168.1.50", "docker0": "172.17.0.1"}.get(name)
+
+        with unittest.mock.patch("socket.if_nameindex",
+                                 return_value=[(1, "lo"), (2, "docker0"), (3, "eth0")]), \
+                unittest.mock.patch("companion.server._iface_ipv4", side_effect=fake_ipv4), \
+                unittest.mock.patch("companion.server._route_ip", return_value="172.17.0.1"):
+            # selbst wenn die vom Betriebssystem gewaehlte Route (z. B. in einem reinen
+            # Docker-Container) auf das Docker-Netz zeigt, gewinnt die echte LAN-Schnittstelle
+            self.assertEqual(guess_lan_ip(), "192.168.1.50")
+
+    def test_guess_lan_ip_falls_back_to_route_without_real_interface(self):
+        from companion.server import guess_lan_ip
+        with unittest.mock.patch("socket.if_nameindex", return_value=[(1, "lo")]), \
+                unittest.mock.patch("companion.server._route_ip", return_value="172.17.0.1"):
+            self.assertEqual(guess_lan_ip(), "172.17.0.1")     # besser als gar keine Adresse
+
+    def test_guess_lan_ip_none_without_any_candidate(self):
+        from companion.server import guess_lan_ip
+        with unittest.mock.patch("socket.if_nameindex", side_effect=OSError), \
+                unittest.mock.patch("companion.server._route_ip", return_value=None):
+            self.assertIsNone(guess_lan_ip())
+
     def test_non_loopback_bind_relaxes_host_check_but_keeps_token(self):
         # 127.0.0.2 ist im ganzen 127.0.0.0/8 gueltig und lokal bindbar, ohne echtes Netzwerk
         # zu beruehren - simuliert hier bewusst nur die Host-Pruefung, nicht echte LAN-Erreichbarkeit.
