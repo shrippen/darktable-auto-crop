@@ -228,6 +228,8 @@ def _run(s, args, open_browser, watch_pid, use_tui=False, bind="127.0.0.1", lock
     except OSError as e:                         # Adresse fremd, Port belegt, kein IPv6 ...
         print(f"Fehler: Server kann nicht auf {bind}:{args.port or 'auto'} lauschen: {e}", file=sys.stderr)
         return 1
+    if args.port and app.port != args.port:
+        print(f"Hinweis: Port {args.port} belegt, nutze {app.port}.", file=sys.stderr)
     if not app.loopback_only:
         # Erscheint bei --tui zusaetzlich dauerhaft im Statuspanel (der Alt-Screen verdeckt sonst
         # jede Ausgabe von hier); ohne --tui bleibt es einfach im Terminal stehen.

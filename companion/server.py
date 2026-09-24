@@ -8,6 +8,7 @@
 - liefert die statische Oberflaeche, eine JSON-API und Server-Sent-Events
 - nach "Fertig" antworten alle Schreibzugriffe mit 409 (Sitzung gesperrt)
 """
+import errno
 import json
 import mimetypes
 import os
@@ -32,6 +33,8 @@ IDLE_WARN_SECONDS = 5 * 60    # so lange vorher warnt die UI
 LOOPBACK_BINDS = ("127.0.0.1", "localhost", "::1")
 WILDCARD_BINDS = ("0.0.0.0", "::")
 DEFAULT_HTTP_PORT = 80        # Browser lassen diesen Port im Host-Header weg
+PORT_SEARCH_SPAN = 20         # belegter Port: so viele Nachfolger probieren, dann das BS waehlen lassen
+PORT_UNAVAILABLE = (errno.EADDRINUSE, errno.EACCES)   # belegt / Port < 1024 ohne Rechte
 MAX_BODY = 2 * 1024 * 1024
 
 
@@ -494,6 +497,24 @@ def _server_class(bind):
     return type("ThreadingHTTPServerV6", (ThreadingHTTPServer,), {"address_family": socket.AF_INET6})
 
 
+def _bind_free_port(server_class, bind, port, handler):
+    """Lauscht auf ``port``; ist er nicht verfuegbar, auf dem naechsten freien.
+
+    Beispiel ``--port 8080`` belegt: 8081, 8082, ... bis ``PORT_SEARCH_SPAN``, danach ein
+    beliebiger freier Port (0). Andere Fehler (Adresse fremd, kein IPv6) gehen durch."""
+    if port == 0:
+        return server_class((bind, 0), handler)
+
+    candidates = [p for p in range(port, port + PORT_SEARCH_SPAN) if p <= 65535] + [0]
+    for candidate in candidates:
+        try:
+            return server_class((bind, candidate), handler)
+        except OSError as e:
+            if e.errno not in PORT_UNAVAILABLE:
+                raise
+    raise OSError(errno.EADDRINUSE, "kein freier Port")
+
+
 def make_server(session, port=0, token=None, watch_pid=None, idle_seconds=IDLE_SECONDS, bind="127.0.0.1"):
     """``bind``: Adresse zum Lauschen. Standard ``127.0.0.1`` (nur diese Maschine, engste
     Host-Pruefung). Jede andere Adresse (eine LAN-IP oder ``0.0.0.0`` fuer alle Interfaces) macht
@@ -501,7 +522,7 @@ def make_server(session, port=0, token=None, watch_pid=None, idle_seconds=IDLE_S
     ausgewuerfelt) die Zugriffskontrolle, siehe ``App.loopback_only``/``Handler._host_ok``."""
     app = App(session, token, watch_pid, idle_seconds, bind)
     handler = type("BoundHandler", (Handler,), {"app": app})
-    httpd = _server_class(bind)((bind, port), handler)
+    httpd = _bind_free_port(_server_class(bind), bind, port, handler)
     httpd.daemon_threads = True
     app.httpd = httpd
     app.port = httpd.server_address[1]
