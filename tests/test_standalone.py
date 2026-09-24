@@ -18,7 +18,7 @@ sys.path.insert(0, ROOT)
 
 from companion import converters, pp3, targets          # noqa: E402
 from companion import session as sess                   # noqa: E402
-from companion.__main__ import main, _resume_standalone  # noqa: E402
+from companion.__main__ import main, _find_standalone  # noqa: E402
 from companion.orientation import crop_to_stored, raw_orientation   # noqa: E402
 from companion.sources import standalone_job            # noqa: E402
 from companion.targets.xmp import update_xmp            # noqa: E402
@@ -491,7 +491,7 @@ class CliTest(Tmp):
             self.assertNotEqual(run.call_args[0][0].dir, first.dir)          # anderes Ziel -> neu
             self.run_main(["open", self.tmp, "--root", root, "--new"])
             self.assertNotEqual(run.call_args[0][0].dir, first.dir)
-        self.assertEqual(_resume_standalone(root, "/anders", "copies", []), (None, 0))
+        self.assertIsNone(_find_standalone(root, "/anders", "copies", []))
 
     def test_open_resumes_and_adds_new_images_without_touching_old_ones(self):
         """Ordner waechst zwischen zwei Aufrufen: die alte Sitzung wird ergaenzt statt neu
@@ -544,6 +544,16 @@ class CliTest(Tmp):
         self.assertIn("im Netzwerk erreichbar", out)
         self.assertIn("127.0.0.2", out)
 
+    def test_unbindable_address_fails_with_clear_message(self):
+        # 192.0.2.123 (TEST-NET) gehoert dieser Maschine nicht: klare Meldung statt Traceback
+        self.file("Film/a.jpg")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code, _ = self.run_main([self.tmp, "--root", os.path.join(self.tmp, "root"),
+                                     "--no-browser", "--bind", "192.0.2.123"])
+        self.assertEqual(code, 1)
+        self.assertIn("kann nicht auf 192.0.2.123", err.getvalue())
+
     def test_open_without_raw_converter_fails_clearly(self):
         self.file("Film/a.nef")
         err = io.StringIO()
@@ -586,6 +596,26 @@ class CliTest(Tmp):
         self.assertEqual(code, 0)
         ms.assert_not_called()                    # kein zweiter Server gestartet
         self.assertIn("http://x/live", out)
+
+    def test_second_open_with_new_images_leaves_running_session_untouched(self):
+        """Laeuft schon ein Server, darf ein zweiter Aufruf mit gewachsenem Ordner state.json nicht
+        aendern: der laufende Server kennt die neuen Bilder nicht und wuerde sie beim naechsten
+        Speichern ueberschreiben. Erst sperren, dann ergaenzen."""
+        self.file("Film/a.jpg")
+        root = os.path.join(self.tmp, "root")
+        with unittest.mock.patch("companion.__main__._run", return_value=0) as run:
+            self.run_main([self.tmp, "--root", root, "--no-browser"])
+            s = run.call_args[0][0]
+        from companion.server import acquire_lock
+        held = acquire_lock(s.dir)
+        self.addCleanup(held.close)
+        before = open(s.path("state.json"), encoding="utf-8").read()
+        self.file("Film/b.jpg")                   # Ordner waechst
+        with unittest.mock.patch("companion.__main__.make_server") as ms:
+            code, _ = self.run_main([self.tmp, "--root", root, "--no-browser"])
+        self.assertEqual(code, 0)
+        ms.assert_not_called()
+        self.assertEqual(open(s.path("state.json"), encoding="utf-8").read(), before)
 
 
 @needs_cv2

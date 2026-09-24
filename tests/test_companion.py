@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -386,6 +387,20 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(raw[:3], b"\xff\xd8\xff")
         self.assertEqual(self.call("GET", "/api/thumb/102?w=200")[0], 404)   # kein Export
 
+    def test_retry_while_busy_does_not_leave_session_stuck_analyzing(self):
+        self.app.analyzer.progress["busy"] = True
+        st, _ = self.js("POST", "/api/retry", {"ids": [101]})
+        self.assertEqual(st, 409)
+        self.app.analyzer.progress["busy"] = False
+        self.assertEqual(self.s.phase, "reviewing")
+        self.assertEqual(self.s.image(101)["status"], "done")
+        # Rennen: busy erst beim Start erkannt -> Phase zurueck auf "reviewing", Fertig bleibt moeglich
+        from companion.detect import Busy
+        with unittest.mock.patch.object(self.app.analyzer, "start_analysis", side_effect=Busy()):
+            st, _ = self.js("POST", "/api/retry", {"ids": [101]})
+        self.assertEqual(st, 409)
+        self.assertEqual(self.s.phase, "reviewing")
+
     def test_undo_endpoint(self):
         self.js("PATCH", "/api/images", {"ids": [101], "group": "red"})
         st, data = self.js("POST", "/api/undo", {"scope": "session"})
@@ -447,6 +462,94 @@ class BindTest(unittest.TestCase):
         with unittest.mock.patch("socket.if_nameindex", return_value=[(1, "lo")]), \
                 unittest.mock.patch("companion.server._route_ip", return_value="172.17.0.1"):
             self.assertEqual(guess_lan_ip(), "172.17.0.1")     # besser als gar keine Adresse
+
+    def test_physical_lan_in_docker_range_beats_vpn(self):
+        # echtes LAN in 172.16.0.0/12 gegen WireGuard auf 10.x: die physische Schnittstelle muss gewinnen
+        from companion.server import guess_lan_ip
+        ifaces = {"eth0": "172.20.0.5", "wg0": "10.6.0.1", "docker0": "172.17.0.1"}
+        with unittest.mock.patch("socket.if_nameindex",
+                                 return_value=[(i, n) for i, n in enumerate(ifaces, start=1)]), \
+                unittest.mock.patch("companion.server._iface_ipv4", side_effect=ifaces.get), \
+                unittest.mock.patch("companion.server._route_ip", return_value="172.17.0.1"):
+            self.assertEqual(guess_lan_ip(), "172.20.0.5")
+
+    def test_iface_ipv4_without_fcntl_returns_none(self):
+        # Windows: kein fcntl - darf nicht werfen, sonst stuerzt --bind 0.0.0.0 beim Start ab
+        from companion.server import _iface_ipv4
+        with unittest.mock.patch.dict(sys.modules, {"fcntl": None}):
+            self.assertIsNone(_iface_ipv4("eth0"))
+
+    def test_split_host(self):
+        from companion.server import split_host
+        self.assertEqual(split_host("127.0.0.1:8080"), ("127.0.0.1", 8080))
+        self.assertEqual(split_host("NAS.local"), ("nas.local", None))
+        self.assertEqual(split_host("[::1]:9000"), ("::1", 9000))
+        self.assertEqual(split_host("[::1]"), ("::1", None))
+        self.assertEqual(split_host("host:abc"), ("", None))
+        self.assertEqual(split_host(""), ("", None))
+
+    def test_port_80_host_header_without_port_is_accepted(self):
+        # Browser lassen ":80" im Host-Header weg; ohne Sonderfall bekaeme jede Anfrage 403
+        from companion.server import Handler
+
+        class FakeApp:
+            port, loopback_only = 80, True
+        h = Handler.__new__(Handler)
+        h.app = FakeApp()
+        for host, ok in (("127.0.0.1", True), ("localhost:80", True), ("127.0.0.1:81", False),
+                         ("evil.example", False)):
+            h.headers = {"Host": host}
+            self.assertEqual(h._host_ok(), ok, host)
+        FakeApp.loopback_only = False
+        h.headers = {"Host": "nas.local"}
+        self.assertTrue(h._host_ok())
+
+    def test_server_class_matches_address_family(self):
+        # IPv6-Adresse -> IPv6-Server (vorher: gaierror beim Start, weil immer AF_INET)
+        from companion.server import _server_class
+        self.assertEqual(_server_class("0.0.0.0").address_family, socket.AF_INET)
+        self.assertEqual(_server_class("::").address_family, socket.AF_INET6)
+        self.assertEqual(_server_class("fe80::1").address_family, socket.AF_INET6)
+
+    @unittest.skipUnless(socket.has_ipv6, "kein IPv6")
+    def test_ipv6_bind_works_and_url_uses_brackets(self):
+        try:
+            app = make_server(make_session(self.tmp), bind="::1")
+        except OSError:
+            self.skipTest("::1 nicht bindbar")
+        self.addCleanup(app.httpd.server_close)
+        self.assertTrue(app.loopback_only)
+        self.assertTrue(app.url.startswith(f"http://[::1]:{app.port}/"))
+        t = threading.Thread(target=app.httpd.serve_forever, daemon=True)
+        t.start()
+        self.addCleanup(app.httpd.shutdown)
+        req = urllib.request.Request(f"http://[::1]:{app.port}/api/session",
+                                     headers={"X-Token": app.token})
+        self.assertEqual(urllib.request.urlopen(req, timeout=5).status, 200)
+
+    def test_rejected_requests_do_not_count_as_activity(self):
+        # sonst haelt ein Scanner im Netz den Server bei --bind ueber den Leerlauf-Timeout hinaus am Leben
+        app = make_server(make_session(self.tmp), bind="127.0.0.2")
+        self.addCleanup(app.httpd.server_close)
+        t = threading.Thread(target=app.httpd.serve_forever, daemon=True)
+        t.start()
+        self.addCleanup(app.httpd.shutdown)
+        base = f"http://127.0.0.2:{app.port}"
+
+        def post(token, path="/api/ping"):
+            req = urllib.request.Request(base + path, method="POST", data=b"{}",
+                                         headers={"X-Token": token} if token else {})
+            try:
+                return urllib.request.urlopen(req, timeout=5).status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        app.last_activity = 0.0
+        self.assertEqual(post("falsch"), 403)
+        urllib.request.urlopen(base + "/static/app.css", timeout=5).read()   # statisch, ohne Token
+        self.assertEqual(app.last_activity, 0.0)
+        self.assertEqual(post(app.token), 200)
+        self.assertGreater(app.last_activity, 0.0)
 
     def test_guess_lan_ip_none_without_any_candidate(self):
         from companion.server import guess_lan_ip
