@@ -246,6 +246,8 @@ auto-crop-negative open ~/Scans/Film-12 --bind :: --port 8080       # IPv6 (URL 
 
 Lässt sich die Adresse nicht binden (gehört der Maschine nicht, Port belegt, kein IPv6), endet der Aufruf mit einer
 klaren Fehlermeldung. Mit `--port 80` funktioniert auch der Aufruf ohne Portangabe in der URL.
+Ist der mit `--port` gewählte Port belegt, nimmt der Server den nächsten freien (bis zu 20 weiter, sonst einen
+beliebigen) und meldet das; die angezeigte URL stimmt immer.
 
 Danach zeigt `--tui` (bzw. die normale Ausgabe ohne `--tui`) die URL mit einer im Netzwerk erreichbaren Adresse statt
 `127.0.0.1` – bei `--bind 0.0.0.0` wird sie erraten (`guess_lan_ip()`): eine echte, physische Netzwerkschnittstelle mit

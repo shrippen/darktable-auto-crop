@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Belegter Port
+- `--port N` belegt: der Server sucht selbst den nächsten freien Port (N+1 … N+19, dann einen beliebigen)
+  und meldet `Port N belegt, nutze M.`, statt abzubrechen. Andere Bind-Fehler (fremde Adresse, kein IPv6) enden
+  weiter mit klarer Meldung.
+
 ### Korrekturen aus dem Code-Review (Companion-Server und CLI)
 - **Laufende Sitzung verlor neue Bilder**: ein zweiter `open`-Aufruf mit gewachsenem Ordner schrieb die neuen Bilder
   in `state.json`, bevor er die Sitzungssperre prüfte; der laufende Server überschrieb sie beim nächsten Speichern.
