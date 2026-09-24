@@ -121,14 +121,23 @@ auto-crop-negative ~/Scans/2026-09            # = auto-crop-negative open ~/Scan
    JPEG gleichen Namens nebeneinander (RAW+JPEG der Kamera), zählt nur das RAW.
 2. RAWs werden mit einem **RAW-Konverter** in voller Auflösung entwickelt, ohne einen vorhandenen Crop; dann läuft die
    Erkennung und die Web-UI öffnet sich im Browser.
-3. In der Web-UI prüfen und korrigieren wie gewohnt (siehe [Web-UI](#web-ui)).
-4. **Fertig**: die Ansicht wird gesperrt und der Plan **sofort** auf das Ziel angewendet. Das Ergebnis (OK /
+3. Oben in der Web-UI wählst du das **Ziel** – wofür „Fertig“ den Crop schreibt (siehe [Ziele](#ziele)). Ein
+   Vorschlag ist schon markiert; jede Option erklärt ausführlich, was sie tut, ob sie Schräglage geradestellen kann und
+   ob es in dieser Sitzung Bilder gibt, für die sie nichts schreibt (z. B. JPEGs bei `xmp`). Das Ziel lässt sich
+   jederzeit vor „Fertig“ wechseln, danach über „Zurück zur Prüfung“ erneut.
+4. Prüfen und korrigieren wie gewohnt (siehe [Web-UI](#web-ui)).
+5. **Fertig**: die Ansicht wird gesperrt und der Plan **sofort** auf das gewählte Ziel angewendet. Das Ergebnis (OK /
    übersprungen / Fehler, Hinweise je Bild) steht oben in der Web-UI.
-5. Nicht zufrieden? **Zurück zur Prüfung**, ändern, erneut **Fertig**: geschrieben wird nur, was sich geändert hat.
+6. Nicht zufrieden? **Zurück zur Prüfung**, ändern, erneut **Fertig**: geschrieben wird nur, was sich geändert hat.
    Übersprungene Bilder, die vorher zugeschnitten waren, werden zurückgenommen (Kopie gelöscht, Crop im Sidecar aus).
+   Wechselst du dabei das Ziel, bleiben die Dateien des vorherigen Ziels unangetastet liegen (die Web-UI weist darauf hin).
 
-Erneutes Starten mit demselben Ordner und Ziel **setzt die letzte Sitzung fort** (keine Neuanalyse). `--new` erzwingt eine
-neue Analyse; haben sich die Bilder im Ordner geändert, entsteht ohnehin eine neue Sitzung.
+Erneutes Starten mit demselben Ordner und Ziel **setzt die letzte Sitzung fort**, auch wenn der Ordner inzwischen
+gewachsen ist: neue Bilder werden ergänzt und analysiert, bereits getroffene Entscheidungen an den alten bleiben
+unangetastet. Fehlt der alten Sitzung dagegen ein Bild, das jetzt nicht mehr da ist (gelöscht), passt sie nicht mehr und
+es entsteht eine neue. `--new` erzwingt in jedem Fall eine komplette Neuanalyse. Läuft für eine Sitzung schon ein Server
+(z. B. aus einem zweiten Terminal gestartet), meldet ein erneuter Aufruf nur dessen URL, statt einen zweiten Server auf
+denselben Dateien laufen zu lassen.
 
 ```bash
 auto-crop-negative check ~/Scans/2026-09      # verfügbare Konverter, vorgeschlagenes Ziel
@@ -156,8 +165,18 @@ auto-crop-negative open ~/Scans --target xmp --films 33 34 --converter rawpy --o
 | `darktable` | über das Lua-Plugin, siehe [Nutzung mit darktable](#nutzung-mit-darktable) | ja | – (nur aus darktable) |
 | `reviews` | Kalibrierung, siehe [Kalibrierung](#kalibrierung-und-ground-truth) | Winkel als Referenz | – |
 
+`--target auto` (Standard) schlägt eines vor, entscheidet aber nicht endgültig: die Web-UI zeigt **alle** Ziele
+gleichberechtigt mit ausführlicher Erklärung und lässt dich jederzeit wechseln (siehe [Web-UI](#web-ui)). Ohne irgendein
+Sidecar im Ordner – der häufigste Fall bei frisch digitalisierten Rollen – schlägt `auto` `json`/`copies` vor, auch wenn
+du eigentlich `xmp` oder `rawtherapee` willst; wähle dann in der Web-UI bewusst um.
+
 Die Originale werden nie verändert. Sidecars werden **ergänzt**: vorhandene Einstellungen bleiben stehen, nur Crop und
 Farblabel werden gesetzt. Ausgabeordner tragen die Markierung `.autocrop-output` und werden bei der nächsten Suche übersprungen.
+
+`xmp` schreibt nur für proprietäre RAWs. Enthält eine Sitzung auch JPEG/TIFF/PNG/DNG, werden diese von `xmp` nicht
+geschrieben – die Web-UI markiert sie mit einer Kachel „nicht geschrieben“ und erklärt es im Crop-Editor, **bevor** du
+auf Fertig klickst, nicht erst danach im Ergebnis. Für eine gemischte Rolle bleibt nur: `copies`/`json` wählen (nimmt
+jedes Bild), oder das Werkzeug für den betroffenen Unterordner separat mit einem anderen Ziel laufen lassen.
 
 Grenzen der Ziele (ehrlicher Stand):
 - **`copies`**: Quelle ist das analysierte Bild, bei RAWs also der 8-Bit-JPEG-Export des Konverters. 8-Bit-Bilder behalten
@@ -225,6 +244,13 @@ Gilt für alle Ziele. Kacheln nach 🟢 Grün / 🟡 Gelb / 🔴 Rot, Umsortiere
 und Kandidaten, „Größe auf Rolle“, „Auswahl neu erkennen“ mit anderen Einstellungen, Akzeptieren (`A`) und Überspringen (`S`).
 Kopf und Ablaufleiste zeigen das aktive Ziel. Der Server beendet sich nach 30 Minuten ohne Aktivität; die Sitzung bleibt
 erhalten (ohne darktable: denselben Befehl erneut starten).
+
+**Ziel-Auswahl (eigenständiger Modus):** direkt unter dem Kopf zeigt ein Panel „Ziel: was passiert bei „Fertig“?“ alle
+eigenständigen Ziele als Karten – jede mit Kurzbeschreibung, ausführlichem Absatz, was sie tut und wo Dateien landen,
+Aufzählung ihrer Grenzen (Geradestellen, Ungetestetes, RAW-only, …) und, falls zutreffend, wie viele Bilder dieser
+Sitzung sie nicht schreiben würde und warum. Ein Vorschlag ist markiert, die aktuell gewählte Karte ebenfalls. Ein Klick
+auf eine andere Karte wechselt sofort (solange die Sitzung nicht gesperrt ist); war die Sitzung vorher schon einmal mit
+einem anderen Ziel fertig, weist ein Hinweis darauf hin, dass dessen Dateien liegen bleiben.
 
 Sitzungen liegen in `~/.cache/auto-crop-negative/` und werden nach 14 Tagen aufgeräumt
 (`auto-crop-negative cleanup`). Details und Entwurf: [`companion-ui-plan.md`](companion-ui-plan.md).

@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Ziel-Auswahl in der Web-UI, Lücken aus der Journey-Analyse geschlossen
+Eine Durchsicht typischer Abläufe der eigenständigen Nutzung (Erstnutzer, Lightroom-Digitalisierer, mehrtägige Sitzungen,
+gemischte Ordner, …) fand sechs konkrete Lücken; alle behoben.
+- **Ziel-Panel in der Web-UI**: direkt unter dem Kopf zeigt „Ziel: was passiert bei „Fertig“?“ alle eigenständigen Ziele
+  als Karten mit ausführlicher Erklärung (was passiert, wohin geschrieben wird, Geradestellen ja/nein, bekannte Grenzen),
+  Vorschlags- und Auswahl-Markierung, und – falls zutreffend – wie viele Bilder dieser Sitzung das Ziel nicht schreiben
+  würde und warum. Jederzeit änderbar, solange die Sitzung nicht gesperrt ist. Löst, dass ein automatisch gewähltes Ziel
+  (z. B. `json` mangels vorhandener Sidecars) bisher nur im README stand, nicht in der Oberfläche selbst.
+- **Bilder, die ein Ziel nicht schreibt, sind jetzt sichtbar, bevor man auf Fertig klickt**: Kachel-Badge „nicht
+  geschrieben“ in der Galerie, ausführlicher Hinweis im Crop-Editor. Bisher zählte so ein Bild ganz normal zu „Anwenden“
+  und tauchte erst nach Fertig im Ergebnis als übersprungen auf.
+- **Ordner wachsen lassen funktioniert jetzt**: `auto-crop-negative ORDNER` erkennt beim erneuten Aufruf, wenn die
+  bekannten Bilder einer bestehenden Sitzung eine Teilmenge der jetzt gefundenen sind, und ergänzt nur die neuen
+  (Analyse nur für sie, bestehende Entscheidungen bleiben). Bisher erzwang schon ein einziges neues Bild eine komplette
+  neue Sitzung mit Neuanalyse aller Bilder.
+- **Kein zweiter Server mehr auf derselben Sitzung**: eine Dateisperre (`server.lock`, `flock`) verhindert, dass ein
+  zweiter `auto-crop-negative`-Aufruf (oder ein zweites „Prüfung öffnen“) denselben Sitzungsordner gleichzeitig bedient;
+  der zweite Aufruf meldet stattdessen die URL des laufenden Servers. Ohne das konnten zwei Prozesse unbemerkt
+  gegenseitig Korrekturen überschreiben.
+- **`--converter NAME` scheitert jetzt sofort**, wenn das Programm fehlt, statt erst beim Export mitten in der Sitzung.
+- **Zielwechsel-Hinweis**: War eine Sitzung schon einmal mit einem anderen Ziel fertig, weist die Web-UI beim Wechsel
+  darauf hin, dass dessen Dateien liegen bleiben (kein automatisches Aufräumen).
+
 ### Eigenständig nutzbar, darktable optional (`roadmap-standalone.md`, Phase 1–4)
 Erkennung und Web-UI waren schon werkzeugneutral; nur Ein- und Ausgang hingen an darktable. Beide Enden sind jetzt
 austauschbare Adapter.

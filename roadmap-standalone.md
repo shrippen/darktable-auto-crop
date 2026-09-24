@@ -185,3 +185,40 @@ es spekulative Arbeit an Werkzeugen, die niemand nutzt.
 Nachtrag 2026-09-24: Auf Wunsch wurden Phase 1 bis 4 zusammen umgesetzt, nicht nacheinander mit Nachfragetest. Der Test
 bleibt trotzdem sinnvoll: Die ungeprüften Teile (RawTherapee, Lightroom) sollten erst mit einem echten Nutzer dieses
 Werkzeugs geprüft werden, bevor sie als verlässlich gelten.
+
+## Nachtrag: User-Journey-Analyse und Behebung (2026-09-24)
+
+Nach Phase 1–4 wurden konkrete Nutzungsabläufe (Journeys) durchgespielt statt nur die Ziele/Konverter einzeln zu prüfen.
+Das deckte sechs Lücken auf, die einzeln funktionierende Bausteine im Zusammenspiel unbrauchbar machten. Alle behoben,
+siehe `CHANGELOG.md`:
+
+1. **Zielwahl war "richtig, aber unsichtbar"** (traf v. a. die Lightroom-Journey): `targets.suggest()` schlägt ohne
+   vorhandene Sidecars `json`/`copies` vor, obwohl gerade der Ordner ohne Sidecars der Normalfall bei frisch
+   digitalisierten Rollen ist. Der Vorschlag stand nur im README, nicht in der Oberfläche.
+   **Behoben:** Ziel-Panel in der Web-UI zeigt alle Optionen gleichberechtigt mit ausführlicher Erklärung, jederzeit
+   wechselbar (`Session.set_target`, `POST /api/target`, `companion/static/app.js` `renderTargetPanel`).
+2. **Gemischte Ordner (RAW + JPEG) mit Ziel `xmp`**: JPEGs wurden lautlos übersprungen, die Oberfläche zeigte das erst
+   nach Fertig im Ergebnis.
+   **Behoben:** `Target.compatible()` je Ziel, in `will_apply()`/`public_image()` eingebaut (`target_ok`/`target_reason`),
+   Badge in der Galerie und Hinweis im Crop-Editor **vor** Fertig, dazu die Zählung "N von M Bildern werden nicht
+   geschrieben" direkt an der jeweiligen Ziel-Karte (`targets.options_for`).
+3. **Mehrtägige Sitzungen (Ordner wächst)**: ein einziges neues Bild ließ `_latest_standalone` (jetzt
+   `_resume_standalone`) nicht mehr matchen → komplette Neuanalyse aller Bilder, alte Entscheidungen verloren.
+   **Behoben:** Teilmengen-Vergleich statt Gleichheit, `Session.add_images()` ergänzt nur die neuen Bilder und setzt die
+   Sitzung zurück auf "analyzing", ohne bestehende Bilder anzutasten.
+4. **Zwei Server auf derselben Sitzung** (Doppelstart, vergessenes Terminal): unbemerkter Datenverlust durch zwei
+   unabhängige In-Memory-Zustände auf demselben Sitzungsordner.
+   **Behoben:** `companion/server.py` `acquire_lock()` (`flock`, prozessgebunden, kein Aufräum-Code nötig); ein zweiter
+   Aufruf meldet die URL des laufenden Servers statt selbst zu bedienen. Schützt nebenbei auch "Prüfung öffnen" in
+   darktable, falls zweimal geklickt.
+5. **`--converter NAME` explizit, aber nicht installiert**: scheiterte bisher erst beim Export, mit einer Fehlermeldung
+   pro Bild, nicht vorab auf der Kommandozeile.
+   **Behoben:** Verfügbarkeitsprüfung in `_open()` gilt jetzt unabhängig davon, ob der Konverter automatisch oder
+   explizit gewählt wurde.
+6. **Zielwechsel im selben Ausgabeordner**: Dateien des vorherigen Ziels blieben kommentarlos liegen.
+   **Entschärft, nicht automatisiert:** Automatisches Löschen fremder Dateien wäre selbst riskant; stattdessen weist die
+   Web-UI beim Wechsel auf ein zuvor angewendetes anderes Ziel hin (`applied_target` in `public_state()`).
+
+**Bewusst nicht angegangen:** Ziel-Wahl bleibt pro Sitzung global, nicht pro Bild/Unterordner – ein Sammelordner mit
+Rollen unterschiedlicher Herkunft (Journey 7) braucht weiterhin mehrere Aufrufe auf Unterordnern, wenn die Rollen
+verschiedene Ziele brauchen. Das wird jetzt aber vor Fertig sichtbar gemacht statt stillschweigend falsch zu laufen.
