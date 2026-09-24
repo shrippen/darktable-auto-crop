@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Im Netzwerk erreichbar machen (`--bind`)
+`auto-crop-negative open ORDNER --bind 0.0.0.0` (oder eine konkrete LAN-Adresse) lässt den Server auf mehr als nur
+`127.0.0.1` lauschen, damit man z. B. von seinem eigenen Rechner aus auf die Web-UI eines per SSH betriebenen NAS
+zugreifen kann, ohne einen SSH-Tunnel aufzusetzen. Der **Token** (bei jedem Start neu ausgewürfelt, `secrets.token_urlsafe`)
+bleibt dabei die Zugriffskontrolle; die engere Host-Header-Prüfung (Schutz gegen DNS-Rebinding), die nur bei
+`127.0.0.1`/`localhost` greift, entfällt zwangsläufig, sobald die Adresse variieren kann (`App.loopback_only`,
+`companion/server.py`). `--tui` und die normale Ausgabe zeigen dann dauerhaft eine deutliche Warnung samt Adresse; bei
+`--bind 0.0.0.0` wird die angezeigte URL bestmöglich mit einer echten LAN-Adresse statt `0.0.0.0` gefüllt (`guess_lan_ip()`,
+ermittelt die Route ohne ein Paket zu senden). Nur für den eigenständigen `open`-Weg.
+
 ### Terminal-Statusanzeige für NAS/SSH (`--tui`)
 `auto-crop-negative open ORDNER --tui` zeigt eine laufende Statusanzeige im Terminal statt nur der einmal ausgegebenen
 URL: Sitzung, Ziel, Zähler (grün/gelb/rot/anwenden), Fortschrittsbalken bei Export/Erkennung, Ergebnis nach „Fertig“,

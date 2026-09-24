@@ -154,6 +154,7 @@ auto-crop-negative open ~/Scans --target xmp --films 33 34 --converter rawpy --o
 | `--no-browser` | Browser nicht öffnen (URL steht in der Ausgabe) | aus |
 | `--idle-minutes` | Server endet nach so viel Leerlauf | 30 |
 | `--tui` | Terminal-Statusanzeige statt nur der URL (siehe unten) | aus |
+| `--bind` | Lauschadresse; im Netzwerk erreichbar machen (siehe unten, Sicherheitshinweis beachten) | `127.0.0.1` |
 
 ### Ziele
 
@@ -224,6 +225,40 @@ läuft im selben Prozess (kein zusätzlicher Netzwerk-Umweg) und braucht das Pak
 (funktioniert über SSH; nicht unter Windows, nicht in einer Pipe/einem Skript). Fehlt eine Voraussetzung, meldet
 `--tui` das sofort und klar (`auto-crop-negative check` zeigt den Stand auch ohne `--tui` an). Nur für diesen
 eigenständigen Weg – über darktable oder `serve --folder` bleibt es wie bisher ganz ohne Terminal-Oberfläche.
+
+Die Sitzung selbst endet nicht mit `--tui`: Solange der Server läuft (auch während `--tui` aktiv ist), ist die normale
+Web-UI unter derselben URL parallel nutzbar – beide arbeiten auf genau derselben Sitzung, Änderungen im Browser
+erscheinen mit der nächsten Aktualisierung auch in der TUI. Beendest du die TUI mit `Q`, bleibt die Sitzung auf der
+Platte erhalten; ein erneutes `auto-crop-negative ORDNER` (auch ohne `--tui`) setzt sie fort und öffnet die Web-UI wie
+gewohnt.
+
+### Im Netzwerk erreichbar (`--bind`)
+
+Die URL aus `--tui` (und auch ohne sie) ist standardmäßig nur auf derselben Maschine erreichbar – der Server bindet an
+`127.0.0.1`. Sitzt du per SSH auf einem NAS, hilft das allein nicht: ein Browser auf deinem eigenen Rechner kommt ohne
+Weiteres nicht an `127.0.0.1` des NAS heran. `--bind ADRESSE` öffnet den Server fürs Netzwerk:
+
+```bash
+auto-crop-negative open ~/Scans/Film-12 --tui --bind 0.0.0.0    # auf allen Netzwerkschnittstellen lauschen
+auto-crop-negative open ~/Scans/Film-12 --tui --bind 192.168.1.50   # nur auf dieser einen Adresse
+```
+
+Danach zeigt `--tui` (bzw. die normale Ausgabe ohne `--tui`) die URL mit einer im Netzwerk erreichbaren Adresse statt
+`127.0.0.1` – bei `--bind 0.0.0.0` wird sie bestmöglich erraten (die Route, die das Betriebssystem für ausgehende
+Pakete wählen würde); stimmt das nicht mit der Adresse überein, unter der du das NAS tatsächlich erreichst, ersetze sie
+in der URL von Hand.
+
+**Sicherheit:** Der **Token** in der URL (`?t=...`) ist ab dann die einzige Zugriffskontrolle – er wird bei **jedem
+Start neu ausgewürfelt** (`secrets.token_urlsafe`, 128 Bit Zufall) und nirgends gespeichert außer in der angezeigten
+URL. Ohne `--bind` (Standard `127.0.0.1`) prüft der Server zusätzlich, dass die Anfrage tatsächlich an `127.0.0.1`
+oder `localhost` gerichtet war (Schutz gegen DNS-Rebinding durch eine fremde Webseite im selben Browser); mit
+`--bind` entfällt diese enge Prüfung zwangsläufig (der Hostname variiert je nach Netzwerkschnittstelle), es bleibt nur
+noch die Portprüfung. `--tui` zeigt deshalb dauerhaft eine rote Warnzeile, solange nicht auf `127.0.0.1` gebunden ist
+(auch ohne `--tui` erscheint die Warnung einmal beim Start). Folgen:
+- Nicht in unsicheren oder fremden Netzen (offenes WLAN, Firmennetz mit anderen Nutzern) binden.
+- Die URL (mit Token) ist ein Geheimnis wie ein Passwort – nicht in Chatverläufe, Tickets o. Ä. kopieren.
+- Nur für den eigenständigen `open`-Weg; `serve --job`/`serve --folder` (darktable, Kalibrierung) binden weiterhin
+  ausschließlich an `127.0.0.1`, das Flag existiert dort nicht.
 
 ## Nutzung mit darktable
 

@@ -242,3 +242,26 @@ Normalfall bei SSH auf ein NAS) sah man nichts vom Fortschritt.
   zwei echte Bugs gefunden und behoben: `Live.update()` aktualisiert ohne `refresh=True` gar nichts (nur der
   Konstruktor-Frame wäre je sichtbar geworden), und lange Ausgabepfade brachen die Kopfzeile hässlich um (jetzt
   `no_wrap`/`overflow="ellipsis"`).
+
+## Nachtrag: Server im Netzwerk erreichbar machen, `--bind` (2026-09-24)
+
+Direkte Nachfrage: TUI in der SSH-Sitzung auf dem NAS starten, dann die Web-UI vom eigenen Rechner aus weiterbenutzen.
+Geprüft (siehe Gespräch): Solange der Server läuft, ist die Web-UI ohnehin parallel zur TUI nutzbar (beide lesen/schreiben
+dieselbe `Session` im selben Prozess) – das ging schon vorher. Der eigentliche Engpass war der harte `127.0.0.1`-Bind:
+ohne SSH-Tunnel kam ein Browser auf einem anderen Rechner gar nicht erst bis zum Server.
+
+- **Umgesetzt:** `--bind ADRESSE` (nur `open`). Token-Schutz bleibt (neu bei jedem Start, siehe `App.token`); die
+  Host-Header-Prüfung (`Handler._host_ok`) bleibt eng, solange auf `127.0.0.1`/`localhost` gebunden wird, und wird nur
+  bei einer anderen Bind-Adresse auf eine Portprüfung gelockert (ein fester Hostname-Abgleich wäre bei `0.0.0.0`
+  ohnehin nicht eindeutig – die Maschine kann mehrere Adressen haben). `--tui` und die normale Ausgabe zeigen dann
+  dauerhaft/beim Start eine unübersehbare Warnung.
+  **Bewusste Entscheidung, keine engere Zuordnung** (z. B. eine feste erlaubte Host-Liste aus allen Interface-Adressen):
+  mehr Komplexität für einen Schutz, der bei `0.0.0.0` ohnehin nur einen Teil der Fälle abdecken könnte und leicht
+  falsch-negativ ausfallen kann (falsche Schnittstelle geraten); der Token bleibt die tragende Kontrolle, transparent
+  dokumentiert statt stillschweigend geschwächt.
+- **Für die Anzeige:** `guess_lan_ip()` (UDP-Verbindungsversuch ohne Datenversand, nur um die vom Betriebssystem
+  gewählte Route zu erfahren) füllt bei `--bind 0.0.0.0` eine echte Adresse in die angezeigte URL statt der nutzlosen
+  `0.0.0.0`; kann bei mehreren Netzwerkschnittstellen danebenliegen, dann muss die Adresse von Hand ersetzt werden.
+- **Getestet:** `tests/test_companion.py` `BindTest` (Standard bleibt eng; `0.0.0.0` fuellt eine erratene Adresse;
+  ein echter Server auf `127.0.0.2` beweist per HTTP-Anfragen mit unterschiedlichen `Host`-Headern, dass der
+  Hostname jetzt egal ist, der Port aber weiterhin geprüft wird und ein falscher Token weiterhin 403 gibt).
