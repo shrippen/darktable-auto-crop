@@ -422,6 +422,27 @@ class BindTest(unittest.TestCase):
         self.assertTrue(app.loopback_only)
         self.assertTrue(app.url.startswith("http://127.0.0.1:"))
 
+    def test_busy_port_falls_back_to_a_free_one(self):
+        # Port belegt (zweites Programm, alter Server): statt Abbruch den naechsten freien nehmen
+        busy = socket.socket()
+        self.addCleanup(busy.close)
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        app = make_server(make_session(self.tmp), port)
+        self.addCleanup(app.httpd.server_close)
+        self.assertNotEqual(app.port, port)
+        self.assertIn(f":{app.port}/", app.url)
+
+    def test_free_port_is_used_as_given(self):
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        app = make_server(make_session(self.tmp), port)
+        self.addCleanup(app.httpd.server_close)
+        self.assertEqual(app.port, port)
+
     def test_wildcard_bind_uses_guessed_lan_ip_for_display(self):
         from companion.server import App
         app = App(make_session(self.tmp, mode="darktable"), bind="0.0.0.0")

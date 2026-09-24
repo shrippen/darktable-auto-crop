@@ -8,6 +8,7 @@ import io
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import unittest
@@ -543,6 +544,24 @@ class CliTest(Tmp):
         self.assertEqual(code, 0)
         self.assertIn("im Netzwerk erreichbar", out)
         self.assertIn("127.0.0.2", out)
+
+    def test_busy_port_is_replaced_and_reported(self):
+        self.file("Film/a.jpg")
+        busy = socket.socket()
+        self.addCleanup(busy.close)
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        started = {}
+        err = io.StringIO()
+        with unittest.mock.patch("companion.__main__.serve", side_effect=lambda app, **k: started.update(app=app)), \
+                contextlib.redirect_stderr(err):
+            code, _ = self.run_main([self.tmp, "--root", os.path.join(self.tmp, "root"),
+                                     "--no-browser", "--port", str(port)])
+        self.addCleanup(started["app"].httpd.server_close)
+        self.assertEqual(code, 0)
+        self.assertNotEqual(started["app"].port, port)
+        self.assertIn(f"Port {port} belegt", err.getvalue())
 
     def test_unbindable_address_fails_with_clear_message(self):
         # 192.0.2.123 (TEST-NET) gehoert dieser Maschine nicht: klare Meldung statt Traceback
