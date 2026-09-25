@@ -72,14 +72,26 @@ def acquire_lock(session_dir):
     Gibt das offene Dateiobjekt zurueck (muss vom Aufrufer gehalten werden, solange der Server
     laeuft) oder ``None``, wenn schon ein anderer Prozess die Sperre haelt. Der Prozess gibt die
     Sperre beim Beenden automatisch frei (auch bei Absturz), ohne Aufraeum-Code noetig ist.
-    Ohne ``fcntl`` (nicht-POSIX) wird nicht gesperrt (kein Fehler, nur kein Schutz)."""
+    Unter Windows ueber ``msvcrt.locking`` (ebenfalls prozessgebunden)."""
     try:
         import fcntl
-    except ImportError:            # pragma: no cover - kein POSIX (Windows)
-        return open(os.devnull, "a")
+    except ImportError:            # pragma: no cover - Windows
+        return _acquire_lock_windows(session_dir)
     fh = open(os.path.join(session_dir, "server.lock"), "a")
     try:
         fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
+def _acquire_lock_windows(session_dir):  # pragma: no cover - nur Windows
+    import msvcrt
+    fh = open(os.path.join(session_dir, "server.lock"), "a+")
+    try:
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
     except OSError:
         fh.close()
         return None
@@ -535,14 +547,15 @@ def write_server_info(app):
         "url": app.url, "started": sess.now_iso()})
 
 
-def serve(app, start_analysis=True, tui=False):
+def serve(app, start_analysis=True, tui=False, window=False):
     """Startet Watcher-Threads und blockiert, bis der Server beendet wird.
 
     Automatisches Ende: Web-UI 30 Minuten ohne Aktivitaet, Elternprozess (darktable)
     beendet, SIGTERM/SIGINT (Stop-Knopf in darktable), "Server beenden" in der UI.
 
-    ``tui=True`` (nur eigenstaendige Nutzung, siehe ``companion/tui.py``): der HTTP-Server
-    laeuft dann in einem Hintergrund-Thread, der Hauptthread gehoert der Terminal-Anzeige."""
+    ``tui=True``/``window=True`` (nur eigenstaendige Nutzung, siehe ``companion/tui.py`` und
+    ``companion/window.py``): der HTTP-Server laeuft dann in einem Hintergrund-Thread, der
+    Hauptthread gehoert der Anzeige."""
     write_server_info(app)
     try:
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -576,12 +589,15 @@ def serve(app, start_analysis=True, tui=False):
     if start_analysis and app.session.phase == "analyzing":
         app.analyzer.start_analysis()
     try:
-        if tui:
+        if tui or window:
             server_thread = threading.Thread(target=app.httpd.serve_forever, daemon=True)
             server_thread.start()
-            from . import tui as tui_mod
+            if tui:
+                from . import tui as front
+            else:
+                from . import window as front
             try:
-                tui_mod.run(app)
+                front.run(app)
             finally:
                 if app.stop_reason is None:
                     app.stop("quit")

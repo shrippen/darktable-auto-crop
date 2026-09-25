@@ -4,7 +4,7 @@ Eigenstaendig, ohne darktable:
   kader ORDNER                     = open ORDNER
   kader open ORDNER [--target auto|json|copies|xmp|rawtherapee]
                             [--out DIR] [--converter auto|darktable|rawtherapee|rawpy]
-                            [--films 33 34] [--new] [--no-browser] [--tui] [--bind ADRESSE]
+                            [--films 33 34] [--new] [--no-browser] [--tui | --window] [--bind ADRESSE]
   kader check [ORDNER]             Konverter, Ziele, Vorschlag fuer ORDNER
 
   --tui zeigt statt der einmaligen URL-Ausgabe eine laufende Statusanzeige im Terminal
@@ -16,7 +16,10 @@ Eigenstaendig, ohne darktable:
   Geraet im selben Netz öffnen. Der Token wird bei jedem Start neu ausgewürfelt und ist dann die
   einzige Zugriffskontrolle (siehe README, Abschnitt "Terminal-Statusanzeige").
 
-  Beide Optionen nur für diesen eigenständigen Weg; über darktable/serve bleibt es wie bisher
+  --window zeigt stattdessen ein kleines Statusfenster (tkinter) mit "Im Browser öffnen" und
+  "Beenden" - der Weg für den Doppelklick-Start ohne Terminal (gebündelte exe/AppImage).
+
+  Diese Optionen nur für den eigenständigen Weg; über darktable/serve bleibt es wie bisher
   (nur 127.0.0.1, kein Terminal-UI).
 
 darktable und Kalibrierung:
@@ -37,6 +40,7 @@ from . import converters
 from . import session as sess
 from . import targets
 from . import tui
+from . import window
 from .export import is_raw
 from .server import acquire_lock, make_server, serve
 from .sources import folder_job, standalone_job
@@ -63,8 +67,11 @@ def main(argv=None):
     op.add_argument("--films", nargs="+", help="nur diese Rollen (Unterordner, z. B. 33 34)")
     op.add_argument("--new", action="store_true", help="neu analysieren statt die letzte Sitzung fortzusetzen")
     op.add_argument("--no-browser", action="store_true", help="Browser nicht oeffnen")
-    op.add_argument("--tui", action="store_true",
-                    help="Statusanzeige im Terminal statt nur der URL (braucht 'rich'; fuer SSH/NAS)")
+    fronts = op.add_mutually_exclusive_group()
+    fronts.add_argument("--tui", action="store_true",
+                        help="Statusanzeige im Terminal statt nur der URL (braucht 'rich'; fuer SSH/NAS)")
+    fronts.add_argument("--window", action="store_true",
+                        help="kleines Statusfenster statt Terminal-Ausgabe (Doppelklick-Start)")
     op.add_argument("--bind", default="127.0.0.1",
                     help="Lauschadresse; 0.0.0.0 oder eine LAN-IP macht den Server im Netzwerk "
                          "erreichbar (Standard: nur diese Maschine, siehe Sicherheitshinweis in der README)")
@@ -138,6 +145,11 @@ def _open(args):
         if reason:
             print(f"Fehler: --tui geht hier nicht: {reason}.", file=sys.stderr)
             return 1
+    if args.window:
+        reason = window.unavailable_reason()
+        if reason:
+            print(f"Fehler: --window geht hier nicht: {reason}.", file=sys.stderr)
+            return 1
     try:
         job = standalone_job(args.folder, films=args.films)
     except sess.SessionError as e:
@@ -182,7 +194,8 @@ def _open(args):
         print(f"Sitzung:    {s.state['session']} (fortgesetzt{extra}; --new fuer Neuanalyse)")
     else:
         print(f"Sitzung:    {s.state['session']}")
-    return _run(s, args, not args.no_browser, None, use_tui=args.tui, bind=args.bind, lock=lock)
+    return _run(s, args, not args.no_browser, None, use_tui=args.tui, use_window=args.window,
+                bind=args.bind, lock=lock)
 
 
 def _find_standalone(root, folder, target, items):
@@ -217,7 +230,7 @@ def _report_running(s, open_browser):
     return 0
 
 
-def _run(s, args, open_browser, watch_pid, use_tui=False, bind="127.0.0.1", lock=None):
+def _run(s, args, open_browser, watch_pid, use_tui=False, use_window=False, bind="127.0.0.1", lock=None):
     lock = lock or acquire_lock(s.dir)           # gehalten, solange dieser Prozess laeuft
     if lock is None:
         return _report_running(s, open_browser)
@@ -241,7 +254,7 @@ def _run(s, args, open_browser, watch_pid, use_tui=False, bind="127.0.0.1", lock
     print(app.url, flush=True)
     if open_browser:
         webbrowser.open(app.url)
-    serve(app)
+    serve(app, window=use_window)
     return 0
 
 

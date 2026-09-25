@@ -663,5 +663,50 @@ class EndToEndTest(Tmp):
         self.assertEqual(len(standalone_job(os.path.join(self.tmp, "Scans"))["images"]), 1)   # Ausgabe nicht erneut
 
 
+class LauncherTest(Tmp):
+    """Doppelklick-Einstieg der gebuendelten Builds (companion/launcher.py)."""
+
+    def setUp(self):
+        super().setUp()
+        from companion import launcher
+        self.launcher = launcher
+        self.errors = []
+        p = unittest.mock.patch.object(launcher, "_error", self.errors.append)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_folder_argument_opens_with_window(self):
+        with unittest.mock.patch("companion.__main__.main", return_value=0) as cli:
+            self.assertEqual(self.launcher.main([self.tmp]), 0)
+        cli.assert_called_once_with(["open", self.tmp, "--window"])
+        self.assertEqual(self.errors, [])
+
+    def test_no_argument_asks_and_cancel_ends_quietly(self):
+        with unittest.mock.patch.object(self.launcher, "_ask_folder", return_value=None), \
+                unittest.mock.patch("companion.__main__.main") as cli:
+            self.assertEqual(self.launcher.main([]), 0)
+        cli.assert_not_called()
+
+    def test_non_folder_argument_is_plain_command_line(self):
+        with unittest.mock.patch("companion.__main__.main", return_value=0) as cli:
+            self.launcher.main(["check", self.tmp])
+        cli.assert_called_once_with(["check", self.tmp])
+
+    def test_failure_is_shown_with_captured_output(self):
+        # leerer Ordner: kader open meldet den Fehler auf stderr, ohne Konsole waere er unsichtbar
+        self.assertEqual(self.launcher.main([self.tmp]), 1)
+        self.assertEqual(len(self.errors), 1)
+        self.assertIn("Fehler", self.errors[0])
+
+    def test_crash_is_shown_as_traceback(self):
+        with unittest.mock.patch("companion.__main__.main", side_effect=RuntimeError("kaputt")):
+            self.assertEqual(self.launcher.main([self.tmp]), 1)
+        self.assertIn("RuntimeError: kaputt", self.errors[0])
+
+    def test_tui_and_window_exclude_each_other(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            main(["open", self.tmp, "--tui", "--window"])
+
+
 if __name__ == "__main__":
     unittest.main()
