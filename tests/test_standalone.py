@@ -663,6 +663,48 @@ class EndToEndTest(Tmp):
         self.assertEqual(len(standalone_job(os.path.join(self.tmp, "Scans"))["images"]), 1)   # Ausgabe nicht erneut
 
 
+class WindowSnapshotTest(Tmp):
+    """Was das Statusfenster anzeigt (companion/window.py), ohne Tk."""
+
+    def app(self, progress=None):
+        from companion import window
+        a, b, c = self.file("F/a.jpg"), self.file("F/b.jpg"), self.file("F/c.jpg")
+        s = self.session("json", [(a, 0.9, [100, 100]), (b, 0.4, [100, 100]), (c, 0.1, [100, 100])])
+        prog = {"stage": "", "done": 0, "total": 0, "busy": False, **(progress or {})}
+        app = unittest.mock.Mock(session=s, analyzer=unittest.mock.Mock(progress=prog))
+        return window, app
+
+    def test_ready_counts_groups(self):
+        window, app = self.app()
+        snap = window.snapshot(app)
+        self.assertEqual((snap["mode"], snap["green"], snap["yellow"], snap["red"], snap["total"]),
+                         ("ready", 1, 1, 1, 3))
+
+    def test_analysis_while_busy(self):
+        window, app = self.app({"stage": "detect", "done": 3, "total": 6, "busy": True})
+        snap = window.snapshot(app)
+        self.assertEqual((snap["mode"], snap["stage"], snap["frac"]), ("analysis", "detect", 0.5))
+        self.assertEqual(window.strip_cells(snap), [True, False, False])
+
+    def test_skew_stage_without_total_is_full(self):
+        window, app = self.app({"stage": "skew", "done": 0, "total": 0, "busy": True})
+        self.assertEqual(window.snapshot(app)["frac"], 1.0)
+
+    def test_done_reads_result(self):
+        window, app = self.app()
+        app.session.finish()
+        snap = window.snapshot(app)
+        self.assertEqual(snap["mode"], "done")
+        self.assertEqual(snap["out"], app.session.out_dir)
+        self.assertEqual(snap["ok"] + snap["skipped"] + snap["error"], 3)
+        self.assertGreaterEqual(snap["skipped"], 1)                  # rot wird nicht geschrieben
+
+    def test_strip_is_capped(self):
+        from companion import window
+        cells = window.strip_cells({"total": 500, "frac": 0.5})
+        self.assertEqual((len(cells), sum(cells)), (window.MAX_CELLS, window.MAX_CELLS // 2))
+
+
 class LauncherTest(Tmp):
     """Doppelklick-Einstieg der gebuendelten Builds (companion/launcher.py)."""
 

@@ -6,8 +6,10 @@
 - `Kader-…-windows-x64.exe` und `Kader-…-x86_64.AppImage` (PyInstaller, siehe `packaging/`): kein Python, kein
   Terminal. Ohne Argument fragt ein Ordner-Dialog nach den Scans; ein auf die Datei gezogener Ordner geht ebenfalls.
   Fehler erscheinen als Meldungsfenster statt in einer nicht vorhandenen Konsole. rawpy ist enthalten.
-- `kader open ORDNER --window`: kleines Statusfenster (tkinter) mit Fortschritt, Zählern, „Im Browser öffnen“ und
-  „Beenden“ – derselbe Vertrag wie `--tui`, schließt sich bei Leerlauf oder „Server beenden“ in der Web-UI selbst.
+- `kader open ORDNER --window`: kleines Statusfenster (tkinter) in den Farben und Schriften der Web-UI. Während der
+  Analyse ein Filmstreifen als Ladeleiste, danach Kennzahlen (grün/gelb/rot/gesamt, nach Fertig
+  geschrieben/übersprungen/Fehler) mit „Ausgabeordner öffnen“. Derselbe Vertrag wie `--tui`, schließt sich bei
+  Leerlauf oder „Server beenden“ in der Web-UI selbst.
 - GitHub-Actions-Workflow `release.yml`: ein Tag `v*` baut beide Pakete (Linux auf Ubuntu 22.04, damit das AppImage
   auch auf älteren Distributionen startet) und hängt sie ans GitHub-Release.
 
