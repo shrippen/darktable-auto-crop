@@ -1,23 +1,23 @@
 --[[
-  Auto Crop Negative – Darktable contrib plugin
+  Kader – Darktable contrib plugin
   Detects the film frame on negatives, applies crop via dt.styles
   (import a temporary .dtstyle, apply it to the image, delete it again).
 ]]
 
 local dt = require "darktable"
 local du = require "lib/dtutils"
-du.check_min_api_version("8.0.0", "Auto Crop Negative")
+du.check_min_api_version("8.0.0", "Kader")
 
 local _ = dt.gettext.gettext
 
 local script_data = {}
 script_data.metadata = {
-  name = _("Auto Crop Negative"),
+  name = _("Kader"),
   purpose = _("automatically crop film negatives to the image area"),
   author = "Arian", help = ""
 }
 
-local MOD_LT = "auto_crop_negative"
+local MOD_LT = "kader"
 
 -- Preferences: Gruen/Gelb-Schwellen fuer die Konfidenz (Phase 3, siehe
 -- tools/calibrate.py). Standardwerte sind auf den 98 Referenz-Crops
@@ -75,7 +75,7 @@ local function fmt_float_c(v, prec)
 end
 
 -- Datei-Log fuer Diagnose (unabhaengig von Terminal-Flags)
-local LOG_FILE = os.getenv("HOME") .. "/.cache/darktable/auto_crop_negative.log"
+local LOG_FILE = os.getenv("HOME") .. "/.cache/darktable/kader.log"
 
 local function log_rotate()
   local h = io.open(LOG_FILE, "r")
@@ -191,8 +191,8 @@ end
 local function find_python()
   -- Wrapper zuerst: leitet auf Venv-Python um (cv2 dort installiert)
   local candidates = {
-    SCRIPT_DIR .. "auto_crop_negative_wrapper.py",
-    SCRIPT_DIR .. "auto_crop_negative.py",
+    SCRIPT_DIR .. "kader_wrapper.py",
+    SCRIPT_DIR .. "kader.py",
   }
   for _, p in ipairs(candidates) do
     if file_exists(p) then return p end
@@ -326,7 +326,7 @@ local function check_batch()
     else
       local tail = prog:match("([^\r\n]+)%s*$") or ""
       log("batch DIED ohne BATCHDONE: " .. tail)
-      dt.print_error("Auto Crop Negative: " .. tail)
+      dt.print_error("Kader: " .. tail)
       dt.print(_("Auto Crop: Fehler - Details im Log"))
     end
     cleanup_batch(true)
@@ -505,7 +505,7 @@ end
 -- raeumt danach wieder auf. Gemeinsame Basis fuer set_crop() (Crop
 -- setzen) und undo_crop() (Crop-Modul wieder deaktivieren).
 local function apply_crop_style(image, op_params_hex, enabled, log_desc, angle)
-  local style_name = "auto_crop_negative_tmp_" .. os.time() .. "_"
+  local style_name = "kader_tmp_" .. os.time() .. "_"
     .. tostring(math.random(100000, 999999))
   local tmp_path = os.tmpname() .. ".dtstyle"
   local xml = crop_style_xml(style_name, op_params_hex, enabled, angle)
@@ -658,7 +658,7 @@ local function detect_and_queue()
   -- Batch detached starten: Lua blockiert nicht -> Abbruch-Knopf lebt
   local py = find_python()
   if not py then
-    dt.print_error("Auto Crop Negative: Python script not found")
+    dt.print_error("Kader: Python script not found")
     dt.print(_("Auto Crop: Fehler - Python nicht gefunden (siehe Log)"))
     return
   end
@@ -690,7 +690,7 @@ local function detect_and_queue()
   if not pid then
     os.remove(json_file); os.remove(prog_file)
     log("spawn fehlgeschlagen")
-    dt.print_error("Auto Crop Negative: io.popen fehlgeschlagen")
+    dt.print_error("Kader: io.popen fehlgeschlagen")
     dt.print(_("Auto Crop: Fehler - Prozess konnte nicht gestartet werden"))
     return
   end
@@ -745,7 +745,7 @@ end
 
 -- ═══ Darkroom: auto-apply on image load ═══════
 
-dt.register_event("auto_crop_negative_darkroom_loaded", "darkroom-image-loaded",
+dt.register_event("kader_darkroom_loaded", "darkroom-image-loaded",
   function(event, image)
     safe_check_batch()
     if event ~= "darkroom-image-loaded" or not image then return end
@@ -829,8 +829,8 @@ end
 -- wirkt "Plan anwenden" hier. Die Crops werden weiterhin ausschliesslich ueber
 -- darktables eigene API (dt.styles, siehe apply_crop_style) gesetzt - nie ueber XMP.
 
-local CACHE_ROOT = os.getenv("AUTOCROP_CACHE")
-  or (os.getenv("HOME") .. "/.cache/auto-crop-negative")
+local CACHE_ROOT = os.getenv("KADER_CACHE")
+  or (os.getenv("HOME") .. "/.cache/kader")
 local LAST_SESSION_FILE = CACHE_ROOT .. "/last_session"
 
 -- Rueckmeldung, die nicht spurlos verschwindet: Log + kurze Einblendung + Statuszeile
@@ -971,8 +971,8 @@ end
 
 local function spawn_companion(args, out_path)
   local py = find_python()
-  if not py or not py:match("auto_crop_negative_wrapper%.py$") then
-    say(_("Auto Crop: auto_crop_negative_wrapper.py nicht gefunden (install.sh ausfuehren)"))
+  if not py or not py:match("kader_wrapper%.py$") then
+    say(_("Auto Crop: kader_wrapper.py nicht gefunden (install.sh ausfuehren)"))
     return nil
   end
   local cmd = string.format("%s companion %s > %s 2>&1 & echo $!",
@@ -1096,7 +1096,7 @@ end
 -- feuert am Anfang des Herunterfahrens; die PID-Ueberwachung (--watch-pid) im Server
 -- bleibt als zweites Netz, greift aber erst, wenn der Prozess wirklich beendet ist
 -- (darktable kann nach dem Schliessen des Fensters noch eine Weile haengen).
-dt.register_event("auto_crop_negative_exit", "exit", function()
+dt.register_event("kader_exit", "exit", function()
   pcall(function()
     local _sid, dir = last_session()
     local info = dir and read_server_info(dir)
@@ -1253,7 +1253,7 @@ local function guarded(fn, name)
     local ok, err = pcall(fn)
     if not ok then
       log(name .. " Fehler: " .. tostring(err))
-      dt.print_error("Auto Crop Negative: " .. name .. ": " .. tostring(err))
+      dt.print_error("Kader: " .. name .. ": " .. tostring(err))
       say(_("Auto Crop: Fehler - Details im Log"))
     end
   end
@@ -1364,7 +1364,7 @@ status_label = dt.new_widget("label") {
 lt_widget = dt.new_widget("box") {
   orientation = "vertical",
   dt.new_widget("section_label") {
-    label = "Auto Crop Negative" },
+    label = "Kader" },
   server_status,
   url_button,
   stop_button,
@@ -1433,17 +1433,17 @@ lt_widget = dt.new_widget("box") {
 -- Workaround fuer darktable Issue #20371 – Lua-Libs ohne Container in der
 -- aktiven View loesen "couldn't find a container" beim View-Wechsel aus
 dt.register_lib(
-  MOD_LT, _("Auto Crop Negative"), true, false,
+  MOD_LT, _("Kader"), true, false,
   {[dt.gui.views.lighttable] = {"DT_UI_CONTAINER_PANEL_RIGHT_CENTER", 500},
    [dt.gui.views.darkroom] = {"DT_UI_CONTAINER_PANEL_RIGHT_CENTER", 500}},
   lt_widget, nil, nil)
 
-dt.register_event("auto_crop_negative_shortcut", "shortcut",
+dt.register_event("kader_shortcut", "shortcut",
   function(_, _) detect_and_queue() end,
-  _("Auto Crop Negative: detect and queue selected images"))
+  _("Kader: detect and queue selected images"))
 
 pcall(refresh_server_status)   -- lief schon ein Server (z. B. nach Skript-Neuladen)?
-dt.print_log("Auto Crop Negative: loaded")
+dt.print_log("Kader: loaded")
 
 -- ═══ script_manager interface ═══════
 

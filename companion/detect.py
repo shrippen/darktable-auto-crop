@@ -1,6 +1,6 @@
 """Analyse und Neu-Erkennung fuer eine Sitzung.
 
-Die eigentliche Erkennung bleibt in ``auto_crop_negative.py``; dieses Modul
+Die eigentliche Erkennung bleibt in ``kader.py``; dieses Modul
 - exportiert Raws (``converters.py``) in einen Ordner je Filmrolle, damit der
   Film-Konsens (ein Ordner = eine Rolle) weiter funktioniert,
 - ruft ``compute_batch`` fuer die Standardanalyse auf,
@@ -26,7 +26,7 @@ from .thumbs import image_size       # noqa: E402
 
 
 def _acn():
-    import auto_crop_negative as acn   # importiert cv2/numpy erst bei Bedarf
+    import kader as acn   # importiert cv2/numpy erst bei Bedarf
     return acn
 
 

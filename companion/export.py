@@ -98,7 +98,7 @@ def export_one(dt_cli, raw, out, work_dir):
             with open(xcopy, "w", encoding="utf-8") as f:
                 f.write(stripped)
             cmd.append(xcopy)
-        # KEIN --library (siehe auto_crop_negative.export_raws_via_darktable):
+        # KEIN --library (siehe kader.export_raws_via_darktable):
         # sonst wuerde der Standard-Modulstapel statt der echten Historie
         # verwendet. write_sidecar_files=never schuetzt vor jedem Schreiben.
         cmd += [out, "--out-ext", "jpg", "--core",

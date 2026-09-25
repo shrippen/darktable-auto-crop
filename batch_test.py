@@ -15,7 +15,7 @@ from datetime import datetime
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.join(PROJECT_DIR, 'Testphotos')
-SCRIPT = os.path.join(PROJECT_DIR, 'auto_crop_negative.py')
+SCRIPT = os.path.join(PROJECT_DIR, 'kader.py')
 DATA_DIR = os.path.join(PROJECT_DIR, 'review_data')
 RESULTS_FILE = os.path.join(DATA_DIR, 'results.json')
 META_FILE = os.path.join(DATA_DIR, 'meta.json')

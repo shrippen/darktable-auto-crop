@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "auto-crop-negative"
+name = "kader"
 version = "0.2.0"
 description = "Erkennt den Bildrahmen abfotografierter Filmnegative und schneidet zu; Web-UI zur Pruefung, Ausgabe fuer darktable, RawTherapee, Lightroom (XMP) oder als Dateien."
 readme = "README.md"
@@ -16,10 +16,10 @@ raw = ["rawpy"]           # RAWs ohne darktable/RawTherapee entwickeln
 tui = ["rich"]            # Terminal-Statusanzeige (--tui), fuer SSH/NAS-Sitzungen
 
 [project.scripts]
-auto-crop-negative = "companion.__main__:main"
+kader = "companion.__main__:main"
 
 [tool.setuptools]
-py-modules = ["auto_crop_negative", "film_scale"]
+py-modules = ["kader", "film_scale"]
 packages = ["companion", "companion.targets"]
 
 [tool.setuptools.package-data]

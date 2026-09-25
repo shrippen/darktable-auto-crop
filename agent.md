@@ -54,7 +54,7 @@ die Crop-Koordinaten als JSON.
 4. Validierung per Delta-Kriterien: ΔHeight <100px, ΔWidth <50px = OK
 
 ## Pipeline
-- `auto_crop_negative.py` – Stage 1 (Filmstreifen-Erkennung) + Stage 2 (Bildinhalt)
+- `kader.py` – Stage 1 (Filmstreifen-Erkennung) + Stage 2 (Bildinhalt)
 - `film_analysis.py` – Filmweites Seitenverhältnis + Bildgröße aus Pass-1-Daten
 - `batch_test.py` – `--two-pass`: Pass 1 → Film-Analyse → Pass 2 (mit Film-Metadaten)
 - `start_review_gui.sh` – interaktive Analyseauswahl + GUI-Start

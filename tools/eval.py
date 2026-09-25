@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regressions-Harness fuer den Auto-Crop-Detektor.
 
-Faehrt die Batch-Pipeline (auto_crop_negative.py --batch) ueber die Film-
+Faehrt die Batch-Pipeline (kader.py --batch) ueber die Film-
 ordner mit manuellen Referenz-Crops und vergleicht das Ergebnis mit
 review_data/reviews.json.
 
@@ -30,7 +30,7 @@ from collections import defaultdict
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TESTPHOTOS = os.path.join(PROJECT_DIR, "Testphotos")
-SCRIPT = os.path.join(PROJECT_DIR, "auto_crop_negative.py")
+SCRIPT = os.path.join(PROJECT_DIR, "kader.py")
 REVIEWS = os.path.join(PROJECT_DIR, "review_data", "reviews.json")
 FEEDBACK_GT = os.path.join(PROJECT_DIR, "review_data", "feedback_gt.json")   # tools/build_feedback_gt.py
 SPLITS = os.path.join(PROJECT_DIR, "tools", "splits.json")
@@ -58,12 +58,12 @@ def film_images(film):
 
 
 def run_pipeline(image_paths):
-    """auto_crop_negative.py --batch aufrufen, JSON-Ergebnis liefern.
+    """kader.py --batch aufrufen, JSON-Ergebnis liefern.
 
     Laeuft in einem Temp-Verzeichnis, damit die crop_queue.json des Skripts
     das Repo nicht anfasst. Fortschritt (stderr) wird durchgereicht.
     """
-    # auto_crop_negative.py schreibt seine crop_queue.json neben das Skript
+    # kader.py schreibt seine crop_queue.json neben das Skript
     # (nicht ins cwd). Fuer die Eval nicht erwuenscht -> hinterher entfernen,
     # aber eine echte Queue eines laufenden Plugins nicht anfassen.
     queue_path = os.path.join(PROJECT_DIR, "crop_queue.json")
@@ -76,7 +76,7 @@ def run_pipeline(image_paths):
         out_path = os.path.join(tmp, "out.json")
         cmd = [python_bin(), SCRIPT, "--batch", *image_paths,
                "--confidence-threshold", "0.0"]
-        env = dict(os.environ, AUTOCROP_CONVENTION="")   # Messung unabhaengig von der gelernten Nutzer-Konvention
+        env = dict(os.environ, KADER_CONVENTION="")   # Messung unabhaengig von der gelernten Nutzer-Konvention
         tty = sys.stderr.isatty()
         with open(out_path, "w") as out_f:
             proc = subprocess.Popen(cmd, cwd=tmp, stdout=out_f, env=env,

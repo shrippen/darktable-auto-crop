@@ -1,6 +1,6 @@
 # How-to: scanning negatives for the automatic detection
 
-This guide summarizes what makes the algorithm (`auto_crop_negative.py`,
+This guide summarizes what makes the algorithm (`kader.py`,
 `film_scale.py`) reliable — and what slows it down. It is not about what looks
 "nicest" photographically, but about what the detection can actually measure.
 Background and measurements: `bericht-erkennung-2026-09-22.md` (German),

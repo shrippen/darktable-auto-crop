@@ -1,6 +1,6 @@
 # How-to: Negative scannen für die automatische Erkennung
 
-Diese Anleitung fasst zusammen, was den Algorithmus (`auto_crop_negative.py`,
+Diese Anleitung fasst zusammen, was den Algorithmus (`kader.py`,
 `film_scale.py`) zuverlässig macht — und was ihn ausbremst. Sie richtet sich nicht
 danach, was fototechnisch "am schönsten" aussieht, sondern danach, was die Erkennung
 messen kann. Hintergrund und Messungen: `bericht-erkennung-2026-09-22.md`,

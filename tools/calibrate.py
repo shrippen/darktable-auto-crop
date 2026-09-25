@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Konfidenz-Kalibrierung anhand der 98 manuellen Referenz-Crops.
 
-Die Konfidenzformel in auto_crop_negative.py (0.45*size_agree +
+Die Konfidenzformel in kader.py (0.45*size_agree +
 0.35*edge_score + 0.20*film_trust, dann * exposure_factor) war
 handgeschaetzt. Dieses Script fittet stattdessen eine logistische
 Regression auf denselben vier Faktoren gegen das tatsaechliche Ergebnis
@@ -13,7 +13,7 @@ Punkte, das ist trivial).
 
 Nutzung:
   tools/calibrate.py                 # Gewichte + Schwellen vorschlagen
-  tools/calibrate.py --apply         # Vorschlag in auto_crop_negative.py
+  tools/calibrate.py --apply         # Vorschlag in kader.py
                                       # eintragen (nur die Konstanten)
 """
 import argparse
@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from eval import (PROJECT_DIR, REVIEWS, TOL_PX, film_images, run_pipeline,
                   collect_deltas, is_hit, load_ground_truth, load_splits)
 
-SCRIPT = os.path.join(PROJECT_DIR, "auto_crop_negative.py")
+SCRIPT = os.path.join(PROJECT_DIR, "kader.py")
 FEATURES = ["size_agree", "edge_score", "film_trust", "exposure_factor"]
 
 
@@ -130,7 +130,7 @@ def apply_to_source(w_named, bias, mu, sigma, t_green, t_yellow):
     src = src.replace(old, new)
     with open(SCRIPT, "w") as f:
         f.write(src)
-    print(f"auto_crop_negative.py aktualisiert (Gewichte einsortiert).")
+    print(f"kader.py aktualisiert (Gewichte einsortiert).")
     print(f"Empfohlene Schwellen: --t-green {t_green:.3f} "
           f"--t-yellow {t_yellow:.3f}")
 
@@ -246,7 +246,7 @@ def main():
     ap.add_argument("--from-json", help="Pipeline-Rohdaten (tools/eval.py --json) statt neuem Lauf")
     ap.add_argument("--target", type=float, default=0.98, help="Ziel-Precision gruen (LOFO)")
     ap.add_argument("--apply", action="store_true",
-                    help="Kalibrierte Formel in auto_crop_negative.py eintragen")
+                    help="Kalibrierte Formel in kader.py eintragen")
     ap.add_argument("--min-green-precision", type=float, default=0.95)
     ap.add_argument("--min-yellow-precision", type=float, default=0.80)
     args = ap.parse_args()

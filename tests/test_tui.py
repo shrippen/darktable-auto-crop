@@ -147,7 +147,7 @@ class PtySmokeTest(unittest.TestCase):
 
         out = b""
         try:
-            out += self._read_until(master, b"Auto Crop Negative", timeout=20)
+            out += self._read_until(master, b"Kader", timeout=20)
             time.sleep(0.5)                                   # Live einmal rendern lassen
             os.write(master, b"q")
             out += self._read_until(master, b"", timeout=10, until_eof=True)
@@ -156,7 +156,7 @@ class PtySmokeTest(unittest.TestCase):
         code = proc.wait(timeout=10)
 
         text = out.decode(errors="ignore")
-        self.assertIn("Auto Crop Negative", text)
+        self.assertIn("Kader", text)
         self.assertIn("Beendet", text)
         self.assertEqual(code, 0)
         self.assertFalse(os.path.exists(os.path.join(_only_session_dir(root), "server.json")))

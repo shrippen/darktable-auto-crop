@@ -20,7 +20,7 @@ deshalb Korrekturraten, keine "Precision".
 Sitzungen loescht die UI nach 14 Tagen; diesen Bericht (oder ``--export-gt``) vorher laufen lassen.
 
 Beispiele:
-  tools/feedback_report.py                       # alle Sitzungen in ~/.cache/auto-crop-negative
+  tools/feedback_report.py                       # alle Sitzungen in ~/.cache/kader
   tools/feedback_report.py --session DIR ...     # bestimmte Sitzungen
   tools/feedback_report.py --export-gt review_data/feedback_gt.json
 """

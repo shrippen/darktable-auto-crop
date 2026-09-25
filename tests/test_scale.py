@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
-import auto_crop_negative as acn                # noqa: E402
+import kader as acn                # noqa: E402
 import film_scale as fs                         # noqa: E402
 from companion import session as sess           # noqa: E402
 from test_companion import make_session         # noqa: E402
@@ -154,17 +154,17 @@ class ConventionTest(unittest.TestCase):
         self.assertEqual(fs.load_convention(self.path)["n"], 40)
 
     def test_env_can_disable(self):
-        old = os.environ.get("AUTOCROP_CONVENTION")
-        os.environ["AUTOCROP_CONVENTION"] = ""
+        old = os.environ.get("KADER_CONVENTION")
+        os.environ["KADER_CONVENTION"] = ""
         try:
             self.assertIsNone(fs.convention_path())
             self.assertIsNone(fs.load_convention())
             self.assertIsNone(fs.update_convention({"long_mm": 36.0, "short_mm": 24.0, "n": 5}))
         finally:
             if old is None:
-                del os.environ["AUTOCROP_CONVENTION"]
+                del os.environ["KADER_CONVENTION"]
             else:
-                os.environ["AUTOCROP_CONVENTION"] = old
+                os.environ["KADER_CONVENTION"] = old
 
 
 class RollSizeTest(unittest.TestCase):

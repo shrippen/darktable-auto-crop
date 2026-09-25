@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Auto Crop Negative – Python-Backend
+Kader – Python-Backend
 Erkennt automatisch den Filmrahmen auf einer digitalen Ablichtung
 und liefert die Crop-Koordinaten als JSON aus.
 """

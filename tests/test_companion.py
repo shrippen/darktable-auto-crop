@@ -1034,12 +1034,12 @@ class LuaBridgeTest(unittest.TestCase):
         os.chmod(os.path.join(self.bin, "xdg-open"), 0o755)
 
     def run_lua(self, action, locale=None, **extra):
-        env = dict(os.environ, AUTOCROP_CACHE=self.root, HARNESS_IMAGES=self.images, **extra,
+        env = dict(os.environ, KADER_CACHE=self.root, HARNESS_IMAGES=self.images, **extra,
                    **({"HARNESS_LOCALE": locale} if locale else {}),
                    HOME=self.tmp, PATH=self.bin + os.pathsep + os.environ["PATH"])
         os.makedirs(os.path.join(self.tmp, ".cache", "darktable"), exist_ok=True)
         p = subprocess.run([LUA, os.path.join(ROOT, "tests", "lua_harness.lua"),
-                            os.path.join(ROOT, "auto_crop_negative.lua"), action],
+                            os.path.join(ROOT, "kader.lua"), action],
                            env=env, capture_output=True, text=True, timeout=90)
         self.assertEqual(p.returncode, 0, p.stderr)
         return json.loads(p.stdout.strip().splitlines()[-1])
@@ -1142,13 +1142,13 @@ class LuaBridgeTest(unittest.TestCase):
 
     def test_start_shows_status_url_and_watches_darktable_then_stop(self):
         import signal
-        env = dict(os.environ, AUTOCROP_CACHE=self.root, HARNESS_IMAGES=self.images,
+        env = dict(os.environ, KADER_CACHE=self.root, HARNESS_IMAGES=self.images,
                    HARNESS_SELECT="1", HOME=self.tmp, PATH=self.bin + os.pathsep + os.environ["PATH"])
         os.makedirs(os.path.join(self.tmp, ".cache", "darktable"), exist_ok=True)
 
         def lua(action):
             p = subprocess.run([LUA, os.path.join(ROOT, "tests", "lua_harness.lua"),
-                                os.path.join(ROOT, "auto_crop_negative.lua"), action],
+                                os.path.join(ROOT, "kader.lua"), action],
                                env=env, capture_output=True, text=True, timeout=90)
             self.assertEqual(p.returncode, 0, p.stderr)
             return json.loads(p.stdout.strip().splitlines()[-1])
@@ -1177,13 +1177,13 @@ class LuaBridgeTest(unittest.TestCase):
     def test_exit_event_stops_the_server(self):
         """Beim Beenden von darktable (Lua-Ereignis "exit") stoppt der Server sofort."""
         import signal
-        env = dict(os.environ, AUTOCROP_CACHE=self.root, HARNESS_IMAGES=self.images,
+        env = dict(os.environ, KADER_CACHE=self.root, HARNESS_IMAGES=self.images,
                    HARNESS_SELECT="1", HOME=self.tmp, PATH=self.bin + os.pathsep + os.environ["PATH"])
         os.makedirs(os.path.join(self.tmp, ".cache", "darktable"), exist_ok=True)
 
         def lua(action):
             p = subprocess.run([LUA, os.path.join(ROOT, "tests", "lua_harness.lua"),
-                                os.path.join(ROOT, "auto_crop_negative.lua"), action],
+                                os.path.join(ROOT, "kader.lua"), action],
                                env=env, capture_output=True, text=True, timeout=90)
             self.assertEqual(p.returncode, 0, p.stderr)
 
@@ -1202,7 +1202,7 @@ class LuaBridgeTest(unittest.TestCase):
     def test_apply_leaves_traces_in_log_and_status(self):
         """Auch ein Fruehabbruch muss sichtbar sein (Log + Statuszeile), nie stumm."""
         out = self.run_lua("apply")           # noch nicht "Fertig"
-        log = open(os.path.join(self.tmp, ".cache", "darktable", "auto_crop_negative.log")).read()
+        log = open(os.path.join(self.tmp, ".cache", "darktable", "kader.log")).read()
         self.assertIn("companion_apply: last_session=", log)
         self.assertIn("Plan nicht anwendbar", log)
 

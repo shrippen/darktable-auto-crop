@@ -485,7 +485,7 @@ class CliTest(Tmp):
             self.assertEqual(code, 0)
             first = run.call_args[0][0]
             self.assertEqual((first.target_name, first.mode), ("copies", "standalone"))
-            self.assertEqual(first.out_dir, os.path.join(self.tmp, "autocrop"))
+            self.assertEqual(first.out_dir, os.path.join(self.tmp, "kader"))
             self.run_main(["open", self.tmp, "--root", root])
             self.assertEqual(run.call_args[0][0].dir, first.dir)             # fortgesetzt
             self.run_main(["open", self.tmp, "--root", root, "--target", "json"])

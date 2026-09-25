@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Startet auto_crop_negative.py (gleiches Verzeichnis) mit der Venv-Python.
+"""Startet kader.py (gleiches Verzeichnis) mit der Venv-Python.
 
 Das Darktable-Lua-Plugin ruft diesen Wrapper mit denselben Argumenten auf
 wie das Skript selbst. Vorteil: cv2/numpy kommen aus der Venv, ohne dass
 das Plugin den Interpreter kennen muss.
 
-``auto_crop_negative_wrapper.py companion ...`` startet stattdessen die
+``kader_wrapper.py companion ...`` startet stattdessen die
 Companion-UI (``python -m companion ...``).
 """
 import os
@@ -20,5 +20,5 @@ if sys.argv[1:2] == ["companion"]:
     env = dict(os.environ, PYTHONPATH=here + os.pathsep + os.environ.get("PYTHONPATH", ""))
     os.execvpe(python, [python, "-m", "companion"] + sys.argv[2:], env)
 
-script = os.path.join(here, "auto_crop_negative.py")
+script = os.path.join(here, "kader.py")
 os.execvp(python, [python, script] + sys.argv[1:])

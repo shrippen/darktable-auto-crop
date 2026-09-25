@@ -44,7 +44,7 @@ def main():
     json.dump({k: {"manual_crop": v["manual_crop"]} for k, v in real.items()
                if k in keep and v.get("manual_crop")}, open(reviews_path, "w"))
     n_refs = len(json.load(open(reviews_path)))
-    env = dict(os.environ, AUTOCROP_CACHE=os.path.join(tmp, "cache"))
+    env = dict(os.environ, KADER_CACHE=os.path.join(tmp, "cache"))
     srv = subprocess.Popen([PY, "-m", "companion", "serve", "--folder", os.path.join(tmp, "photos"),
                             "--root", os.path.join(tmp, "cache"), "--reviews", reviews_path],
                            cwd=ROOT, env=env, stdout=subprocess.PIPE, text=True)

@@ -1,4 +1,4 @@
-# Auto Crop Negative
+# Kader
 
 Automatisches Zuschneiden digitaler Ablichtungsbilder auf den analogen Filmrahmen – als eigenständiges
 Werkzeug mit Web-Oberfläche. darktable, RawTherapee und Lightroom/Camera Raw lassen sich optional anbinden.
@@ -35,7 +35,7 @@ Lua-Plugin – direkt darktable.
    └────────┬─────────┘          └──────────────────────┬──────────────────────┘
             └──────────────────────┬─────────────────────┘
                           ┌────────▼─────────┐
-                          │ Erkennung        │  auto_crop_negative.py, film_scale.py
+                          │ Erkennung        │  kader.py, film_scale.py
                           │ (OpenCV + NumPy) │  Crop + Konfidenz je Bild, Konsens je Rolle
                           └────────┬─────────┘
                           ┌────────▼─────────┐
@@ -82,8 +82,8 @@ cd darktable-auto-crop
 ./install.sh --standalone
 ```
 
-Legt eine eigene Python-Umgebung unter `~/.local/share/auto-crop-negative/venv` an, installiert das Paket samt `rawpy`
-(RAW-Entwicklung ohne externes Programm, optional) und verlinkt den Befehl `auto-crop-negative` nach `~/.local/bin`.
+Legt eine eigene Python-Umgebung unter `~/.local/share/kader/venv` an, installiert das Paket samt `rawpy`
+(RAW-Entwicklung ohne externes Programm, optional) und verlinkt den Befehl `kader` nach `~/.local/bin`.
 Kein Lua-Schritt, keine darktable-Dateien.
 
 Alternativ von Hand: `pip install ".[raw]"` (ohne `[raw]`: RAWs brauchen dann `darktable-cli` oder `rawtherapee-cli`).
@@ -97,23 +97,23 @@ cd darktable-auto-crop
 ./install.sh
 ```
 
-Danach darktable neu starten und im Script Manager `contrib → Auto Crop Negative` einschalten. Das Plugin erscheint als
-Panel „Auto Crop Negative“.
+Danach darktable neu starten und im Script Manager `contrib → Kader` einschalten. Das Plugin erscheint als
+Panel „Kader“.
 
 Manuelle Installation:
 
-1. `auto_crop_negative.lua` nach `~/.config/darktable/lua/` kopieren
-2. `auto_crop_negative.py` nach `~/.config/darktable/lua/` kopieren und `chmod +x`
-3. Falls `~/.config/darktable/lua/init.lua` existiert: `require "auto_crop_negative"` anfügen
+1. `kader.lua` nach `~/.config/darktable/lua/` kopieren
+2. `kader.py` nach `~/.config/darktable/lua/` kopieren und `chmod +x`
+3. Falls `~/.config/darktable/lua/init.lua` existiert: `require "kader"` anfügen
 4. Falls nicht: `init.lua` mit diesem Inhalt erstellen:
    ```lua
-   require "auto_crop_negative"
+   require "kader"
    ```
 
 ## Nutzung ohne darktable
 
 ```bash
-auto-crop-negative ~/Scans/2026-09            # = auto-crop-negative open ~/Scans/2026-09
+kader ~/Scans/2026-09            # = kader open ~/Scans/2026-09
 ```
 
 1. Der Ordner wird durchsucht: Bilder direkt darin oder in Unterordnern (eine Ebene; **jeder Unterordner = eine
@@ -140,8 +140,8 @@ es entsteht eine neue. `--new` erzwingt in jedem Fall eine komplette Neuanalyse.
 denselben Dateien laufen zu lassen.
 
 ```bash
-auto-crop-negative check ~/Scans/2026-09      # verfügbare Konverter, vorgeschlagenes Ziel
-auto-crop-negative open ~/Scans --target xmp --films 33 34 --converter rawpy --out ~/Export --no-browser
+kader check ~/Scans/2026-09      # verfügbare Konverter, vorgeschlagenes Ziel
+kader open ~/Scans --target xmp --films 33 34 --converter rawpy --out ~/Export --no-browser
 ```
 
 | Option | Bedeutung | Standard |
@@ -221,15 +221,15 @@ während Export/Erkennung, danach das Ergebnis nach „Fertig“, und die URL gr
 
 Kein Ersatz für die Web-UI: Prüfen, Korrigieren und Fertig laufen weiterhin nur dort. `--tui` ist reine Statusanzeige,
 läuft im selben Prozess (kein zusätzlicher Netzwerk-Umweg) und braucht das Paket `rich`
-(`pip install "auto-crop-negative[tui]"`, bei `--standalone` von `install.sh` mitinstalliert) sowie ein echtes Terminal
+(`pip install "kader[tui]"`, bei `--standalone` von `install.sh` mitinstalliert) sowie ein echtes Terminal
 (funktioniert über SSH; nicht unter Windows, nicht in einer Pipe/einem Skript). Fehlt eine Voraussetzung, meldet
-`--tui` das sofort und klar (`auto-crop-negative check` zeigt den Stand auch ohne `--tui` an). Nur für diesen
+`--tui` das sofort und klar (`kader check` zeigt den Stand auch ohne `--tui` an). Nur für diesen
 eigenständigen Weg – über darktable oder `serve --folder` bleibt es wie bisher ganz ohne Terminal-Oberfläche.
 
 Die Sitzung selbst endet nicht mit `--tui`: Solange der Server läuft (auch während `--tui` aktiv ist), ist die normale
 Web-UI unter derselben URL parallel nutzbar – beide arbeiten auf genau derselben Sitzung, Änderungen im Browser
 erscheinen mit der nächsten Aktualisierung auch in der TUI. Beendest du die TUI mit `Q`, bleibt die Sitzung auf der
-Platte erhalten; ein erneutes `auto-crop-negative ORDNER` (auch ohne `--tui`) setzt sie fort und öffnet die Web-UI wie
+Platte erhalten; ein erneutes `kader ORDNER` (auch ohne `--tui`) setzt sie fort und öffnet die Web-UI wie
 gewohnt.
 
 ### Im Netzwerk erreichbar (`--bind`)
@@ -239,9 +239,9 @@ Die URL aus `--tui` (und auch ohne sie) ist standardmäßig nur auf derselben Ma
 Weiteres nicht an `127.0.0.1` des NAS heran. `--bind ADRESSE` öffnet den Server fürs Netzwerk:
 
 ```bash
-auto-crop-negative open ~/Scans/Film-12 --tui --bind 0.0.0.0    # auf allen Netzwerkschnittstellen lauschen
-auto-crop-negative open ~/Scans/Film-12 --tui --bind 192.168.1.50   # nur auf dieser einen Adresse
-auto-crop-negative open ~/Scans/Film-12 --bind :: --port 8080       # IPv6 (URL dann mit [Adresse])
+kader open ~/Scans/Film-12 --tui --bind 0.0.0.0    # auf allen Netzwerkschnittstellen lauschen
+kader open ~/Scans/Film-12 --tui --bind 192.168.1.50   # nur auf dieser einen Adresse
+kader open ~/Scans/Film-12 --bind :: --port 8080       # IPv6 (URL dann mit [Adresse])
 ```
 
 Lässt sich die Adresse nicht binden (gehört der Maschine nicht, Port belegt, kein IPv6), endet der Aufruf mit einer
@@ -296,11 +296,11 @@ Im Plugin-Bereich von darktable zeigt eine große Statuszeile, ob der Server **s
 3. Ergebnis prüfen: 🔴 Rot = Kontrolle nötig, 🟢 Grün = OK
 
 ### Voreinstellungen
-Unter **Voreinstellungen → Lua → Auto Crop Negative**:
+Unter **Voreinstellungen → Lua → Kader**:
 
 | Einstellung | Beschreibung | Standard |
 |-------------|-------------|----------|
-| Pfad zum Python-Skript | Pfad zu `auto_crop_negative.py` | `auto_crop_negative.py` |
+| Pfad zum Python-Skript | Pfad zu `kader.py` | `kader.py` |
 | Konfidenz-Schwelle | Schwelle für Markierung (0.0–1.0) | `0.7` |
 | Filmformat | 35mm, 6x6, 6x4.5, 6x7, 6x9 | `35mm` |
 
@@ -318,8 +318,8 @@ Sitzung sie nicht schreiben würde und warum. Ein Vorschlag ist markiert, die ak
 auf eine andere Karte wechselt sofort (solange die Sitzung nicht gesperrt ist); war die Sitzung vorher schon einmal mit
 einem anderen Ziel fertig, weist ein Hinweis darauf hin, dass dessen Dateien liegen bleiben.
 
-Sitzungen liegen in `~/.cache/auto-crop-negative/` und werden nach 14 Tagen aufgeräumt
-(`auto-crop-negative cleanup`). Details und Entwurf: [`companion-ui-plan.md`](companion-ui-plan.md).
+Sitzungen liegen in `~/.cache/kader/` und werden nach 14 Tagen aufgeräumt
+(`kader cleanup`). Details und Entwurf: [`companion-ui-plan.md`](companion-ui-plan.md).
 
 ### Schräglage
 
@@ -355,7 +355,7 @@ Feedback auswerten (Roadmap Phase 5): `.venv/bin/python tools/feedback_report.py
 ## Testen
 
 ```bash
-python3 auto_crop_negative.py --debug -o /tmp/debug_crop.jpg '/path/to/ablichtung.jpg'   # Erkennung allein, JSON-Ausgabe
+python3 kader.py --debug -o /tmp/debug_crop.jpg '/path/to/ablichtung.jpg'   # Erkennung allein, JSON-Ausgabe
 .venv/bin/python -m unittest discover -s tests                                             # Unit-/Integrationstests
 ```
 
@@ -369,14 +369,14 @@ saubere Ende (benötigt `rich`, sonst übersprungen).
 
 | Datei | Beschreibung |
 |-------|-------------|
-| `auto_crop_negative.py` | Erkennung: Bildanalyse und Crop-Erkennung (Kern) |
+| `kader.py` | Erkennung: Bildanalyse und Crop-Erkennung (Kern) |
 | `film_scale.py` | Maßstab einer Rolle aus der Perforation |
 | `companion/` | Companion: lokaler Server, Sitzungen, Web-Oberfläche (`static/`), CLI (`__main__.py`) |
 | `companion/converters.py` | RAW-Konverter (Eingabe-Adapter): darktable, RawTherapee, rawpy |
 | `companion/targets/` | Ziele (Ausgabe-Adapter): darktable, reviews, json, copies, xmp, rawtherapee |
 | `companion/tui.py` | Terminal-Statusanzeige (`--tui`), nur eigenständige Nutzung |
-| `auto_crop_negative.lua` | darktable-Integration (Lua-Plugin) |
-| `pyproject.toml` | Python-Paket, Befehl `auto-crop-negative` |
+| `kader.lua` | darktable-Integration (Lua-Plugin) |
+| `pyproject.toml` | Python-Paket, Befehl `kader` |
 | `tests/` | Unit-/Integrationstests, Lua-Stub, Browser-Smoke-Test |
 | `install.sh` | Installation (`--standalone`: ohne darktable) |
 | `roadmap-standalone.md` | Roadmap zur Unabhängigkeit von darktable, Stand und Namensvorschläge |
@@ -384,7 +384,7 @@ saubere Ende (benötigt `rich`, sonst übersprungen).
 
 ## Name
 
-Das Projekt heißt „Auto Crop Negative“; Paket, Befehl, Cache- und Konfigurationsordner tragen diesen Namen bereits. Nur das
+Das Projekt heißt „Kader“; Paket, Befehl, Cache- und Konfigurationsordner tragen diesen Namen bereits. Nur das
 Repository heißt noch `darktable-auto-crop`. Vorschläge und Empfehlung zur Umbenennung:
 [`roadmap-standalone.md`, Phase 4](roadmap-standalone.md#namensvorschläge).
 

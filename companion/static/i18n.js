@@ -101,8 +101,8 @@ const D = {
     skew_on_std_h: 'Crop and preview are on the straightened picture (corners outside the original are black and are cropped away with the frame).',
     skew_off_std_h: 'Rotates the picture when applying and sets the crop on the rotated picture. The preview here shows the result.',
     skew_no_target: 'This target cannot rotate: the crop is written without rotation in the original frame.',
-    server_stopped_std: 'The server has stopped. Nothing is lost: run auto-crop-negative with the same folder again to continue this session.',
-    server_stopped_idle_std: 'The server stopped after 30 minutes without activity. Nothing is lost: run auto-crop-negative with the same folder again.',
+    server_stopped_std: 'The server has stopped. Nothing is lost: run kader with the same folder again to continue this session.',
+    server_stopped_idle_std: 'The server stopped after 30 minutes without activity. Nothing is lost: run kader with the same folder again.',
     idle_warning: 'The server stops in {0} min without activity. Move the mouse to keep it running.',
 
     target_panel_title: 'Target: what happens on “Finish”?',
@@ -239,8 +239,8 @@ const D = {
     skew_on_std_h: 'Crop und Vorschau beziehen sich jetzt auf das geradegestellte Bild (Ecken außerhalb des Originals sind schwarz und werden mit dem Rahmen weggeschnitten).',
     skew_off_std_h: 'Dreht das Bild beim Anwenden und setzt den Crop auf das gedrehte Bild. Die Vorschau hier zeigt das Ergebnis.',
     skew_no_target: 'Dieses Ziel kann nicht drehen: Der Crop wird ohne Drehung im Originalrahmen geschrieben.',
-    server_stopped_std: 'Der Server wurde beendet. Es geht nichts verloren: auto-crop-negative mit demselben Ordner erneut starten, um diese Sitzung fortzusetzen.',
-    server_stopped_idle_std: 'Der Server wurde nach 30 Minuten ohne Aktivität beendet. Es geht nichts verloren: auto-crop-negative mit demselben Ordner erneut starten.',
+    server_stopped_std: 'Der Server wurde beendet. Es geht nichts verloren: kader mit demselben Ordner erneut starten, um diese Sitzung fortzusetzen.',
+    server_stopped_idle_std: 'Der Server wurde nach 30 Minuten ohne Aktivität beendet. Es geht nichts verloren: kader mit demselben Ordner erneut starten.',
     idle_warning: 'Der Server beendet sich in {0} Min. ohne Aktivität. Bewege die Maus, um ihn laufen zu lassen.',
 
     target_panel_title: 'Ziel: was passiert bei „Fertig“?',

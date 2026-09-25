@@ -33,7 +33,7 @@ def unavailable_reason():
     try:
         import rich  # noqa: F401
     except ImportError:
-        return "Paket 'rich' fehlt (pip install \"auto-crop-negative[tui]\" oder: pip install rich)"
+        return "Paket 'rich' fehlt (pip install \"kader[tui]\" oder: pip install rich)"
     try:
         import termios, tty  # noqa: F401
     except ImportError:
@@ -98,7 +98,7 @@ def _renderable(app, message=None):
         body.append(Text(message, style="italic yellow"))
     body.append(Text("O  Browser oeffnen      Q  Server beenden", style="dim"))
 
-    return Panel(Group(*body), title="[bold] Auto Crop Negative [/]", border_style="yellow", padding=(1, 2))
+    return Panel(Group(*body), title="[bold] Kader [/]", border_style="yellow", padding=(1, 2))
 
 
 def _key_reader(fd, out_q, stop_evt):

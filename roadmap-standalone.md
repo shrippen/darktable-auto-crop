@@ -15,10 +15,10 @@ optionalen Andockstellen, nicht als Voraussetzung.
 
 | Phase | Erledigt | Offen / bewusst zurückgestellt |
 | --- | --- | --- |
-| 1 Ordner-Unabhängigkeit sichtbar | Befehl `auto-crop-negative ORDNER`, Ausgabe im Ordnermodus (Ziele `json`, `copies`), README-Abschnitt | – |
+| 1 Ordner-Unabhängigkeit sichtbar | Befehl `kader ORDNER`, Ausgabe im Ordnermodus (Ziele `json`, `copies`), README-Abschnitt | – |
 | 2 Output-Adapter | `companion/targets/` mit gemeinsamer Schnittstelle; darktable dahinter ohne Verhaltensänderung; `json`, `copies`; Farblabel je Ziel | – |
-| 3 Input-Adapter | RAW-Konverter `darktable`/`rawtherapee`/`rawpy`; Ziele `xmp` (Lightroom/ACR) und `rawtherapee` (.pp3); automatische Wahl von Ziel und Konverter | Capture One (kein Bedarf belegt); RawTherapee und Lightroom nicht gegen die echten Programme geprüft |
-| 4 Eigenständiges Produkt | `pyproject.toml` (Befehl `auto-crop-negative`), `install.sh --standalone`, README umgebaut, Namensvorschläge | Umbenennung selbst (Entscheidung offen); Watch-Ordner-Dienst (zurückgestellt) |
+| 3 Input-Adapter | RAW-Konverter `darktable`/`rawtherapee`/`rawpy`; Ziele `xmp` (Lightroom/ACR) und `rawtherapee` (.pp3); automatische Wahl von Ziel und Konverter; RawTherapee jetzt gegen die echte `rawtherapee-cli` getestet (2026-09-26) | Capture One (kein Bedarf belegt); Lightroom weiterhin nicht gegen das echte Programm geprüft |
+| 4 Eigenständiges Produkt | `pyproject.toml` (Befehl `kader`), `install.sh --standalone`, README umgebaut, Namensvorschläge | Umbenennung selbst (Entscheidung offen); Watch-Ordner-Dienst (zurückgestellt) |
 
 Messung: 26 neue Tests in `tests/test_standalone.py`, darunter ein echter Durchlauf (Erkennung auf `test.jpg`, Kopie) und
 ein RAW-Durchlauf mit einer erzeugten DNG über rawpy. Die Web-UI wurde für alle drei Modi (eigenständig, Kalibrierung,
@@ -27,7 +27,7 @@ darktable-Job) im Browser durchgeklickt.
 ## Ist-Zustand vor der Umsetzung: was schon unabhängig war, was nicht
 
 **Bereits darktable-unabhängig:**
-- Erkennung (`auto_crop_negative.py`, `film_analysis.py`, `film_scale.py`) –
+- Erkennung (`kader.py`, `film_analysis.py`, `film_scale.py`) –
   reines OpenCV/NumPy auf Bilddateien, kein darktable-Bezug.
 - Companion-Server, Review-UI, Sitzungsverwaltung, Crop-Editor,
   Referenz-Test, Feedback-Auswertung (`companion/`, `tools/`) – arbeiten im
@@ -39,7 +39,7 @@ darktable-Job) im Browser durchgeklickt.
   `darktable-cli`, liest nur darktable-XMP-Sidecars (Crop-Historieneintrag
   deaktivieren, siehe `export.py`-Kopfkommentar).
 - **Ausgabe (Anwenden):** Plan-Übergabe an darktable per `plan.json`/
-  `result.json`, Anwendung über `dt.styles` und Lua (`auto_crop_negative.lua`).
+  `result.json`, Anwendung über `dt.styles` und Lua (`kader.lua`).
   Farblabels sind ein darktable-Konzept (rot/gelb/grün).
 - **Start/Discovery:** Server wird aus dem darktable-Panel gestartet
   (Lua-Button), die Ordnermodus-CLI (`python -m companion folder ...`)
@@ -60,7 +60,7 @@ darktable wird zu **einem Adapter unter mehreren**, nicht zum Fundament:
 ```
                       ┌─────────────────────────────┐
                       │   Erkennung (Kernlogik)      │
-                      │   auto_crop_negative.py      │
+                      │   kader.py      │
                       │   film_analysis / film_scale │
                       └───────────────┬───────────────┘
                                       │ Crop + Konfidenz (JSON)
@@ -88,7 +88,7 @@ Projekt *heute schon* für Nutzer ohne darktable brauchbar.
 
 - [x] Eigener Einstiegspunkt/Kurzanleitung für den reinen Ordnermodus,
       unabhängig vom darktable-Installationsabschnitt in README.
-      **Umgesetzt:** `auto-crop-negative ORDNER` (Kurzform von `open`), `auto-crop-negative check [ORDNER]`;
+      **Umgesetzt:** `kader ORDNER` (Kurzform von `open`), `kader check [ORDNER]`;
       erneuter Start mit demselben Ordner setzt die Sitzung fort. `serve --folder` bleibt der Kalibriermodus.
 - [x] Prüfen, ob der Ordnermodus mit **bereits entwickelten/exportierten**
       Bildern aus beliebiger Quelle sauber läuft.
@@ -119,8 +119,10 @@ Projekt *heute schon* für Nutzer ohne darktable brauchbar.
 ## Phase 3: Input-Adapter für andere RAW-Entwickler
 
 - [x] **RawTherapee**: RAW-Export via `rawtherapee-cli`, Sidecar `.pp3` lesen/schreiben (`[Crop]`, `ColorLabel`).
-      **Umgesetzt**, aber **nicht gegen RawTherapee getestet** (nicht in der Testumgebung); auch der Aufruf
-      `rawtherapee-cli -d -p <profil> -o <datei> -j95 -Y -c <raw>` ist ungeprüft.
+      **Umgesetzt und jetzt gegen echtes RawTherapee getestet** (2026-09-26, `rawtherapee-cli` 5.13, lokal installiert):
+      End-to-End-Lauf über den echten Codepfad (`Session.finish()` → `RawTherapeeTarget.apply()`) mit einer synthetischen
+      DNG – Export via `_export_rawtherapee()` liefert ein Bild, die geschriebene `.pp3` wird von `rawtherapee-cli`
+      anstandslos gelesen und der Crop pixelgenau angewendet (662×896 wie im Plan). Kein Bug gefunden.
 - [x] **Lightroom / generisches XMP**: Ziel `xmp` schreibt `crs:HasCrop`/`crs:Crop*`/`xmp:Label` in `<Name>.xmp` und lässt
       vorhandene Werte, Präfixe und das xpacket stehen. Annahme: Adobe speichert den Crop in Sensorlage; die Orientierung
       kommt aus dem RAW-Kopf (TIFF-basierte RAWs) oder über rawpy. **Nicht gegen Lightroom geprüft.** Kein Winkel.
@@ -130,41 +132,47 @@ Projekt *heute schon* für Nutzer ohne darktable brauchbar.
       Bedarf nicht zu rechtfertigen – wie in der Roadmap vorgesehen.
 - [x] Adapter-Erkennung: **Umgesetzt:** Ziel aus dem Ordnerinhalt (`.pp3` → `rawtherapee`, Adobe-XMP → `xmp`, sonst RAWs →
       `json`, nur JPEG/TIFF → `copies`); Konverter nach den Sidecars neben den RAWs (darktable-XMP oder `.pp3`), sonst der
-      erste verfügbare. `auto-crop-negative check ORDNER` zeigt beide Vorschläge.
+      erste verfügbare. `kader check ORDNER` zeigt beide Vorschläge.
 
 ## Phase 4: Companion als eigenständiges Produkt
 
-- [x] Namensfrage klären. **Vorschläge unten**; entschieden ist noch nichts, umbenannt wurde nichts außer dem
-      Untertitel „– Darktable-Plugin“ im README.
+- [x] Namensfrage klären. **Entschieden (2026-09-26): Kader.** Details und Begründung im Abschnitt
+      „Namensvorschläge" unten; die Umbenennung selbst ist vollständig durchgeführt (Modul-/Dateinamen,
+      CLI-Befehl, Cache-/Konfigurationspfad, darktable-Skriptname, Repo).
 - [x] README/Architektur-Doku umstrukturieren: Kernstück zuerst, darktable als Integration gleichrangig neben den
-      anderen Zielen. `auto_crop_negative.lua` bleibt unverändert.
-- [x] Installationsweg ohne darktable: `pyproject.toml` (Befehl `auto-crop-negative`, Extra `[raw]` für rawpy) und
-      `./install.sh --standalone` (eigene venv unter `~/.local/share/auto-crop-negative/`, Link nach `~/.local/bin`).
+      anderen Zielen. `kader.lua` bleibt unverändert.
+- [x] Installationsweg ohne darktable: `pyproject.toml` (Befehl `kader`, Extra `[raw]` für rawpy) und
+      `./install.sh --standalone` (eigene venv unter `~/.local/share/kader/`, Link nach `~/.local/bin`).
 - [ ] Companion-Server dauerhaft im Hintergrund / Watch-Ordner: **zurückgestellt.** Die Roadmap macht das von
       Nutzungsdaten des Ordner-Szenarios abhängig; die gibt es noch nicht. Ein erneuter Start mit demselben Ordner setzt die
       Sitzung fort, das deckt den häufigsten Fall („weiter prüfen“) ab.
 
 ### Namensvorschläge
 
-Ausgangslage: „Auto Crop Negative“ selbst ist bereits werkzeugneutral und steckt in Paketname, Befehl
-(`auto-crop-negative`), Cache (`~/.cache/auto-crop-negative`), Konfiguration (`~/.config/auto-crop-negative`), Web-UI und
-Script-Manager-Eintrag. Abhängig von darktable ist nur der Repository-Name `darktable-auto-crop`.
+Ausgangslage (vor der Entscheidung): „Auto Crop Negative“ selbst war bereits werkzeugneutral und steckte in
+Paketname, Befehl (`auto-crop-negative`), Cache, Konfiguration, Web-UI und Script-Manager-Eintrag. Abhängig von
+darktable war nur der Repository-Name `darktable-auto-crop`.
 
 | Vorschlag | Für | Gegen |
 | --- | --- | --- |
-| **Auto Crop Negative** behalten, Repo → `auto-crop-negative` (**Empfehlung**) | keine Migration von Cache, Konfiguration, gelernten Konventionen oder darktable-Installationen; Name sagt, was es tut | beschreibend statt einprägsam |
+| **Auto Crop Negative** behalten, nur Repo umbenennen | keine Migration von Cache, Konfiguration, gelernten Konventionen oder darktable-Installationen; Name sagt, was es tut | beschreibend statt einprägsam |
 | **negcrop** | kurz, gut als Befehl | Abkürzung; „neg“ allein ist mehrdeutig |
 | **Framefinder** / **Rahmenfinder** | beschreibt den Kern (Rahmen finden), nicht nur das Schneiden | generisch, Namenskollisionen wahrscheinlich |
 | **Filmframe** | kurz, international | sagt nicht, dass geschnitten wird |
 | **Negative Frame** | eindeutig Film-bezogen | lang, als Befehl unhandlich |
+| **Bildfenster** | Fachbegriff fürs Kamera-Bildfenster, genau das erkannte Objekt | zusammengesetztes Wort, als Befehl länger |
+| **Kader** (**gewählt, 2026-09-26**) | echter Filmjargon (Einzelbild auf dem Filmstreifen), ein Wort, kurz als Befehl, passt zum Namensstil anderer eigener Projekte (Kintsugi, Rakugo, Drehzettel) | `kader` ist auf PyPI bereits von einem unrelated Tool belegt (Coding-Agent); bewusst in Kauf genommen, solange nicht auf PyPI veröffentlicht wird |
+| **Perfo** | Anspielung auf die Perforation, das zentrale technische Signal | eher Insider-Begriff, weniger sofort verständlich |
 
-Empfehlung: Namen behalten und nur das Repository umbenennen (GitHub leitet alte URLs weiter). Vor einer Wahl mit neuem
-Namen prüfen, ob der Name auf PyPI und GitHub frei ist; ein neuer Name hieße auch Cache- und Konfigurationsordner
-umzuziehen (gelernte Crop-Konvention in `~/.config/auto-crop-negative/convention.json`).
+Entscheidung (2026-09-26): **Kader**, vollständig durchgeführt statt nur das Repo umzubenennen (siehe Abschnitt
+oben) – abweichend von der ursprünglichen Empfehlung hier, bewusst mit den Folgekosten: bestehende
+darktable-Installationen müssen das Skript im Script Manager neu registrieren (alter Pfad
+`contrib/auto_crop_negative/` wird nicht automatisch migriert), Cache (`~/.cache/kader`), Konfiguration
+(`~/.config/kader/convention.json`) und gelernte Crop-Konvention starten für bestehende Nutzer neu.
 
 ## Was explizit nicht angetastet wird
 
-- Die Erkennungslogik selbst (`auto_crop_negative.py` und die laufende
+- Die Erkennungslogik selbst (`kader.py` und die laufende
   Kalibrierarbeit aus `roadmap.md`) ändert sich durch diese Roadmap nicht.
 - Der darktable-Adapter wird nicht schlechter oder umständlicher – er ist
   weiterhin der am besten getestete, "Erstklassige" Weg; die anderen sind

@@ -47,7 +47,7 @@ def ensure_out(session):
     marker = os.path.join(out, OUTPUT_MARKER)
     if not os.path.exists(marker):
         with open(marker, "w", encoding="utf-8") as f:
-            f.write("auto-crop-negative\n")
+            f.write("kader\n")
     return out
 
 
@@ -69,7 +69,7 @@ def write_manifest(session, plan, copies=None):
             "copy": copies.get(str(e["id"])),
         })
     atomic_write_json(os.path.join(out, JSON_NAME), {
-        "generator": "auto-crop-negative", "session": session.state["session"],
+        "generator": "kader", "session": session.state["session"],
         "revision": plan["revision"], "written": now_iso(), "target": session.target_name,
         "coordinates": COORDINATES, "images": rows})
 

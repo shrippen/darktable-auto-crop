@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════════
-# Installations-Skript fuer "Auto Crop Negative"
+# Installations-Skript fuer "Kader"
 #   ./install.sh               darktable-Plugin (Lua + Companion-UI)
-#   ./install.sh --standalone  nur Befehl "auto-crop-negative" (ohne darktable)
+#   ./install.sh --standalone  nur Befehl "kader" (ohne darktable)
 # ══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -10,10 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ── Eigenstaendig: eigene venv, Befehl nach ~/.local/bin ─────────────────────
 if [ "${1:-}" = "--standalone" ]; then
-    DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/auto-crop-negative"
+    DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/kader"
     VENV_DIR="${DATA_DIR}/venv"
     BIN_DIR="${HOME}/.local/bin"
-    echo "Auto Crop Negative – Installation ohne darktable"
+    echo "Kader – Installation ohne darktable"
     command -v python3 &>/dev/null || { echo "  ✗ python3 nicht gefunden"; exit 1; }
     mkdir -p "$DATA_DIR" "$BIN_DIR"
     [ -d "$VENV_DIR" ] || python3 -m venv "$VENV_DIR"
@@ -26,23 +26,23 @@ if [ "${1:-}" = "--standalone" ]; then
     if ! "$VENV_DIR/bin/pip" install rich; then
         echo "  ! rich nicht installiert: --tui (Terminal-Statusanzeige) steht dann nicht zur Verfuegung"
     fi
-    ln -sf "$VENV_DIR/bin/auto-crop-negative" "$BIN_DIR/auto-crop-negative"
-    echo "  ✓ ${BIN_DIR}/auto-crop-negative"
+    ln -sf "$VENV_DIR/bin/kader" "$BIN_DIR/kader"
+    echo "  ✓ ${BIN_DIR}/kader"
     case ":${PATH}:" in
         *":${BIN_DIR}:"*) ;;
         *) echo "  ! ${BIN_DIR} ist nicht im PATH" ;;
     esac
     echo ""
-    echo "Start:  auto-crop-negative ~/Scans/Film-12"
-    echo "Prüfen: auto-crop-negative check ~/Scans/Film-12"
-    echo "Per SSH/NAS ohne lokalen Browser: auto-crop-negative ~/Scans/Film-12 --tui"
+    echo "Start:  kader ~/Scans/Film-12"
+    echo "Prüfen: kader check ~/Scans/Film-12"
+    echo "Per SSH/NAS ohne lokalen Browser: kader ~/Scans/Film-12 --tui"
     exit 0
 fi
 LUA_DIR="${HOME}/.config/darktable/lua"
-PLUGIN_DIR="${LUA_DIR}/contrib/auto_crop_negative"
+PLUGIN_DIR="${LUA_DIR}/contrib/kader"
 
 echo "╔════════════════════════════════════════╗"
-echo "║  Auto Crop Negative – Installation     ║"
+echo "║  Kader – Installation                  ║"
 echo "╚════════════════════════════════════════╝"
 echo ""
 
@@ -90,8 +90,8 @@ fi
 
 # Wrapper immer installieren: leitet auf die Venv-Python um und faellt
 # ohne Venv auf das System-Python zurueck
-WRAPPER="${PLUGIN_DIR}/auto_crop_negative_wrapper.py"
-cp "$SCRIPT_DIR/auto_crop_negative_wrapper.py" "$WRAPPER"
+WRAPPER="${PLUGIN_DIR}/kader_wrapper.py"
+cp "$SCRIPT_DIR/kader_wrapper.py" "$WRAPPER"
 chmod +x "$WRAPPER"
 echo "  ✓ Venv-Wrapper installiert: ${WRAPPER}"
 
@@ -104,19 +104,19 @@ fi
 echo ""
 
 # ── 2. Plugin-Verzeichnis erstellen ──────────────────────────────────────────
-echo "[2/4] Installiere Plugin nach contrib/auto_crop_negative/..."
+echo "[2/4] Installiere Plugin nach contrib/kader/..."
 mkdir -p "$PLUGIN_DIR"
 
-if [ -f "$SCRIPT_DIR/auto_crop_negative.py" ]; then
-    cp "$SCRIPT_DIR/auto_crop_negative.py" "$PLUGIN_DIR/"
-    chmod +x "$PLUGIN_DIR/auto_crop_negative.py"
-    echo "  ✓ ${PLUGIN_DIR}/auto_crop_negative.py"
+if [ -f "$SCRIPT_DIR/kader.py" ]; then
+    cp "$SCRIPT_DIR/kader.py" "$PLUGIN_DIR/"
+    chmod +x "$PLUGIN_DIR/kader.py"
+    echo "  ✓ ${PLUGIN_DIR}/kader.py"
     if [ -f "$SCRIPT_DIR/film_scale.py" ]; then
         cp "$SCRIPT_DIR/film_scale.py" "$PLUGIN_DIR/"
         echo "  ✓ ${PLUGIN_DIR}/film_scale.py"
     fi
 else
-    echo "  ✗ auto_crop_negative.py nicht gefunden"
+    echo "  ✗ kader.py nicht gefunden"
     exit 1
 fi
 
@@ -124,8 +124,8 @@ echo ""
 
 # ── 3. Lua-Plugin installieren ──────────────────────────────────────────────
 echo "[3/4] Installiere Lua-Plugin..."
-cp "$SCRIPT_DIR/auto_crop_negative.lua" "$PLUGIN_DIR/"
-echo "  ✓ ${PLUGIN_DIR}/auto_crop_negative.lua"
+cp "$SCRIPT_DIR/kader.lua" "$PLUGIN_DIR/"
+echo "  ✓ ${PLUGIN_DIR}/kader.lua"
 
 # Companion-UI (lokaler Server + Web-Oberflaeche); Tests und Caches bleiben draussen
 rm -rf "${PLUGIN_DIR}/companion"
@@ -137,6 +137,7 @@ echo ""
 
 # ── 4. Alte Dateien im Root bereinigen ───────────────────────────────────────
 echo "[4/4] Bereinige alte Installation..."
+# Alter Dateiname vor der Umbenennung zu "Kader" und vor Script Manager: absichtlich der alte Name.
 OLD_ROOT="${LUA_DIR}/auto_crop_negative.lua"
 if [ -f "$OLD_ROOT" ]; then
     mv "$OLD_ROOT" "${OLD_ROOT}.bak"
@@ -144,9 +145,9 @@ if [ -f "$OLD_ROOT" ]; then
 fi
 
 INIT_FILE="${LUA_DIR}/init.lua"
-if [ -f "$INIT_FILE" ] && grep -q 'require.*auto_crop_negative' "$INIT_FILE"; then
-    sed -i 's/^require.*auto_crop_negative/-- removed: auto_crop_negative now via Script Manager/' "$INIT_FILE"
-    echo "  ✓ init.lua: auto_crop_negative require entfernt"
+if [ -f "$INIT_FILE" ] && grep -q 'require.*kader' "$INIT_FILE"; then
+    sed -i 's/^require.*kader/-- removed: kader now via Script Manager/' "$INIT_FILE"
+    echo "  ✓ init.lua: kader require entfernt"
 fi
 
 echo ""
@@ -157,7 +158,7 @@ echo ""
 echo "Nächste Schritte:"
 echo "  1. Darktable neu starten"
 echo "  2. Script Manager aktivieren:"
-echo "     Lua → Script Manager → contrib → Auto Crop Negative → ON"
+echo "     Lua → Script Manager → contrib → Kader → ON"
 echo "  3. Lighttable: Bilder auswählen → 'Review starten' (Web-UI öffnet sich)"
 echo "  4. In der Web-UI prüfen/korrigieren → 'Fertig'"
 echo "  5. Zurück in darktable: 'Plan anwenden'"
@@ -165,5 +166,5 @@ echo "     (Nicht zufrieden? 'Prüfung öffnen' → in der Web-UI 'Zurück zur P
 echo "  Alternativ ohne Web-UI: 'Detect & Queue', dann Bilder in der Dunkelkammer öffnen"
 echo ""
 echo "Tastenkürzel:"
-echo "  Voreinstellungen → Tastatur → Auto Crop Negative"
+echo "  Voreinstellungen → Tastatur → Kader"
 echo ""

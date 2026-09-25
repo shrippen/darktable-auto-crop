@@ -41,7 +41,7 @@ Folgen für diese Roadmap:
   (Phase 0/1/5): Die Sitzung schreibt jede Korrektur nach `feedback.jsonl`
   (Crop-Korrekturen, Gruppenwechsel, mit erkanntem Crop und Konfidenz). Beim Test
   fielen je Sitzung etwa fünf manuelle Crops und rund zwanzig Gruppenwechsel an.
-  **Achtung:** Sitzungen werden nach 14 Tagen aus `~/.cache/auto-crop-negative/`
+  **Achtung:** Sitzungen werden nach 14 Tagen aus `~/.cache/kader/`
   gelöscht. Vorher die wertvollen `feedback.jsonl`/`state.json` in
   `review_data/` sichern oder nach `reviews.json` übernehmen.
 - Phase 5 (Feedback-Schleife): das Werkzeug steht, es fehlt die **Auswertung**
@@ -50,7 +50,7 @@ Folgen für diese Roadmap:
 ## Ausgangslage: warum "grün" trotzdem falsch sein kann
 
 Die aktuelle Konfidenzformel (`apply_film_consensus()` in
-`auto_crop_negative.py`):
+`kader.py`):
 
 ```
 conf = 0.45 * size_agree + 0.35 * edge_score + 0.20 * film_trust
@@ -204,7 +204,7 @@ sinnvoll:
 - [x] Logistische Regression erneut versuchen, diesmal mit
       Leave-One-Film-Out-Kreuzvalidierung statt einer einzigen
       Train/Test-Zahl, um Überanpassung sofort sichtbar zu machen.
-      **Erledigt:** `python tools/calibrate.py --loo --from-json <eval.json>` vergleicht Formeln per Leave-One-Film-Out (mit verschachteltem LOFO für die Schwelle). Ergebnis: eine logistische Regression über die vier Faktoren ist schlechter (AUC 0.93) als die einfache Formel `0.5·size_agree + 0.5·edge_score` (AUC 0.98); Abdeckung sicherer Treffer bei 98 % Precision 86.7 % vs. 99 %. Die alte Formel: AUC 0.885, 84.7 %. Die einfache Formel ist jetzt in `auto_crop_negative.py` (Version `size+edge-v2`).
+      **Erledigt:** `python tools/calibrate.py --loo --from-json <eval.json>` vergleicht Formeln per Leave-One-Film-Out (mit verschachteltem LOFO für die Schwelle). Ergebnis: eine logistische Regression über die vier Faktoren ist schlechter (AUC 0.93) als die einfache Formel `0.5·size_agree + 0.5·edge_score` (AUC 0.98); Abdeckung sicherer Treffer bei 98 % Precision 86.7 % vs. 99 %. Die alte Formel: AUC 0.885, 84.7 %. Die einfache Formel ist jetzt in `kader.py` (Version `size+edge-v2`).
 - [x] Schwellen (grün/gelb) danach separat aus der ROC-Kurve auf dem
       Holdout-Set ableiten, mit einer bewusst konservativen
       Ziel-Precision für grün (z. B. >= 98 % auf dem Holdout, nicht nur
@@ -328,7 +328,7 @@ Totalausfälle sind damit fast alle erkannt.
 
 ## Nachtrag: Schräglage (2026-09-20)
 
-- [x] Schräglage messen und in der Web-UI anzeigen (`measure_skew` in `auto_crop_negative.py`).
+- [x] Schräglage messen und in der Web-UI anzeigen (`measure_skew` in `kader.py`).
 - [x] Geradestellen über darktable (`ashift` + `crop`, Parameter gegen darktable 5.6.1 mit `darktable-cli` geprüft:
       Rotation = Messwert richtet aus, die Ausgabe ist die Bounding-Box, Version 5 mit 892 Byte Parametern).
 - [ ] **Offen:** Messung an *echt* schräg fotografierten Bildern (die Referenzen haben höchstens 0.53°) und das

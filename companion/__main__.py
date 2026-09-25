@@ -1,15 +1,15 @@
-"""Kommandozeile von Auto Crop Negative (Companion-UI).
+"""Kommandozeile von Kader (Companion-UI).
 
 Eigenstaendig, ohne darktable:
-  auto-crop-negative ORDNER                     = open ORDNER
-  auto-crop-negative open ORDNER [--target auto|json|copies|xmp|rawtherapee]
+  kader ORDNER                     = open ORDNER
+  kader open ORDNER [--target auto|json|copies|xmp|rawtherapee]
                             [--out DIR] [--converter auto|darktable|rawtherapee|rawpy]
                             [--films 33 34] [--new] [--no-browser] [--tui] [--bind ADRESSE]
-  auto-crop-negative check [ORDNER]             Konverter, Ziele, Vorschlag fuer ORDNER
+  kader check [ORDNER]             Konverter, Ziele, Vorschlag fuer ORDNER
 
   --tui zeigt statt der einmaligen URL-Ausgabe eine laufende Statusanzeige im Terminal
   (Fortschritt, Zähler, URL, Taste O öffnet den Browser, Q beendet den Server) - gedacht für
-  SSH/NAS-Sitzungen ohne lokalen Browser. Braucht das Paket "rich": pip install "auto-crop-negative[tui]".
+  SSH/NAS-Sitzungen ohne lokalen Browser. Braucht das Paket "rich": pip install "kader[tui]".
 
   --bind ADRESSE macht den Server im Netzwerk erreichbar (Standard 127.0.0.1: nur diese Maschine).
   Beispiel: --bind 0.0.0.0 auf einem NAS, dann die angezeigte URL/den Token von einem anderen
@@ -49,7 +49,7 @@ def main(argv=None):
     if argv and argv[0] not in COMMANDS and not argv[0].startswith("-"):
         argv.insert(0, "open")          # Kurzform: nur der Ordner
 
-    ap = argparse.ArgumentParser(prog="auto-crop-negative", description=__doc__,
+    ap = argparse.ArgumentParser(prog="kader", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 

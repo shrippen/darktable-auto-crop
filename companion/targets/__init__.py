@@ -23,8 +23,8 @@ from .. import pp3
 DARKTABLE = "darktable"
 REVIEWS = "reviews"
 AUTO = "auto"
-OUTPUT_MARKER = ".autocrop-output"      # kennzeichnet Ausgabeordner; die Bildsuche ueberspringt sie
-DEFAULT_OUT_DIR = "autocrop"
+OUTPUT_MARKER = ".kader-output"         # kennzeichnet Ausgabeordner; die Bildsuche ueberspringt sie
+DEFAULT_OUT_DIR = "kader"
 
 MODE_DARKTABLE = "darktable"            # Sitzung aus darktable (Lua)
 MODE_FOLDER = "folder"                  # Kalibrierung mit reviews.json

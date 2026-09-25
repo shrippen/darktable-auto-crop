@@ -25,7 +25,7 @@ NS = {
     "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
     "crs": "http://ns.adobe.com/camera-raw-settings/1.0/",
     "xmp": "http://ns.adobe.com/xap/1.0/",
-    "acn": "urn:auto-crop-negative:1.0",
+    "kdr": "urn:kader:1.0",
 }
 LABEL_NAMES = {"red": "Red", "yellow": "Yellow", "green": "Green"}
 CROP_KEYS = ("HasCrop", "CropLeft", "CropTop", "CropRight", "CropBottom", "CropAngle")
@@ -84,7 +84,7 @@ class XmpTarget(Target):
 
         notes = []
         values = {("xmp", "Label"): LABEL_NAMES[e["label"]],
-                  ("acn", "Label"): e["label"], ("acn", "Revision"): str(session.revision)}
+                  ("kdr", "Label"): e["label"], ("kdr", "Revision"): str(session.revision)}
         if e["apply"]:
             orient = raw_orientation(path)
             if orient is None:

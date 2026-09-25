@@ -13,7 +13,7 @@ Testfotos; der Film-Konsens braucht die ganze Rolle) und die Referenzen als
 Die Bilder sind private Fotos: nicht committen (siehe .git/info/exclude). Das JSON enthaelt
 nur Koordinaten und Dateinamen.
 
-  tools/build_feedback_gt.py                       # alle Sitzungen in ~/.cache/auto-crop-negative
+  tools/build_feedback_gt.py                       # alle Sitzungen in ~/.cache/kader
   tools/build_feedback_gt.py --films "Film 35"
 """
 import argparse

@@ -242,7 +242,7 @@ ist unverändert (~6 min).
 
 ### Stand der Umsetzung
 
-**Übernommen.** Die Änderung steht im Repo (`film_scale.py`, `auto_crop_negative.py`, dazu
+**Übernommen.** Die Änderung steht im Repo (`film_scale.py`, `kader.py`, dazu
 `companion/session.py`); der Patch neben diesem Bericht ist damit nur noch Beleg. 91 Tests grün (acht
 neue für das Tor und die Übereinstimmung). Ein Bestätigungslauf über beide Referenzsätze mit dem
 Repo-Stand reproduziert die Tabellen oben Ziffer für Ziffer.

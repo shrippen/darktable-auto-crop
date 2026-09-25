@@ -28,7 +28,7 @@
   `docker0` gilt nicht mehr als physisch).
 
 ### Im Netzwerk erreichbar machen (`--bind`)
-`auto-crop-negative open ORDNER --bind 0.0.0.0` (oder eine konkrete LAN-Adresse) lässt den Server auf mehr als nur
+`kader open ORDNER --bind 0.0.0.0` (oder eine konkrete LAN-Adresse) lässt den Server auf mehr als nur
 `127.0.0.1` lauschen, damit man z. B. von seinem eigenen Rechner aus auf die Web-UI eines per SSH betriebenen NAS
 zugreifen kann, ohne einen SSH-Tunnel aufzusetzen. Der **Token** (bei jedem Start neu ausgewürfelt, `secrets.token_urlsafe`)
 bleibt dabei die Zugriffskontrolle; die engere Host-Header-Prüfung (Schutz gegen DNS-Rebinding), die nur bei
@@ -41,7 +41,7 @@ usw., an Namen erkannt) und deren üblichen Adressbereich (172.16–31.0.0/12); 
 ausgehende Verbindung gewählte Route zählt als zusätzlicher Kandidat. Nur für den eigenständigen `open`-Weg.
 
 ### Terminal-Statusanzeige für NAS/SSH (`--tui`)
-`auto-crop-negative open ORDNER --tui` zeigt eine laufende Statusanzeige im Terminal statt nur der einmal ausgegebenen
+`kader open ORDNER --tui` zeigt eine laufende Statusanzeige im Terminal statt nur der einmal ausgegebenen
 URL: Sitzung, Ziel, Zähler (grün/gelb/rot/anwenden), Fortschrittsbalken bei Export/Erkennung, Ergebnis nach „Fertig“,
 die URL groß in der Mitte. Taste `O` versucht, den Browser zu öffnen (mit Hinweis, wenn keiner da ist – der NAS-
 Regelfall), `Q` beendet den Server. Läuft im selben Prozess wie der HTTP-Server (der wandert dafür in einen
@@ -63,12 +63,12 @@ gemischte Ordner, …) fand sechs konkrete Lücken; alle behoben.
 - **Bilder, die ein Ziel nicht schreibt, sind jetzt sichtbar, bevor man auf Fertig klickt**: Kachel-Badge „nicht
   geschrieben“ in der Galerie, ausführlicher Hinweis im Crop-Editor. Bisher zählte so ein Bild ganz normal zu „Anwenden“
   und tauchte erst nach Fertig im Ergebnis als übersprungen auf.
-- **Ordner wachsen lassen funktioniert jetzt**: `auto-crop-negative ORDNER` erkennt beim erneuten Aufruf, wenn die
+- **Ordner wachsen lassen funktioniert jetzt**: `kader ORDNER` erkennt beim erneuten Aufruf, wenn die
   bekannten Bilder einer bestehenden Sitzung eine Teilmenge der jetzt gefundenen sind, und ergänzt nur die neuen
   (Analyse nur für sie, bestehende Entscheidungen bleiben). Bisher erzwang schon ein einziges neues Bild eine komplette
   neue Sitzung mit Neuanalyse aller Bilder.
 - **Kein zweiter Server mehr auf derselben Sitzung**: eine Dateisperre (`server.lock`, `flock`) verhindert, dass ein
-  zweiter `auto-crop-negative`-Aufruf (oder ein zweites „Prüfung öffnen“) denselben Sitzungsordner gleichzeitig bedient;
+  zweiter `kader`-Aufruf (oder ein zweites „Prüfung öffnen“) denselben Sitzungsordner gleichzeitig bedient;
   der zweite Aufruf meldet stattdessen die URL des laufenden Servers. Ohne das konnten zwei Prozesse unbemerkt
   gegenseitig Korrekturen überschreiben.
 - **`--converter NAME` scheitert jetzt sofort**, wenn das Programm fehlt, statt erst beim Export mitten in der Sitzung.
@@ -78,9 +78,9 @@ gemischte Ordner, …) fand sechs konkrete Lücken; alle behoben.
 ### Eigenständig nutzbar, darktable optional (`roadmap-standalone.md`, Phase 1–4)
 Erkennung und Web-UI waren schon werkzeugneutral; nur Ein- und Ausgang hingen an darktable. Beide Enden sind jetzt
 austauschbare Adapter.
-- **Neuer Befehl** `auto-crop-negative ORDNER` (`python -m companion ORDNER`): durchsucht den Ordner (Unterordner = Rollen,
+- **Neuer Befehl** `kader ORDNER` (`python -m companion ORDNER`): durchsucht den Ordner (Unterordner = Rollen,
   auch RAWs), analysiert, öffnet die Web-UI; **Fertig** wendet den Plan sofort an. Erneuter Start setzt die Sitzung fort
-  (`--new` für Neuanalyse). `auto-crop-negative check ORDNER` zeigt Konverter und vorgeschlagenes Ziel.
+  (`--new` für Neuanalyse). `kader check ORDNER` zeigt Konverter und vorgeschlagenes Ziel.
 - **Ziele** (`companion/targets/`): `copies` (zugeschnittene, ggf. geradegestellte Kopien; ICC/EXIF bleiben, 16 Bit bleibt),
   `json` (`crops.json` + `crops.csv`), `xmp` (Adobe-Sidecar für Lightroom/Camera Raw), `rawtherapee` (`.pp3`), dazu die
   bisherigen Wege als `darktable` (unverändert über Lua) und `reviews` (Kalibrierung). Das Ziel wird aus vorhandenen
@@ -247,7 +247,7 @@ Erste Version mit Companion-UI (Web-Oberfläche) vor der Übergabe an darktable.
 - **Serverlebensdauer:** stoppt beim Schließen von darktable (`exit`-Ereignis und PID-Überwachung) und nach
   30 Minuten ohne Aktivität in der Web-UI.
 - **Ordnermodus** ohne darktable (`python -m companion serve --folder …`), ersetzt langfristig `review_gui.py`.
-- Sitzungen in `~/.cache/auto-crop-negative/`, Aufräumen nach 14 Tagen; Korrekturen als `feedback.jsonl`.
+- Sitzungen in `~/.cache/kader/`, Aufräumen nach 14 Tagen; Korrekturen als `feedback.jsonl`.
 - Tests: Unit-/Integrationstests (`tests/test_companion.py`), Lua-Stub, Browser-Smoke-Test (`tests/ui_smoke.py`).
 
 ### Behoben

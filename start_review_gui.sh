@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Testlauf fuer den Algorithmus: analysiert die Bilder in Testphotos/ mit DERSELBEN Pipeline wie
-# spaeter in darktable (auto_crop_negative.compute_batch) und zeigt sie in der Web-UI.
+# spaeter in darktable (kader.compute_batch) und zeigt sie in der Web-UI.
 #
 # Dort siehst du je Bild den erkannten Crop, die Konfidenz samt Faktoren und - wo eine Referenz
 # existiert - die Abweichung davon ("Referenz-Test"). Du kannst Crops korrigieren oder mit

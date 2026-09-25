@@ -67,7 +67,7 @@ class Broker:
 
 def acquire_lock(session_dir):
     """Exklusive Dateisperre fuer eine Sitzung: verhindert zwei Server auf demselben Ordner
-    (z. B. zweimal ``auto-crop-negative ORDNER`` gestartet, oder zweimal "Pruefung oeffnen").
+    (z. B. zweimal ``kader ORDNER`` gestartet, oder zweimal "Pruefung oeffnen").
 
     Gibt das offene Dateiobjekt zurueck (muss vom Aufrufer gehalten werden, solange der Server
     laeuft) oder ``None``, wenn schon ein anderer Prozess die Sperre haelt. Der Prozess gibt die

@@ -43,7 +43,7 @@ Nicht zufrieden in darktable?
 - **Alles Raw, Export durch darktable:** Es wird davon ausgegangen, dass im
   Zweifel alle Bilder Raws sind. Python liest **nie** Raws selbst (kein
   rawpy/libraw). Der bestehende Export `export_raws_via_darktable()` in
-  `auto_crop_negative.py` wird wiederverwendet: `darktable-cli` mit eigener
+  `kader.py` wird wiederverwendet: `darktable-cli` mit eigener
   temporärer Config und `write_sidecar_files=never`, also ohne die laufende
   darktable-Instanz zu stören und ohne XMP zu überschreiben. Lua übergibt nur
   Pfade/IDs. Das eine Export-Bild dient für Erkennung, Thumbnails,
@@ -64,7 +64,7 @@ Nicht zufrieden in darktable?
   Web Components optional). Drag-and-drop über natives HTML5-DnD oder
   Pointer-Events (letzteres besser für Touch/Tablet und für den Crop-Editor).
 - **Lauf-Kontrolle:** Lua startet den Companion als Hintergrundprozess
-  (PID-Handling ist in `auto_crop_negative.lua` bereits vorhanden) und öffnet
+  (PID-Handling ist in `kader.lua` bereits vorhanden) und öffnet
   die URL per `xdg-open`. Lua blockiert nicht und pollt nicht. Das
   darktable-Modul hat drei Knöpfe: **Review starten**, **Plan anwenden**,
   **Prüfung öffnen** (startet den Server für die letzte Sitzung neu, falls er
@@ -84,7 +84,7 @@ Nicht zufrieden in darktable?
 
 ## 3. Datenmodell (`job.json` → `plan.json`)
 
-Eine Sitzung = ein Verzeichnis `~/.cache/auto-crop-negative/<session-id>/`.
+Eine Sitzung = ein Verzeichnis `~/.cache/kader/<session-id>/`.
 
 ```jsonc
 {
@@ -155,7 +155,7 @@ Eine Sitzung = ein Verzeichnis `~/.cache/auto-crop-negative/<session-id>/`.
 
 ### 4.5 Prozess beobachten (ab Stufe 1)
 - Fortschrittsanzeige der Analyse, live einlaufende Kacheln.
-- Log-Panel (einklappbar) mit Ausgabe von `auto_crop_negative.py --debug`.
+- Log-Panel (einklappbar) mit Ausgabe von `kader.py --debug`.
 - Fehlerkacheln mit Grund, "Erneut versuchen"-Knopf.
 
 ### 4.6 Fertig, Plan anwenden, Zurück zur Prüfung (Stufe 4)
@@ -334,7 +334,7 @@ companion/
     vendor/          # shrippen-Designsystem v1: styles.css, shrippen.js, fonts/ (unverändert)
     app.css          # nur App-Bausteine, ausschließlich mit Tokens
     i18n.js          # EN/DE-Textpaare, Umschalter
-auto_crop_negative.lua   # + Export, Sitzung starten, Knopf "Plan anwenden", result.json
+kader.lua               # + Export, Sitzung starten, Knopf "Plan anwenden", result.json
 ```
 **Entscheidung:** Die Web-UI ersetzt `review_gui.py` langfristig. Bis zur
 Parität (Stufe 6) bleibt das Tk-GUI bestehen. Damit der Ersatz vollständig ist,

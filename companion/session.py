@@ -30,8 +30,8 @@ from datetime import datetime, timezone
 
 from . import targets
 
-DEFAULT_ROOT = os.environ.get("AUTOCROP_CACHE") or os.path.join(
-    os.path.expanduser("~"), ".cache", "auto-crop-negative")
+DEFAULT_ROOT = os.environ.get("KADER_CACHE") or os.path.join(
+    os.path.expanduser("~"), ".cache", "kader")
 CACHE_DAYS = 14
 
 PHASES = ("analyzing", "reviewing", "locked", "applied", "apply_failed")
@@ -731,7 +731,7 @@ class Session:
         Verlaesslich heisst: die Rolle hat ihren Takt auf beiden Haelften bestaetigt (``agree``, siehe
         ``film_scale.measure_roll_pitch``); eine Fehlmessung wuerde die gelernte mm-Konvention sonst um ihren
         eigenen Fehler verschieben. Wo keine Uebereinstimmung vorliegt (aeltere Sitzungen), zaehlt der Score.
-        Ergebnis: {"long_mm", "short_mm", "n"}; wird von ``auto_crop_negative`` als Voreinstellung gelesen."""
+        Ergebnis: {"long_mm", "short_mm", "n"}; wird von ``kader`` als Voreinstellung gelesen."""
         longs, shorts = [], []
         for img in self.state["images"].values():
             man, size = img.get("manual"), img.get("export_size")

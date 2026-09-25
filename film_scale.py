@@ -178,17 +178,17 @@ def load_gray(path, max_side=2000):
 # ─── Konvention: gewuenschte Crop-Groesse in mm ─────────────────────────────────────────────────────────────────
 # Die Physik liefert den Rahmen (36 x 24 mm); wie eng oder weit man ihn schneidet, ist Geschmack (gemessen: darktable-
 # Crops 35.99 x 23.95 mm, Handcrops 36.81 x 24.40 mm). Die Web-UI lernt den Wert aus den von Hand gesetzten Crops und legt
-# ihn hier ab; die Erkennung liest ihn als Voreinstellung. Env AUTOCROP_CONVENTION: Pfad, oder leer = ausgeschaltet.
+# ihn hier ab; die Erkennung liest ihn als Voreinstellung. Env KADER_CONVENTION: Pfad, oder leer = ausgeschaltet.
 import json as _json
 import os as _os
 
 
 def convention_path():
-    env = _os.environ.get("AUTOCROP_CONVENTION")
+    env = _os.environ.get("KADER_CONVENTION")
     if env is not None:
         return env or None
     base = _os.environ.get("XDG_CONFIG_HOME") or _os.path.expanduser("~/.config")
-    return _os.path.join(base, "auto-crop-negative", "convention.json")
+    return _os.path.join(base, "kader", "convention.json")
 
 
 def load_convention(path=None):

@@ -1,6 +1,6 @@
--- Testumgebung fuer auto_crop_negative.lua ohne darktable: ein kleiner Stub der
+-- Testumgebung fuer kader.lua ohne darktable: ein kleiner Stub der
 -- darktable-API. Aufruf: lua tests/lua_harness.lua <lua-script> <aktion> [args]
---   apply          "Plan anwenden" (liest AUTOCROP_CACHE/last_session)
+--   apply          "Plan anwenden" (liest KADER_CACHE/last_session)
 --   open           "Pruefung oeffnen"
 -- Bilder kommen aus der Umgebungsvariable HARNESS_IMAGES ("id|verzeichnis|datei;...").
 -- Ausgabe: JSON-Zeilen mit den beobachteten Style-Aufrufen, Labels und Meldungen.
