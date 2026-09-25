@@ -168,7 +168,9 @@ Entscheidung (2026-09-26): **Kader**, vollständig durchgeführt statt nur das R
 oben) – abweichend von der ursprünglichen Empfehlung hier, bewusst mit den Folgekosten: bestehende
 darktable-Installationen müssen das Skript im Script Manager neu registrieren (alter Pfad
 `contrib/auto_crop_negative/` wird nicht automatisch migriert), Cache (`~/.cache/kader`), Konfiguration
-(`~/.config/kader/convention.json`) und gelernte Crop-Konvention starten für bestehende Nutzer neu.
+(`~/.config/kader/convention.json`) und gelernte Crop-Konvention starten für bestehende Nutzer neu. Das
+Remote-Repo wurde ebenfalls umbenannt: `git.arianw.de/shrippen/darktable-auto-crop` → `git.arianw.de/shrippen/kader`
+(alte URL leitet per 301 weiter).
 
 ## Was explizit nicht angetastet wird
 

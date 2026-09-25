@@ -77,8 +77,8 @@ Voraussetzungen: Python 3.8+, OpenCV, NumPy, Pillow (werden mitinstalliert).
 ### Ohne darktable
 
 ```bash
-git clone https://github.com/shrippen/darktable-auto-crop.git
-cd darktable-auto-crop
+git clone https://git.arianw.de/shrippen/kader.git
+cd kader
 ./install.sh --standalone
 ```
 
@@ -93,7 +93,7 @@ Alternativ von Hand: `pip install ".[raw]"` (ohne `[raw]`: RAWs brauchen dann `d
 - Darktable (4.0+) mit Lua-Unterstützung
 
 ```bash
-cd darktable-auto-crop
+cd kader
 ./install.sh
 ```
 
@@ -384,8 +384,8 @@ saubere Ende (benötigt `rich`, sonst übersprungen).
 
 ## Name
 
-Das Projekt heißt „Kader“; Paket, Befehl, Cache- und Konfigurationsordner tragen diesen Namen bereits. Nur das
-Repository heißt noch `darktable-auto-crop`. Vorschläge und Empfehlung zur Umbenennung:
+Das Projekt heißt „Kader“; Paket, Befehl, Cache-/Konfigurationsordner, darktable-Plugin und Repository
+(`git.arianw.de/shrippen/kader`) tragen diesen Namen. Begründung der Wahl:
 [`roadmap-standalone.md`, Phase 4](roadmap-standalone.md#namensvorschläge).
 
 ## License
