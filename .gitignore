@@ -5,4 +5,5 @@ crop_queue.json
 *.log
 Testphotos/
 build/
+dist/
 *.egg-info/
