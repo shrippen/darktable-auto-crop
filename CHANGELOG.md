@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-09-26)
 
 ### Belegter Port
 - `--port N` belegt: der Server sucht selbst den nächsten freien Port (N+1 … N+19, dann einen beliebigen)
