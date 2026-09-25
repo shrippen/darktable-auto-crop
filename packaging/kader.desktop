@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kader
+GenericName=Filmnegative zuschneiden
+Comment=Erkennt den Bildrahmen abfotografierter Filmnegative und schneidet zu
+Exec=kader %f
+Icon=kader
+Terminal=false
+Categories=Graphics;Photography;

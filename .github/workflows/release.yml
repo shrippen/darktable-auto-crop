@@ -1,0 +1,86 @@
+# Baut die Doppelklick-Pakete (Windows-exe, Linux-AppImage) und haengt sie an das GitHub-Release.
+# Ausloeser: ein Tag v* (kommt ueber den Spiegel von git.arianw.de) oder von Hand (nur Artefakte).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          # aelteste noch verfuegbare Basis: das AppImage laeuft nur auf Systemen mit mindestens
+          # dieser glibc-Version (Ubuntu 22.04, Mint 21, Debian 12, ...)
+          - os: ubuntu-22.04
+            name: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"
+          else v="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)-dev"; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Abhaengigkeiten
+        run: python -m pip install . rawpy pyinstaller
+
+      - name: Tests
+        # unter Windows bisher nie gelaufen: Ergebnis sichtbar machen, den Build aber nicht blockieren
+        continue-on-error: ${{ matrix.name == 'windows' }}
+        run: python -m unittest discover -s tests
+
+      - name: Bauen
+        run: pyinstaller --noconfirm packaging/kader.spec
+
+      - name: Windows-Datei benennen
+        if: matrix.name == 'windows'
+        shell: bash
+        run: mv dist/kader.exe "dist/Kader-${VERSION}-windows-x64.exe"
+
+      - name: AppImage
+        if: matrix.name == 'linux'
+        run: packaging/build-appimage.sh "$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kader-${{ matrix.name }}
+          path: |
+            dist/Kader-*.exe
+            dist/Kader-*.AppImage
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Release anlegen oder ergaenzen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" out/* --clobber
+          else
+            gh release create "$tag" out/* --title "Kader ${tag#v}" --notes-file packaging/RELEASE_NOTES.md
+          fi

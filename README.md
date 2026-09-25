@@ -72,6 +72,17 @@ Bilder im selben Ordner gelten als eine **Filmrolle**; die Rolle liefert Größe
 
 ## Installation
 
+### Herunterladen (Windows, Linux)
+
+Ohne Python und ohne Terminal: auf der [Release-Seite](https://github.com/shrippen/kader/releases/latest)
+`Kader-…-windows-x64.exe` bzw. `Kader-…-x86_64.AppImage` herunterladen und doppelklicken. Ein Dialog fragt nach dem
+Ordner mit den Scans, danach öffnet sich die Prüfung im Browser; ein kleines Fenster zeigt den Fortschritt und beendet
+Kader. RAWs werden ohne weitere Programme entwickelt (rawpy ist enthalten). Die exe ist nicht signiert (SmartScreen:
+„Weitere Informationen“ → „Trotzdem ausführen“), das AppImage muss einmal ausführbar gemacht werden. Bauen:
+[packaging/README.md](packaging/README.md).
+
+### Mit Python
+
 Voraussetzungen: Python 3.8+, OpenCV, NumPy, Pillow (werden mitinstalliert).
 
 ### Ohne darktable
