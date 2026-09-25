@@ -1,10 +1,14 @@
 """Lokaler HTTP-Server der Companion-UI (nur Stdlib).
 
-- bindet nur an 127.0.0.1, prueft einen zufaelligen Token und den Host-Header
-  (Schutz gegen fremde Webseiten und DNS-Rebinding), kein CORS
+- bindet standardmaessig nur an 127.0.0.1, prueft einen zufaelligen Token (bei jedem Start neu)
+  und den Host-Header (Schutz gegen fremde Webseiten und DNS-Rebinding), kein CORS. Mit
+  ``--bind`` (siehe ``companion/__main__.py``, nur eigenstaendige Nutzung) laesst sich der Server
+  im Netzwerk erreichbar machen; dann bleibt allein der Token die Zugriffskontrolle, die enge
+  Host-Pruefung entfaellt (siehe ``App.loopback_only``).
 - liefert die statische Oberflaeche, eine JSON-API und Server-Sent-Events
 - nach "Fertig" antworten alle Schreibzugriffe mit 409 (Sitzung gesperrt)
 """
+import errno
 import json
 import mimetypes
 import os
@@ -12,6 +16,7 @@ import queue
 import re
 import secrets
 import signal
+import socket
 import threading
 import time
 from http import HTTPStatus
@@ -25,6 +30,11 @@ from .thumbs import thumb_bytes
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 IDLE_SECONDS = 30 * 60        # ohne Aktivitaet in der Web-UI beendet sich der Server
 IDLE_WARN_SECONDS = 5 * 60    # so lange vorher warnt die UI
+LOOPBACK_BINDS = ("127.0.0.1", "localhost", "::1")
+WILDCARD_BINDS = ("0.0.0.0", "::")
+DEFAULT_HTTP_PORT = 80        # Browser lassen diesen Port im Host-Header weg
+PORT_SEARCH_SPAN = 20         # belegter Port: so viele Nachfolger probieren, dann das BS waehlen lassen
+PORT_UNAVAILABLE = (errno.EADDRINUSE, errno.EACCES)   # belegt / Port < 1024 ohne Rechte
 MAX_BODY = 2 * 1024 * 1024
 
 
@@ -55,6 +65,113 @@ class Broker:
                     pass
 
 
+def acquire_lock(session_dir):
+    """Exklusive Dateisperre fuer eine Sitzung: verhindert zwei Server auf demselben Ordner
+    (z. B. zweimal ``auto-crop-negative ORDNER`` gestartet, oder zweimal "Pruefung oeffnen").
+
+    Gibt das offene Dateiobjekt zurueck (muss vom Aufrufer gehalten werden, solange der Server
+    laeuft) oder ``None``, wenn schon ein anderer Prozess die Sperre haelt. Der Prozess gibt die
+    Sperre beim Beenden automatisch frei (auch bei Absturz), ohne Aufraeum-Code noetig ist.
+    Ohne ``fcntl`` (nicht-POSIX) wird nicht gesperrt (kein Fehler, nur kein Schutz)."""
+    try:
+        import fcntl
+    except ImportError:            # pragma: no cover - kein POSIX (Windows)
+        return open(os.devnull, "a")
+    fh = open(os.path.join(session_dir, "server.lock"), "a")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
+_VIRTUAL_IFACE_PREFIXES = (          # Docker/Container/Bruecken/VPN - nachrangig, nicht ausgeschlossen
+    "lo", "docker", "br-", "veth", "cni", "flannel", "virbr", "vmnet", "vboxnet",
+    "tun", "tap", "wg", "zt", "utun", "awdl", "llw", "gif", "stf", "bridge", "ifb",
+)
+SIOCGIFADDR = 0x8915
+
+
+def _iface_ipv4(name):
+    """IPv4-Adresse einer Netzwerkschnittstelle per ``ioctl`` (nur Linux; anderswo/ohne
+    zugewiesene Adresse liefert der Aufruf einen OSError, die Schnittstelle wird dann
+    uebersprungen statt das Raten scheitern zu lassen). Ohne ``fcntl`` (Windows): None."""
+    import struct
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        packed = struct.pack("256s", name[:15].encode())
+        return socket.inet_ntoa(fcntl.ioctl(s.fileno(), SIOCGIFADDR, packed)[20:24])
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+PHYSICAL_SCORE = 100      # eine physische Schnittstelle schlaegt jede virtuelle, egal welcher Adressbereich
+PRIVATE_LAN_SCORE = 5
+DOCKER_RANGE_PENALTY = 8
+ROUTE_BONUS = 3
+
+
+def _score_candidate(name, ip):
+    """Hoeher = eher die richtige, von aussen erreichbare LAN-Adresse. Der Interface-Name
+    entscheidet zuerst: eine physische Schnittstelle gewinnt immer gegen Docker/Bruecke/VPN, auch
+    wenn das echte LAN selbst in 172.16.0.0/12 liegt. Innerhalb gleicher Art zaehlen privates LAN
+    (192.168/16, 10/8) positiv und Dockers ueblicher Bereich (172.16-31) negativ. Virtuelle
+    Interfaces bleiben Kandidaten: ohne echtes LAN ist "wahrscheinlich falsch" besser als nichts."""
+    octets = [int(o) for o in ip.split(".")]
+    virtual_name = name.lower().startswith(_VIRTUAL_IFACE_PREFIXES)
+    docker_range = octets[0] == 172 and 16 <= octets[1] <= 31
+    private_lan = (octets[0] == 192 and octets[1] == 168) or octets[0] == 10
+    score = 0 if virtual_name else PHYSICAL_SCORE
+    score += PRIVATE_LAN_SCORE if private_lan else 0
+    score -= DOCKER_RANGE_PENALTY if docker_range else 0
+    return score
+
+
+def _route_ip():
+    """Welche eigene Adresse das Betriebssystem fuer eine ausgehende Verbindung waehlen wuerde
+    (verbindet ohne Daten zu senden). Funktioniert auch, wo ``_iface_ipv4`` nicht geht (kein
+    Linux); ``None`` ganz ohne Route (z. B. offline und ohne jedes Interface)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+def guess_lan_ip():
+    """Beste Vermutung fuer eine im LAN erreichbare eigene Adresse, nur fuer die Anzeige bei
+    ``--bind 0.0.0.0`` (das Lauschen selbst betrifft das nicht, das laeuft auf allen Interfaces).
+    Bevorzugt eine physische Netzwerkschnittstelle gegenueber Docker-/Bruecken-/VPN-Interfaces.
+    Die vom Betriebssystem fuer eine ausgehende Verbindung gewaehlte Adresse bekommt einen kleinen
+    Bonus (sie spiegelt echtes Routing) - bewertet mit dem Namen der Schnittstelle, der sie gehoert,
+    damit eine Route ueber docker0 nicht als "physisch" durchgeht. Ohne Aufzaehlung (kein Linux)
+    bleibt sie der einzige Kandidat. ``None`` ganz ohne Kandidaten."""
+    by_ip = {}                                   # ip -> Name der Schnittstelle
+    try:
+        for _, name in socket.if_nameindex():
+            ip = _iface_ipv4(name)
+            if ip and not ip.startswith("127.") and not ip.startswith("169.254."):
+                by_ip.setdefault(ip, name)
+    except (OSError, AttributeError):
+        pass          # kein POSIX-if_nameindex (z. B. Windows) - route_ip bleibt als Kandidat
+    route_ip = _route_ip()
+    if route_ip and route_ip not in by_ip and not route_ip.startswith("127."):
+        by_ip[route_ip] = ""                     # Schnittstelle unbekannt: neutral bewerten
+    if not by_ip:
+        return None
+    return max(by_ip, key=lambda ip: _score_candidate(by_ip[ip], ip) + (ROUTE_BONUS if ip == route_ip else 0))
+
+
 def pid_alive(pid):
     """Lebt der Prozess? (Linux/Unix: Signal 0)"""
     try:
@@ -69,9 +186,9 @@ def pid_alive(pid):
 
 
 class App:
-    def __init__(self, session, token=None, watch_pid=None, idle_seconds=IDLE_SECONDS):
+    def __init__(self, session, token=None, watch_pid=None, idle_seconds=IDLE_SECONDS, bind="127.0.0.1"):
         self.session = session
-        self.token = token or secrets.token_urlsafe(16)
+        self.token = token or secrets.token_urlsafe(16)      # neu bei jedem Start, siehe url()
         self.broker = Broker()
         self.analyzer = Analyzer(session, self.broker.publish)
         session.subscribe(self.broker.publish)
@@ -81,6 +198,11 @@ class App:
         self.stop_reason = None
         self.httpd = None
         self.port = None
+        self.bind = bind
+        # nur an 127.0.0.1/localhost gilt die enge Host-Pruefung (siehe Handler._host_ok);
+        # bei jeder anderen Bind-Adresse ist der Token die einzige Zugriffskontrolle
+        self.loopback_only = bind in LOOPBACK_BINDS
+        self.display_host = (guess_lan_ip() or "127.0.0.1") if bind in WILDCARD_BINDS else bind
 
     def stop(self, reason):
         """Faehrt den Server geordnet herunter; die UI erfaehrt vorher den Grund."""
@@ -97,7 +219,8 @@ class App:
 
     @property
     def url(self):
-        return f"http://127.0.0.1:{self.port}/?t={self.token}"
+        host = f"[{self.display_host}]" if ":" in self.display_host else self.display_host
+        return f"http://{host}:{self.port}/?t={self.token}"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -130,8 +253,19 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, {"error": message, **extra})
 
     def _host_ok(self):
-        host = (self.headers.get("Host") or "").lower()
-        return host in (f"127.0.0.1:{self.app.port}", f"localhost:{self.app.port}")
+        name, port = split_host(self.headers.get("Host") or "")
+        if not name:
+            return False
+        if port is None:                  # Browser schicken Port 80 nicht mit
+            port = DEFAULT_HTTP_PORT
+        if port != self.app.port:
+            return False
+        if self.app.loopback_only:
+            return name in ("127.0.0.1", "localhost", "::1")
+        # im Netzwerk erreichbar (--bind): der Hostname variiert (mehrere Interfaces, 0.0.0.0),
+        # eine feste Zuordnung waere bruechig. Nur der Port wird noch geprueft; der Token bleibt
+        # die eigentliche Zugriffskontrolle (siehe App.loopback_only, README "Terminal-Statusanzeige").
+        return True
 
     def _token_ok(self, query):
         tok = self.headers.get("X-Token") or (query.get("t") or [""])[0]
@@ -170,10 +304,10 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(u.query)
         path = u.path
         # Vom Server ausgeloeste Abrufe (Ereignisstrom, Neuladen nach Serverereignissen)
-        # zaehlen nicht als Aktivitaet des Nutzers.
+        # zaehlen nicht als Aktivitaet des Nutzers - und abgewiesene Anfragen (fremder Host, kein
+        # Token, statische Dateien ohne Token) auch nicht, sonst haelt ein Scanner im Netz den
+        # Server bei --bind ewig am Leben.
         passive = path == "/api/events" or (self.command == "GET" and path == "/api/session")
-        if not passive:
-            self.app.last_activity = time.time()
         try:
             if not self._host_ok():
                 return self._error(403, "Host nicht erlaubt")
@@ -181,6 +315,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._static(path[len("/static/"):])
             if not self._token_ok(query):
                 return self._error(403, "Token fehlt oder ist falsch")
+            if not passive:
+                self.app.last_activity = time.time()
             if path == "/":
                 return self._static("index.html")
             if path.startswith("/api/"):
@@ -270,6 +406,9 @@ class Handler(BaseHTTPRequestHandler):
             if route == "settings":
                 s.set_settings(b)
                 return self._send(200, {"ok": True})
+            if route == "target":
+                s.set_target(b.get("name"))
+                return self._send(200, {"ok": True})
             if route == "redetect":
                 s._require_editable()
                 a.start_redetect(b.get("ids") or [], b.get("settings") or {})
@@ -283,13 +422,14 @@ class Handler(BaseHTTPRequestHandler):
                 s.discard_proposals(b.get("ids") or [])
                 return self._send(200, {"ok": True})
             if route == "retry":
-                s._require_editable()
-                for iid in b.get("ids") or []:
-                    img = s.image(iid)
-                    img["status"], img["error"] = "pending", None
-                s.state["phase"] = "analyzing"
-                s.save()
-                a.start_analysis()
+                if a.progress.get("busy"):         # erst pruefen: sonst bliebe die Phase "analyzing"
+                    raise Busy()
+                s.retry(b.get("ids") or [])
+                try:
+                    a.start_analysis()
+                except Busy:                        # Rennen mit einer gerade gestarteten Neu-Erkennung
+                    s.mark_analysis_done()
+                    raise
                 return self._send(202, {"started": True})
             if route == "finish":
                 if a.progress.get("busy"):
@@ -334,10 +474,55 @@ class Handler(BaseHTTPRequestHandler):
             self.app.broker.unsubscribe(q)
 
 
-def make_server(session, port=0, token=None, watch_pid=None, idle_seconds=IDLE_SECONDS):
-    app = App(session, token, watch_pid, idle_seconds)
+def split_host(value):
+    """Host-Header -> (name, port oder None), auch fuer IPv6 in Klammern: "[::1]:8080"."""
+    value = value.strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        if end < 0:
+            return "", None
+        name, rest = value[1:end], value[end + 1:]
+        port = rest[1:] if rest.startswith(":") else ""
+    else:
+        name, _, port = value.partition(":")
+    if not port:
+        return name, None
+    return (name, int(port)) if port.isdigit() else ("", None)
+
+
+def _server_class(bind):
+    """IPv4-Server, bei einer IPv6-Adresse (enthaelt ":") die IPv6-Variante."""
+    if ":" not in bind:
+        return ThreadingHTTPServer
+    return type("ThreadingHTTPServerV6", (ThreadingHTTPServer,), {"address_family": socket.AF_INET6})
+
+
+def _bind_free_port(server_class, bind, port, handler):
+    """Lauscht auf ``port``; ist er nicht verfuegbar, auf dem naechsten freien.
+
+    Beispiel ``--port 8080`` belegt: 8081, 8082, ... bis ``PORT_SEARCH_SPAN``, danach ein
+    beliebiger freier Port (0). Andere Fehler (Adresse fremd, kein IPv6) gehen durch."""
+    if port == 0:
+        return server_class((bind, 0), handler)
+
+    candidates = [p for p in range(port, port + PORT_SEARCH_SPAN) if p <= 65535] + [0]
+    for candidate in candidates:
+        try:
+            return server_class((bind, candidate), handler)
+        except OSError as e:
+            if e.errno not in PORT_UNAVAILABLE:
+                raise
+    raise OSError(errno.EADDRINUSE, "kein freier Port")
+
+
+def make_server(session, port=0, token=None, watch_pid=None, idle_seconds=IDLE_SECONDS, bind="127.0.0.1"):
+    """``bind``: Adresse zum Lauschen. Standard ``127.0.0.1`` (nur diese Maschine, engste
+    Host-Pruefung). Jede andere Adresse (eine LAN-IP oder ``0.0.0.0`` fuer alle Interfaces) macht
+    den Server im Netzwerk erreichbar; dann ist allein der Token (in der URL, bei jedem Start neu
+    ausgewuerfelt) die Zugriffskontrolle, siehe ``App.loopback_only``/``Handler._host_ok``."""
+    app = App(session, token, watch_pid, idle_seconds, bind)
     handler = type("BoundHandler", (Handler,), {"app": app})
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd = _bind_free_port(_server_class(bind), bind, port, handler)
     httpd.daemon_threads = True
     app.httpd = httpd
     app.port = httpd.server_address[1]
@@ -350,11 +535,14 @@ def write_server_info(app):
         "url": app.url, "started": sess.now_iso()})
 
 
-def serve(app, start_analysis=True):
+def serve(app, start_analysis=True, tui=False):
     """Startet Watcher-Threads und blockiert, bis der Server beendet wird.
 
     Automatisches Ende: Web-UI 30 Minuten ohne Aktivitaet, Elternprozess (darktable)
-    beendet, SIGTERM/SIGINT (Stop-Knopf in darktable), "Server beenden" in der UI."""
+    beendet, SIGTERM/SIGINT (Stop-Knopf in darktable), "Server beenden" in der UI.
+
+    ``tui=True`` (nur eigenstaendige Nutzung, siehe ``companion/tui.py``): der HTTP-Server
+    laeuft dann in einem Hintergrund-Thread, der Hauptthread gehoert der Terminal-Anzeige."""
     write_server_info(app)
     try:
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -388,7 +576,19 @@ def serve(app, start_analysis=True):
     if start_analysis and app.session.phase == "analyzing":
         app.analyzer.start_analysis()
     try:
-        app.httpd.serve_forever()
+        if tui:
+            server_thread = threading.Thread(target=app.httpd.serve_forever, daemon=True)
+            server_thread.start()
+            from . import tui as tui_mod
+            try:
+                tui_mod.run(app)
+            finally:
+                if app.stop_reason is None:
+                    app.stop("quit")
+                app.httpd.shutdown()
+                server_thread.join(timeout=5)
+        else:
+            app.httpd.serve_forever()
     finally:
         try:
             os.remove(app.session.path("server.json"))

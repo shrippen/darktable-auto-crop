@@ -2,6 +2,99 @@
 
 ## Unreleased
 
+### Belegter Port
+- `--port N` belegt: der Server sucht selbst den nächsten freien Port (N+1 … N+19, dann einen beliebigen)
+  und meldet `Port N belegt, nutze M.`, statt abzubrechen. Andere Bind-Fehler (fremde Adresse, kein IPv6) enden
+  weiter mit klarer Meldung.
+
+### Korrekturen aus dem Code-Review (Companion-Server und CLI)
+- **Laufende Sitzung verlor neue Bilder**: ein zweiter `open`-Aufruf mit gewachsenem Ordner schrieb die neuen Bilder
+  in `state.json`, bevor er die Sitzungssperre prüfte; der laufende Server überschrieb sie beim nächsten Speichern.
+  Jetzt erst sperren, dann ergänzen (`_find_standalone` ändert nichts, `add_images` erst unter der Sperre).
+- **`--bind ::`/IPv6 stürzte beim Start ab** (`gaierror`, der Server war fest IPv4): IPv6-Adressen bekommen jetzt einen
+  IPv6-Server, die URL setzt die Adresse in Klammern. Nicht bindbare Adressen (fremd, Port belegt, kein IPv6) enden mit
+  klarer Meldung statt Traceback.
+- **Abgewiesene Anfragen hielten den Server am Leben**: der Leerlauf-Zeitstempel wurde vor Host- und Token-Prüfung
+  gesetzt; bei `--bind` genügte ein Scanner, um das Beenden nach 30 Minuten zu verhindern. Jetzt zählen nur
+  angenommene Anfragen.
+- **Retry konnte die Sitzung in "analyzing" festsetzen**: lief schon eine Neu-Erkennung, blieb nach dem Busy-Fehler die
+  Phase stehen und Fertig blockiert. Jetzt wird Busy vorher geprüft, die Änderung läuft unter der Sitzungssperre
+  (`Session.retry`), und bei einem Rennen geht die Phase zurück.
+- **`--port 80` gab immer 403**: Browser lassen `:80` im Host-Header weg. `split_host` versteht jetzt fehlende Ports
+  und IPv6-Klammern.
+- **`guess_lan_ip()`**: stürzte unter Windows ab (`fcntl`-Import außerhalb der Fehlerbehandlung) und zog eine
+  VPN-Schnittstelle einer physischen vor, wenn das echte LAN in 172.16.0.0/12 liegt. Eine physische Schnittstelle
+  gewinnt jetzt immer; die Route des Betriebssystems wird mit dem Namen ihrer Schnittstelle bewertet (eine Route über
+  `docker0` gilt nicht mehr als physisch).
+
+### Im Netzwerk erreichbar machen (`--bind`)
+`auto-crop-negative open ORDNER --bind 0.0.0.0` (oder eine konkrete LAN-Adresse) lässt den Server auf mehr als nur
+`127.0.0.1` lauschen, damit man z. B. von seinem eigenen Rechner aus auf die Web-UI eines per SSH betriebenen NAS
+zugreifen kann, ohne einen SSH-Tunnel aufzusetzen. Der **Token** (bei jedem Start neu ausgewürfelt, `secrets.token_urlsafe`)
+bleibt dabei die Zugriffskontrolle; die engere Host-Header-Prüfung (Schutz gegen DNS-Rebinding), die nur bei
+`127.0.0.1`/`localhost` greift, entfällt zwangsläufig, sobald die Adresse variieren kann (`App.loopback_only`,
+`companion/server.py`). `--tui` und die normale Ausgabe zeigen dann dauerhaft eine deutliche Warnung samt Adresse; bei
+`--bind 0.0.0.0` wird die angezeigte URL mit einer echten LAN-Adresse statt `0.0.0.0` gefüllt (`guess_lan_ip()`):
+alle Netzwerkschnittstellen mit IPv4-Adresse werden bewertet, physische Interfaces mit privater LAN-Adresse
+(192.168.0.0/16, 10.0.0.0/8) gewinnen gegen Docker-/Brücken-/VPN-Interfaces (`docker0`, `br-…`, `veth…`, `tun…`, `wg…`
+usw., an Namen erkannt) und deren üblichen Adressbereich (172.16–31.0.0/12); die vom Betriebssystem für eine
+ausgehende Verbindung gewählte Route zählt als zusätzlicher Kandidat. Nur für den eigenständigen `open`-Weg.
+
+### Terminal-Statusanzeige für NAS/SSH (`--tui`)
+`auto-crop-negative open ORDNER --tui` zeigt eine laufende Statusanzeige im Terminal statt nur der einmal ausgegebenen
+URL: Sitzung, Ziel, Zähler (grün/gelb/rot/anwenden), Fortschrittsbalken bei Export/Erkennung, Ergebnis nach „Fertig“,
+die URL groß in der Mitte. Taste `O` versucht, den Browser zu öffnen (mit Hinweis, wenn keiner da ist – der NAS-
+Regelfall), `Q` beendet den Server. Läuft im selben Prozess wie der HTTP-Server (der wandert dafür in einen
+Hintergrund-Thread, `companion/server.py` `serve(..., tui=True)`), liest Sitzung/Fortschritt direkt statt über HTTP.
+Neue optionale Abhängigkeit `rich` (Extra `[tui]`, `install.sh --standalone` installiert sie mit); ohne `rich`, ohne
+POSIX-Terminal (`termios`/`tty`, kein Windows) oder ohne TTY an stdin/stdout meldet `--tui` das sofort und klar
+(`companion/tui.py` `unavailable_reason()`), statt mittendrin zu scheitern. Nur für den eigenständigen `open`-Weg;
+`serve --job`/`serve --folder` (darktable, Kalibrierung) bleiben unverändert ohne Terminal-Oberfläche – das Flag
+existiert dort argparse-seitig gar nicht erst.
+
+### Ziel-Auswahl in der Web-UI, Lücken aus der Journey-Analyse geschlossen
+Eine Durchsicht typischer Abläufe der eigenständigen Nutzung (Erstnutzer, Lightroom-Digitalisierer, mehrtägige Sitzungen,
+gemischte Ordner, …) fand sechs konkrete Lücken; alle behoben.
+- **Ziel-Panel in der Web-UI**: direkt unter dem Kopf zeigt „Ziel: was passiert bei „Fertig“?“ alle eigenständigen Ziele
+  als Karten mit ausführlicher Erklärung (was passiert, wohin geschrieben wird, Geradestellen ja/nein, bekannte Grenzen),
+  Vorschlags- und Auswahl-Markierung, und – falls zutreffend – wie viele Bilder dieser Sitzung das Ziel nicht schreiben
+  würde und warum. Jederzeit änderbar, solange die Sitzung nicht gesperrt ist. Löst, dass ein automatisch gewähltes Ziel
+  (z. B. `json` mangels vorhandener Sidecars) bisher nur im README stand, nicht in der Oberfläche selbst.
+- **Bilder, die ein Ziel nicht schreibt, sind jetzt sichtbar, bevor man auf Fertig klickt**: Kachel-Badge „nicht
+  geschrieben“ in der Galerie, ausführlicher Hinweis im Crop-Editor. Bisher zählte so ein Bild ganz normal zu „Anwenden“
+  und tauchte erst nach Fertig im Ergebnis als übersprungen auf.
+- **Ordner wachsen lassen funktioniert jetzt**: `auto-crop-negative ORDNER` erkennt beim erneuten Aufruf, wenn die
+  bekannten Bilder einer bestehenden Sitzung eine Teilmenge der jetzt gefundenen sind, und ergänzt nur die neuen
+  (Analyse nur für sie, bestehende Entscheidungen bleiben). Bisher erzwang schon ein einziges neues Bild eine komplette
+  neue Sitzung mit Neuanalyse aller Bilder.
+- **Kein zweiter Server mehr auf derselben Sitzung**: eine Dateisperre (`server.lock`, `flock`) verhindert, dass ein
+  zweiter `auto-crop-negative`-Aufruf (oder ein zweites „Prüfung öffnen“) denselben Sitzungsordner gleichzeitig bedient;
+  der zweite Aufruf meldet stattdessen die URL des laufenden Servers. Ohne das konnten zwei Prozesse unbemerkt
+  gegenseitig Korrekturen überschreiben.
+- **`--converter NAME` scheitert jetzt sofort**, wenn das Programm fehlt, statt erst beim Export mitten in der Sitzung.
+- **Zielwechsel-Hinweis**: War eine Sitzung schon einmal mit einem anderen Ziel fertig, weist die Web-UI beim Wechsel
+  darauf hin, dass dessen Dateien liegen bleiben (kein automatisches Aufräumen).
+
+### Eigenständig nutzbar, darktable optional (`roadmap-standalone.md`, Phase 1–4)
+Erkennung und Web-UI waren schon werkzeugneutral; nur Ein- und Ausgang hingen an darktable. Beide Enden sind jetzt
+austauschbare Adapter.
+- **Neuer Befehl** `auto-crop-negative ORDNER` (`python -m companion ORDNER`): durchsucht den Ordner (Unterordner = Rollen,
+  auch RAWs), analysiert, öffnet die Web-UI; **Fertig** wendet den Plan sofort an. Erneuter Start setzt die Sitzung fort
+  (`--new` für Neuanalyse). `auto-crop-negative check ORDNER` zeigt Konverter und vorgeschlagenes Ziel.
+- **Ziele** (`companion/targets/`): `copies` (zugeschnittene, ggf. geradegestellte Kopien; ICC/EXIF bleiben, 16 Bit bleibt),
+  `json` (`crops.json` + `crops.csv`), `xmp` (Adobe-Sidecar für Lightroom/Camera Raw), `rawtherapee` (`.pp3`), dazu die
+  bisherigen Wege als `darktable` (unverändert über Lua) und `reviews` (Kalibrierung). Das Ziel wird aus vorhandenen
+  Sidecars vorgeschlagen. Differenz-Anwenden gilt für alle: nur Geändertes wird neu geschrieben, zurückgenommene Crops
+  werden entfernt. Farblabel rot/gelb/grün gehen an darktable, RawTherapee und Lightroom.
+- **RAW-Konverter** (`companion/converters.py`): `darktable` (wie bisher), `rawtherapee` (`rawtherapee-cli`) und `rawpy`
+  (LibRaw, kein externes Programm). Gewählt nach den Sidecars neben den RAWs, sonst der erste verfügbare.
+- **Web-UI**: Kopf und Ablaufleiste zeigen das Ziel; Fertig-Dialog, Ergebnis (mit Hinweisen je Bild) und Server-Ende-
+  Meldung ohne darktable-Bezug, wenn eigenständig. Der Schräglagen-Editor weist darauf hin, wenn ein Ziel nicht drehen kann.
+- **Installation ohne darktable**: `pyproject.toml` (`pip install ".[raw]"`) und `./install.sh --standalone`.
+- **README** umgebaut: Kern zuerst, darktable als eine Integration. Namensvorschläge in `roadmap-standalone.md`.
+- Ausgabeordner tragen `.autocrop-output` und werden von der Bildsuche übersprungen (auch im Kalibriermodus).
+- Ungeprüft gegen die echten Programme: RawTherapee (Export und `.pp3`) und Lightroom (Crop-Koordinaten in Sensorlage).
+
 ### Die Rolle bestätigt ihren Maßstab selbst (`agree`)
 Ob der gemessene Perforations-Takt stimmt, entschied bisher die Höhe des Autokorrelations-Peaks. Sie taugt dafür nicht:
 *Film 8* hat Score 0,97 bei 2 % Fehler, *07.07.2014 – Leipzig* Score 0,22 bei 1,3 %. `measure_roll_pitch` teilt die Bilder

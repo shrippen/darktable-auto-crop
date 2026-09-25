@@ -4,3 +4,5 @@ __pycache__/
 crop_queue.json
 *.log
 Testphotos/
+build/
+*.egg-info/

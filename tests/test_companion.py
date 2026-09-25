@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -386,12 +387,224 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(raw[:3], b"\xff\xd8\xff")
         self.assertEqual(self.call("GET", "/api/thumb/102?w=200")[0], 404)   # kein Export
 
+    def test_retry_while_busy_does_not_leave_session_stuck_analyzing(self):
+        self.app.analyzer.progress["busy"] = True
+        st, _ = self.js("POST", "/api/retry", {"ids": [101]})
+        self.assertEqual(st, 409)
+        self.app.analyzer.progress["busy"] = False
+        self.assertEqual(self.s.phase, "reviewing")
+        self.assertEqual(self.s.image(101)["status"], "done")
+        # Rennen: busy erst beim Start erkannt -> Phase zurueck auf "reviewing", Fertig bleibt moeglich
+        from companion.detect import Busy
+        with unittest.mock.patch.object(self.app.analyzer, "start_analysis", side_effect=Busy()):
+            st, _ = self.js("POST", "/api/retry", {"ids": [101]})
+        self.assertEqual(st, 409)
+        self.assertEqual(self.s.phase, "reviewing")
+
     def test_undo_endpoint(self):
         self.js("PATCH", "/api/images", {"ids": [101], "group": "red"})
         st, data = self.js("POST", "/api/undo", {"scope": "session"})
         self.assertEqual((st, data["undone"]), (200, True))
         st, data = self.js("GET", "/api/session")
         self.assertEqual(data["images"][0]["group"], "green")
+
+
+class BindTest(unittest.TestCase):
+    """``--bind``: Server im Netzwerk erreichbar machen (nur eigenstaendige Nutzung)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_default_bind_is_loopback_only(self):
+        app = make_server(make_session(self.tmp))
+        self.addCleanup(app.httpd.server_close)
+        self.assertTrue(app.loopback_only)
+        self.assertTrue(app.url.startswith("http://127.0.0.1:"))
+
+    def test_busy_port_falls_back_to_a_free_one(self):
+        # Port belegt (zweites Programm, alter Server): statt Abbruch den naechsten freien nehmen
+        busy = socket.socket()
+        self.addCleanup(busy.close)
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        app = make_server(make_session(self.tmp), port)
+        self.addCleanup(app.httpd.server_close)
+        self.assertNotEqual(app.port, port)
+        self.assertIn(f":{app.port}/", app.url)
+
+    def test_free_port_is_used_as_given(self):
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        app = make_server(make_session(self.tmp), port)
+        self.addCleanup(app.httpd.server_close)
+        self.assertEqual(app.port, port)
+
+    def test_wildcard_bind_uses_guessed_lan_ip_for_display(self):
+        from companion.server import App
+        app = App(make_session(self.tmp, mode="darktable"), bind="0.0.0.0")
+        app.port = 12345
+        self.assertFalse(app.loopback_only)
+        self.assertNotEqual(app.display_host, "0.0.0.0")   # kein Browser koennte das oeffnen
+        self.assertIn(app.display_host, app.url)
+
+    def test_score_prefers_real_lan_over_docker_and_vpn_interfaces(self):
+        from companion.server import _score_candidate
+        eth0 = _score_candidate("eth0", "192.168.1.50")
+        docker0 = _score_candidate("docker0", "172.17.0.1")
+        br = _score_candidate("br-9f3a2b1c", "172.18.0.1")
+        veth = _score_candidate("veth3f2a1", "172.19.0.1")
+        wg = _score_candidate("wg0", "10.6.0.1")
+        self.assertGreater(eth0, docker0)
+        self.assertGreater(eth0, br)
+        self.assertGreater(eth0, veth)
+        self.assertGreater(eth0, wg)                          # echtes LAN vor VPN-Interface
+        self.assertGreater(wg, docker0)                        # VPN immerhin vor Docker
+
+    def test_guess_lan_ip_picks_real_interface_over_docker(self):
+        from companion.server import guess_lan_ip
+
+        def fake_ipv4(name):
+            return {"eth0": "192.168.1.50", "docker0": "172.17.0.1"}.get(name)
+
+        with unittest.mock.patch("socket.if_nameindex",
+                                 return_value=[(1, "lo"), (2, "docker0"), (3, "eth0")]), \
+                unittest.mock.patch("companion.server._iface_ipv4", side_effect=fake_ipv4), \
+                unittest.mock.patch("companion.server._route_ip", return_value="172.17.0.1"):
+            # selbst wenn die vom Betriebssystem gewaehlte Route (z. B. in einem reinen
+            # Docker-Container) auf das Docker-Netz zeigt, gewinnt die echte LAN-Schnittstelle
+            self.assertEqual(guess_lan_ip(), "192.168.1.50")
+
+    def test_guess_lan_ip_falls_back_to_route_without_real_interface(self):
+        from companion.server import guess_lan_ip
+        with unittest.mock.patch("socket.if_nameindex", return_value=[(1, "lo")]), \
+                unittest.mock.patch("companion.server._route_ip", return_value="172.17.0.1"):
+            self.assertEqual(guess_lan_ip(), "172.17.0.1")     # besser als gar keine Adresse
+
+    def test_physical_lan_in_docker_range_beats_vpn(self):
+        # echtes LAN in 172.16.0.0/12 gegen WireGuard auf 10.x: die physische Schnittstelle muss gewinnen
+        from companion.server import guess_lan_ip
+        ifaces = {"eth0": "172.20.0.5", "wg0": "10.6.0.1", "docker0": "172.17.0.1"}
+        with unittest.mock.patch("socket.if_nameindex",
+                                 return_value=[(i, n) for i, n in enumerate(ifaces, start=1)]), \
+                unittest.mock.patch("companion.server._iface_ipv4", side_effect=ifaces.get), \
+                unittest.mock.patch("companion.server._route_ip", return_value="172.17.0.1"):
+            self.assertEqual(guess_lan_ip(), "172.20.0.5")
+
+    def test_iface_ipv4_without_fcntl_returns_none(self):
+        # Windows: kein fcntl - darf nicht werfen, sonst stuerzt --bind 0.0.0.0 beim Start ab
+        from companion.server import _iface_ipv4
+        with unittest.mock.patch.dict(sys.modules, {"fcntl": None}):
+            self.assertIsNone(_iface_ipv4("eth0"))
+
+    def test_split_host(self):
+        from companion.server import split_host
+        self.assertEqual(split_host("127.0.0.1:8080"), ("127.0.0.1", 8080))
+        self.assertEqual(split_host("NAS.local"), ("nas.local", None))
+        self.assertEqual(split_host("[::1]:9000"), ("::1", 9000))
+        self.assertEqual(split_host("[::1]"), ("::1", None))
+        self.assertEqual(split_host("host:abc"), ("", None))
+        self.assertEqual(split_host(""), ("", None))
+
+    def test_port_80_host_header_without_port_is_accepted(self):
+        # Browser lassen ":80" im Host-Header weg; ohne Sonderfall bekaeme jede Anfrage 403
+        from companion.server import Handler
+
+        class FakeApp:
+            port, loopback_only = 80, True
+        h = Handler.__new__(Handler)
+        h.app = FakeApp()
+        for host, ok in (("127.0.0.1", True), ("localhost:80", True), ("127.0.0.1:81", False),
+                         ("evil.example", False)):
+            h.headers = {"Host": host}
+            self.assertEqual(h._host_ok(), ok, host)
+        FakeApp.loopback_only = False
+        h.headers = {"Host": "nas.local"}
+        self.assertTrue(h._host_ok())
+
+    def test_server_class_matches_address_family(self):
+        # IPv6-Adresse -> IPv6-Server (vorher: gaierror beim Start, weil immer AF_INET)
+        from companion.server import _server_class
+        self.assertEqual(_server_class("0.0.0.0").address_family, socket.AF_INET)
+        self.assertEqual(_server_class("::").address_family, socket.AF_INET6)
+        self.assertEqual(_server_class("fe80::1").address_family, socket.AF_INET6)
+
+    @unittest.skipUnless(socket.has_ipv6, "kein IPv6")
+    def test_ipv6_bind_works_and_url_uses_brackets(self):
+        try:
+            app = make_server(make_session(self.tmp), bind="::1")
+        except OSError:
+            self.skipTest("::1 nicht bindbar")
+        self.addCleanup(app.httpd.server_close)
+        self.assertTrue(app.loopback_only)
+        self.assertTrue(app.url.startswith(f"http://[::1]:{app.port}/"))
+        t = threading.Thread(target=app.httpd.serve_forever, daemon=True)
+        t.start()
+        self.addCleanup(app.httpd.shutdown)
+        req = urllib.request.Request(f"http://[::1]:{app.port}/api/session",
+                                     headers={"X-Token": app.token})
+        self.assertEqual(urllib.request.urlopen(req, timeout=5).status, 200)
+
+    def test_rejected_requests_do_not_count_as_activity(self):
+        # sonst haelt ein Scanner im Netz den Server bei --bind ueber den Leerlauf-Timeout hinaus am Leben
+        app = make_server(make_session(self.tmp), bind="127.0.0.2")
+        self.addCleanup(app.httpd.server_close)
+        t = threading.Thread(target=app.httpd.serve_forever, daemon=True)
+        t.start()
+        self.addCleanup(app.httpd.shutdown)
+        base = f"http://127.0.0.2:{app.port}"
+
+        def post(token, path="/api/ping"):
+            req = urllib.request.Request(base + path, method="POST", data=b"{}",
+                                         headers={"X-Token": token} if token else {})
+            try:
+                return urllib.request.urlopen(req, timeout=5).status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        app.last_activity = 0.0
+        self.assertEqual(post("falsch"), 403)
+        urllib.request.urlopen(base + "/static/app.css", timeout=5).read()   # statisch, ohne Token
+        self.assertEqual(app.last_activity, 0.0)
+        self.assertEqual(post(app.token), 200)
+        self.assertGreater(app.last_activity, 0.0)
+
+    def test_guess_lan_ip_none_without_any_candidate(self):
+        from companion.server import guess_lan_ip
+        with unittest.mock.patch("socket.if_nameindex", side_effect=OSError), \
+                unittest.mock.patch("companion.server._route_ip", return_value=None):
+            self.assertIsNone(guess_lan_ip())
+
+    def test_non_loopback_bind_relaxes_host_check_but_keeps_token(self):
+        # 127.0.0.2 ist im ganzen 127.0.0.0/8 gueltig und lokal bindbar, ohne echtes Netzwerk
+        # zu beruehren - simuliert hier bewusst nur die Host-Pruefung, nicht echte LAN-Erreichbarkeit.
+        app = make_server(make_session(self.tmp), bind="127.0.0.2")
+        self.addCleanup(app.httpd.server_close)
+        self.assertFalse(app.loopback_only)
+        self.assertEqual(app.display_host, "127.0.0.2")
+        t = threading.Thread(target=app.httpd.serve_forever, daemon=True)
+        t.start()
+        self.addCleanup(app.httpd.shutdown)
+        base = f"http://127.0.0.2:{app.port}"
+
+        def get(host, token):
+            req = urllib.request.Request(base + "/api/session")
+            if host:
+                req.add_header("Host", host)
+            if token:
+                req.add_header("X-Token", token)
+            try:
+                return urllib.request.urlopen(req, timeout=5).status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        self.assertEqual(get(f"127.0.0.2:{app.port}", app.token), 200)
+        self.assertEqual(get(f"irgendein-name:{app.port}", app.token), 200)   # Hostname egal
+        self.assertEqual(get(f"127.0.0.2:{app.port}", "falsch"), 403)         # Token bleibt Pflicht
+        self.assertEqual(get("127.0.0.2:9999", app.token), 403)               # Port muss stimmen
 
 
 @unittest.skipUnless(PHOTOS, "Testfotos fehlen")

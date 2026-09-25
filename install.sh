@@ -1,10 +1,43 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════════
-# Installations-Skript fuer "Auto Crop Negative" – Darktable contrib plugin
+# Installations-Skript fuer "Auto Crop Negative"
+#   ./install.sh               darktable-Plugin (Lua + Companion-UI)
+#   ./install.sh --standalone  nur Befehl "auto-crop-negative" (ohne darktable)
 # ══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# ── Eigenstaendig: eigene venv, Befehl nach ~/.local/bin ─────────────────────
+if [ "${1:-}" = "--standalone" ]; then
+    DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/auto-crop-negative"
+    VENV_DIR="${DATA_DIR}/venv"
+    BIN_DIR="${HOME}/.local/bin"
+    echo "Auto Crop Negative – Installation ohne darktable"
+    command -v python3 &>/dev/null || { echo "  ✗ python3 nicht gefunden"; exit 1; }
+    mkdir -p "$DATA_DIR" "$BIN_DIR"
+    [ -d "$VENV_DIR" ] || python3 -m venv "$VENV_DIR"
+    "$VENV_DIR/bin/pip" install --upgrade "$SCRIPT_DIR"
+    # rawpy (LibRaw) entwickelt RAWs ohne darktable/RawTherapee; optional
+    if ! "$VENV_DIR/bin/pip" install rawpy; then
+        echo "  ! rawpy nicht installiert: RAWs brauchen dann darktable-cli oder rawtherapee-cli"
+    fi
+    # rich: Terminal-Statusanzeige (--tui) fuer SSH/NAS-Sitzungen ohne lokalen Browser; optional
+    if ! "$VENV_DIR/bin/pip" install rich; then
+        echo "  ! rich nicht installiert: --tui (Terminal-Statusanzeige) steht dann nicht zur Verfuegung"
+    fi
+    ln -sf "$VENV_DIR/bin/auto-crop-negative" "$BIN_DIR/auto-crop-negative"
+    echo "  ✓ ${BIN_DIR}/auto-crop-negative"
+    case ":${PATH}:" in
+        *":${BIN_DIR}:"*) ;;
+        *) echo "  ! ${BIN_DIR} ist nicht im PATH" ;;
+    esac
+    echo ""
+    echo "Start:  auto-crop-negative ~/Scans/Film-12"
+    echo "Prüfen: auto-crop-negative check ~/Scans/Film-12"
+    echo "Per SSH/NAS ohne lokalen Browser: auto-crop-negative ~/Scans/Film-12 --tui"
+    exit 0
+fi
 LUA_DIR="${HOME}/.config/darktable/lua"
 PLUGIN_DIR="${LUA_DIR}/contrib/auto_crop_negative"
 

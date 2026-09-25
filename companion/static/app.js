@@ -8,6 +8,11 @@ import { initEditor, openEditor, refreshEditor, isOpen } from './editor.js';
 
 const $ = (id) => document.getElementById(id);
 const PILL = { analyzing: 'analyzing', reviewing: 'reviewing', locked: 'locked', applied: 'applied', apply_failed: 'failed' };
+const standalone = () => !!store.s && store.s.mode === 'standalone';
+// Ziel als Elementpaar, bei Ausgabeordner mit Pfad
+const targetHtml = (s) => T('tgt_' + s.target.name) + (s.target.out ? ` <code>${esc(s.target.out)}</code>` : '');
+// Zahl der "tgt_<name>_limitN"-Zeilen je Ziel (siehe i18n.js)
+const TARGET_LIMITS = { copies: 3, json: 2, xmp: 4, rawtherapee: 4 };
 let settingsBuilt = false;
 let refreshTimer = null;
 let logLines = [];
@@ -34,7 +39,7 @@ function renderAll() {
   const s = store.s;
   const editable = isEditable();
   document.body.classList.toggle('is-locked', !editable);
-  renderHeader(); renderFlow(); renderSummary(); renderNotice(); renderProgress();
+  renderHeader(); renderFlow(); renderSummary(); renderNotice(); renderTargetPanel(); renderProgress();
   renderToolbar(); renderSettings(); renderGallery(); renderActionbar();
   $('keyhint').innerHTML = `${T('keys')}: <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> ${T('band_green')}/${T('band_yellow')}/${T('band_red')} · <kbd>A</kbd> ${T('accept')} · <kbd>S</kbd> ${T('skip')} · <kbd>E</kbd> ${T('k_edit').replace(/^E: /, '')} · <kbd>Z</kbd> ${T('undo')}`;
   if (isOpen()) refreshEditor();
@@ -44,8 +49,8 @@ function renderAll() {
 function renderHeader() {
   const s = store.s;
   $('phase-pill').innerHTML = `<span class="pill" data-state="${PILL[s.phase]}">${T(s.phase)}${s.revision > 1 ? ` · r${s.revision}` : ''}</span>`;
-  $('session-label').textContent = s.session;
-  $('session-label').title = s.session;
+  $('session-label').textContent = `${s.session} · ${s.target.name}`;
+  $('session-label').title = `${s.session} · ${S('target')}: ${S('tgt_' + s.target.name)}${s.target.out ? ' ' + s.target.out : ''}`;
 }
 
 function renderFlow() {
@@ -53,7 +58,8 @@ function renderFlow() {
   const folder = store.s.mode === 'folder';
   const step = (key, hl, done) => {
     const k = folder && (key === 'done' || key === 'apply') ? key + '_folder' : key;
-    return `<div class="flow-node${hl ? ' hl' : ''}${done ? ' is-done' : ''}"><b>${T('step_' + k)}</b><span>${T('step_' + k + '_d')}</span></div>`;
+    const desc = key === 'apply' && standalone() ? T('tgt_' + store.s.target.name) : T('step_' + k + '_d');
+    return `<div class="flow-node${hl ? ' hl' : ''}${done ? ' is-done' : ''}"><b>${T('step_' + k)}</b><span>${desc}</span></div>`;
   };
   const arrow = '<span class="flow-arrow"></span>';
   const analyzed = p !== 'analyzing';
@@ -69,22 +75,30 @@ function renderSummary() {
 function renderNotice() {
   const s = store.s, host = $('notice');
   if (store.offline) {
-    const key = { idle: 'server_stopped_idle', parent: 'server_stopped_parent' }[store.offline] || 'server_stopped';
+    const std = standalone() ? '_std' : '';
+    const key = { idle: 'server_stopped_idle' + std, parent: 'server_stopped_parent' }[store.offline] || 'server_stopped' + std;
     host.innerHTML = `<div class="callout callout-danger notice"><div><strong>${T(key)}</strong></div></div>`;
     return;
   }
   const reopen = `<button type="button" class="btn btn-outline btn-sm" data-act="reopen">${T('reopen')}</button>`;
   if (s.phase === 'locked') {
-    host.innerHTML = `<div class="callout callout-ok notice"><div><strong>${T(s.mode === 'folder' ? 'locked_msg_folder' : 'locked_msg')}</strong></div>${reopen}</div>`;
+    const key = { folder: 'locked_msg_folder', standalone: 'locked_msg_standalone' }[s.mode] || 'locked_msg';
+    host.innerHTML = `<div class="callout callout-ok notice"><div><strong>${T(key)}</strong></div>${reopen}</div>`;
   } else if (s.phase === 'applied' || s.phase === 'apply_failed') {
     const res = store.result || {};
     const imgs = Object.values(res.images || {});
     const cnt = (k) => imgs.filter((i) => i.status === k).length;
-    const errs = Object.entries(res.images || {}).filter(([, v]) => v.status === 'error');
+    // Fehler zuerst, dann Hinweise (etwa "Winkel nicht uebertragen")
+    const msgs = Object.entries(res.images || {}).filter(([, v]) => v.message && (v.status === 'error' || standalone()))
+      .sort(([, a], [, b]) => (b.status === 'error') - (a.status === 'error'));
     const ok = s.phase === 'applied';
-    host.innerHTML = `<div class="callout ${ok ? 'callout-ok' : 'callout-danger'} notice"><div><strong>${T(ok ? (s.mode === 'folder' ? 'applied_msg_folder' : 'applied_msg') : 'failed_msg')}</strong>
+    const sfx = { folder: '_folder', standalone: '_standalone' }[s.mode] || '';
+    const title = ok ? 'applied_msg' + sfx : (standalone() ? 'failed_msg_standalone' : 'failed_msg');
+    host.innerHTML = `<div class="callout ${ok ? 'callout-ok' : 'callout-danger'} notice"><div><strong>${T(title)}</strong>
+      ${standalone() ? `<div class="notice-list">${T('target')}: ${targetHtml(s)}</div>` : ''}
+      ${res.message ? `<div class="notice-list">${esc(res.message)}</div>` : ''}
       ${imgs.length ? `<div class="notice-list">${T('result_ok')}: ${cnt('ok')} · ${T('result_skipped')}: ${cnt('skipped')} · ${T('result_error')}: ${cnt('error')}</div>` : ''}
-      ${errs.length ? `<ul class="notice-list">${errs.slice(0, 8).map(([id, v]) => `<li>${esc((byId(id) || {}).filename || id)}: ${esc(v.message || '')}</li>`).join('')}</ul>` : ''}
+      ${msgs.length ? `<ul class="notice-list">${msgs.slice(0, 8).map(([id, v]) => `<li>${esc((byId(id) || {}).filename || id)}: ${esc(v.message)}</li>`).join('')}</ul>` : ''}
       </div>${reopen}</div>`;
   } else if (s.mode === 'folder') {
     const ref = s.summary.ref;
@@ -95,6 +109,52 @@ function renderNotice() {
       ${ref.n ? `<div class="notice-list">${T('ref_hits', ref.hits, ref.n, pct)}${groups ? ' · ' + groups : ''}</div>` : ''}
       <div class="field-hint" style="margin-top:.4rem">${T('ref_hint')}</div></div></div>`;
   } else host.innerHTML = '';
+}
+
+// Ziel-Auswahl: eigenstaendiger Modus, immer sichtbar und (solange editierbar) anklickbar.
+// Erklaert je Option ausfuehrlich, was "Fertig" damit tut, und warnt, wenn Bilder dabei
+// uebersprungen wuerden oder ein frueheres Ziel dieser Sitzung Dateien hinterlassen hat.
+function renderTargetPanel() {
+  const s = store.s, host = $('target-panel');
+  if (s.mode !== 'standalone') { host.innerHTML = ''; return; }
+  const editable = isEditable();
+  const cards = (s.target_options || []).map((o) => targetCardHtml(o, s.target.name, editable)).join('');
+  const warn = s.applied_target
+    ? `<div class="callout callout-warn"><strong>${T('target_switch_warn', S('tgt_' + s.applied_target))}</strong></div>` : '';
+  host.innerHTML = `<div class="target-panel">
+    <h3>${T('target_panel_title')}</h3>
+    <p class="field-hint">${T('target_panel_intro')}</p>
+    <div class="target-options" role="radiogroup" aria-label="${esc(S('target'))}">${cards}</div>
+    ${warn}
+  </div>`;
+}
+
+function targetCardHtml(o, current, editable) {
+  const sel = o.name === current;
+  const n = TARGET_LIMITS[o.name] || 0;
+  const limits = Array.from({ length: n }, (_, i) => `<li>${T(`tgt_${o.name}_limit${i + 1}`)}</li>`).join('');
+  const incompat = o.incompatible
+    ? `<p class="callout callout-warn target-card-warn">${T('target_incompatible_n', o.incompatible, o.total, S('target_reason_' + (o.incompatible_reason || 'not_raw')))}</p>`
+    : '';
+  return `<button type="button" class="target-card" role="radio" aria-checked="${sel}" aria-pressed="${sel}" data-target="${o.name}"${editable ? '' : ' disabled'}>
+    <div class="target-card-head">
+      <span class="target-card-title">${T('tgt_' + o.name)}</span>
+      ${sel ? `<span class="tile-badge is-hl">${T('target_current')}</span>` : ''}
+      ${o.recommended ? `<span class="tile-badge" title="${esc(S('target_recommended_why'))}">${T('target_recommended')}</span>` : ''}
+    </div>
+    <p class="target-card-tagline">${T('tgt_' + o.name + '_tagline')}</p>
+    <p class="field-hint">${T('tgt_' + o.name + '_desc')}</p>
+    <ul class="target-limits">${limits}</ul>
+    <p class="field-hint">${T(o.straightens ? 'target_straightens_yes' : 'target_straightens_no')}</p>
+    ${o.out ? `<p class="field-hint">${T('target_out_hint', o.out)}</p>` : ''}
+    ${incompat}
+  </button>`;
+}
+
+async function setTarget(name) {
+  if (name === store.s.target.name) return;
+  await guard(() => api('POST', 'target', { name }), refresh);
+  await refresh();
 }
 
 function renderProgress() {
@@ -203,7 +263,7 @@ async function finish() {
   const sum = await guard(() => api('GET', 'summary'));
   if (!sum) return;
   const notes = [];
-  if (sum.changed && store.s.applied_revision) notes.push(esc(S('finish_changed', sum.changed)));
+  if (sum.changed && store.s.applied_revision) notes.push(esc(S(standalone() ? 'finish_changed_standalone' : 'finish_changed', sum.changed)));
   if (sum.warnings.length) notes.push(esc(S('finish_stale', sum.warnings.length)));
   const folder = store.s.mode === 'folder';
   const imgs = store.s.images;
@@ -214,8 +274,10 @@ async function finish() {
     : [{ value: sum.summary.apply, label: 'apply_n' }, { value: sum.summary.red, label: 'flagged_red', color: 'red' },
        { value: sum.summary.skipped, label: 'skipped', color: 'fg3' }];
   if (folder) notes.push(T('finish_folder_note'));
+  if (standalone()) notes.push(`${T('target')}: ${targetHtml(store.s)}`);
+  const body = folder ? 'finish_body_folder' : standalone() ? 'finish_body_standalone' : 'finish_body';
   const ok = await dialog({
-    title: folder ? 'finish_title_folder' : 'finish_title', body: folder ? 'finish_body_folder' : 'finish_body',
+    title: folder ? 'finish_title_folder' : 'finish_title', body,
     confirm: folder ? 'finish_folder' : 'finish', cancel: 'back', notes, facts,
   });
   if (!ok) return;
@@ -294,6 +356,8 @@ function wire() {
     if (z) { store.size = z.dataset.size; setLS('acn-size', store.size); return renderAll(); }
     const f = e.target.closest('#st-format [data-format]');
     if (f && isEditable()) { await guard(() => api('POST', 'settings', { format: f.dataset.format }), refresh); return refresh(); }
+    const tc = e.target.closest('.target-card[data-target]');
+    if (tc && !tc.disabled) return setTarget(tc.dataset.target);
     const sw = e.target.closest('.switch');
     if (sw && !sw.disabled) return sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true'));
     const th = e.target.closest('[data-theme-set]');
