@@ -17,6 +17,7 @@ import re
 import secrets
 import signal
 import socket
+import sys
 import threading
 import time
 from http import HTTPStatus
@@ -185,7 +186,9 @@ def guess_lan_ip():
 
 
 def pid_alive(pid):
-    """Lebt der Prozess? (Linux/Unix: Signal 0)"""
+    """Lebt der Prozess? (Unix: Signal 0; Windows: Prozess-Handle abfragen)"""
+    if sys.platform == "win32":
+        return _pid_alive_windows(pid)
     try:
         os.kill(int(pid), 0)
     except ProcessLookupError:
@@ -195,6 +198,25 @@ def pid_alive(pid):
     except (OSError, ValueError, TypeError):
         return False
     return True
+
+
+def _pid_alive_windows(pid):  # pragma: no cover - nur Windows
+    # os.kill(pid, 0) waere hier CTRL_C_EVENT an die ganze Konsolengruppe, keine Abfrage
+    import ctypes
+    k32 = ctypes.windll.kernel32
+    try:
+        handle = k32.OpenProcess(0x1000, False, int(pid))     # PROCESS_QUERY_LIMITED_INFORMATION
+    except (ValueError, TypeError):
+        return False
+    if not handle:
+        return k32.GetLastError() == 5                          # Zugriff verweigert: lebt
+    try:
+        code = ctypes.c_ulong()
+        if not k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return False
+        return code.value == 259                                # STILL_ACTIVE
+    finally:
+        k32.CloseHandle(handle)
 
 
 class App:

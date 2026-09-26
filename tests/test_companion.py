@@ -780,7 +780,7 @@ class ServerLifecycleTest(unittest.TestCase):
         self.assertEqual(self.app.stop_reason, "idle")
 
     def test_stops_when_parent_process_is_gone(self):
-        parent = subprocess.Popen(["sleep", "60"])
+        parent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
         self.addCleanup(parent.kill)
         self.start(watch_pid=parent.pid)
         time.sleep(1.5)
