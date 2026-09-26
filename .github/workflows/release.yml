@@ -12,6 +12,10 @@ permissions:
 
 jobs:
   build:
+    # Nur auf GitHub: Gitea spiegelt das Repository und liest diese Datei mit, hat aber keinen
+    # Windows-Runner, und sein ubuntu-22.04-Container passt nicht zu setup-pythons Python-Builds.
+    # Das Gitea-Release bekommt die hier gebauten Dateien.
+    if: github.server_url == 'https://github.com'
     strategy:
       fail-fast: false
       matrix:
@@ -63,7 +67,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.server_url == 'https://github.com' && startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     steps:
