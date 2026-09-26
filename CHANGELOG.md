@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-09-26)
 
 ### Doppelklick-Pakete für Windows und Linux
 - `Kader-…-windows-x64.exe` und `Kader-…-x86_64.AppImage` (PyInstaller, siehe `packaging/`): kein Python, kein
@@ -11,13 +11,15 @@
   geschrieben/übersprungen/Fehler) mit „Ausgabeordner öffnen“. Derselbe Vertrag wie `--tui`, schließt sich bei
   Leerlauf oder „Server beenden“ in der Web-UI selbst.
 - GitHub-Actions-Workflow `release.yml`: ein Tag `v*` baut beide Pakete (Linux auf Ubuntu 22.04, damit das AppImage
-  auch auf älteren Distributionen startet) und hängt sie ans GitHub-Release.
+  auch auf älteren Distributionen startet) und hängt sie ans GitHub-Release. Tests laufen dabei auf Windows und
+  Linux und blockieren den Build, wenn sie fehlschlagen.
 
 ### Korrekturen
 - **Windows: keine Sitzungssperre.** Ohne `fcntl` lief bisher ein zweiter Server unbemerkt auf derselben Sitzung
   (Doppelklick zweimal = Datenverlust). Jetzt sperrt `msvcrt.locking`.
-
-## 0.2.0 (2026-09-26)
+- **Windows: `pid_alive` schickte `Strg+C`** statt den Prozess nur abzufragen (`os.kill(pid, 0)` löst unter Windows
+  `CTRL_C_EVENT` aus). Betraf auch darktables `--watch-pid`. Jetzt über die Windows-API (`OpenProcess`/
+  `GetExitCodeProcess`).
 
 ### Belegter Port
 - `--port N` belegt: der Server sucht selbst den nächsten freien Port (N+1 … N+19, dann einen beliebigen)
