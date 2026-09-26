@@ -3,7 +3,6 @@
 Ausfuehren:  .venv/bin/python -m unittest discover -s tests -v
 """
 import os
-import pty
 import select
 import shutil
 import subprocess
@@ -12,6 +11,11 @@ import tempfile
 import time
 import unittest
 import unittest.mock
+
+try:
+    import pty
+except ImportError:          # Windows: kein termios
+    pty = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -125,7 +129,7 @@ class CliWiringTest(unittest.TestCase):
 
 
 @needs_rich
-@unittest.skipUnless(hasattr(pty, "openpty"), "kein pty (kein POSIX)")
+@unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "kein pty (kein POSIX)")
 class PtySmokeTest(unittest.TestCase):
     """Echter Durchlauf in einem Pseudo-Terminal: startet --tui, drueckt Q, prueft das Ende."""
 
