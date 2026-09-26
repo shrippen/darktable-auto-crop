@@ -137,13 +137,6 @@ echo ""
 
 # ── 4. Alte Dateien im Root bereinigen ───────────────────────────────────────
 echo "[4/4] Bereinige alte Installation..."
-# Alter Dateiname vor der Umbenennung zu "Kader" und vor Script Manager: absichtlich der alte Name.
-OLD_ROOT="${LUA_DIR}/auto_crop_negative.lua"
-if [ -f "$OLD_ROOT" ]; then
-    mv "$OLD_ROOT" "${OLD_ROOT}.bak"
-    echo "  ⚠ Alte ${OLD_ROOT} umbenannt zu .bak"
-fi
-
 INIT_FILE="${LUA_DIR}/init.lua"
 if [ -f "$INIT_FILE" ] && grep -q 'require.*kader' "$INIT_FILE"; then
     sed -i 's/^require.*kader/-- removed: kader now via Script Manager/' "$INIT_FILE"

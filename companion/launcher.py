@@ -108,7 +108,7 @@ def _offer_plugin():
         return
     from . import dtplugin
     try:
-        notes = dtplugin.install()
+        dtplugin.install()
     except (dtplugin.PluginError, OSError) as e:
         _message("Kader", f"Das Plugin wurde nicht installiert:\n{e}", error=True)
         return
@@ -116,7 +116,6 @@ def _offer_plugin():
         "Das darktable-Plugin ist installiert.",
         "darktable (neu) starten: im Leuchttisch erscheint das Modul „Kader“. Bilder auswählen, "
         "„Review starten“, im Browser prüfen und „Fertig“, dann in darktable „Plan anwenden“.",
-        *notes,
         "Jetzt kannst du auch direkt einen Ordner prüfen – oder den nächsten Dialog abbrechen."]))
 
 

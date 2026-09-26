@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Review-GUI for Auto-Crop-Negative Batch results.
+"""Review-GUI for Kader batch results.
 
 Hinweis: Wird langfristig durch die Web-UI ersetzt (python -m companion serve --folder
 Testphotos ...), siehe companion-ui-plan.md. Bleibt bis zur praktischen Paritaet erhalten.
@@ -82,7 +82,7 @@ def _cursor_for_edge(edge):
 class ReviewGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Auto-Crop-Negative - Review GUI")
+        self.root.title("Kader - Review GUI")
         self.root.geometry("1400x900")
         self.root.configure(bg="#2b2b2b")
         self.results = load_results()
@@ -674,7 +674,7 @@ class ReviewGUI:
             text=f"Gespeichert! ({len(self.reviews)} Bewertungen)")
 
     def _export(self):
-        lines = ["# Auto-Crop-Negative Review\n",
+        lines = ["# Kader Review\n",
                  f"Gesamt: {len(self.results)} Bilder\n\n",
                  "| Bild | Conf | Methode | Orient | Status | Manual-Crop | Notiz |\n",
                  "|------|------|---------|--------|--------|-------------|-------|\n"]
@@ -714,7 +714,7 @@ def main():
               ".venv/bin/python batch_test.py", flush=True)
         root = tk.Tk()
         root.withdraw()
-        messagebox.showerror("Auto-Crop-Negative", msg)
+        messagebox.showerror("Kader", msg)
         root.destroy()
         sys.exit(1)
     root = tk.Tk()

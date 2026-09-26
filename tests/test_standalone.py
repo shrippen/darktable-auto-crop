@@ -632,7 +632,7 @@ class DarktableXmpTest(Tmp):
 
 
 class DtPluginTest(Tmp):
-    RC = "plugins/darkroom/foo=1\nlua/script_manager/contrib/auto_crop_negative=TRUE\nui/theme=darktable\n"
+    RC = "plugins/darkroom/foo=1\nui/theme=darktable\n"
 
     def setUp(self):
         super().setUp()
@@ -651,16 +651,14 @@ class DtPluginTest(Tmp):
             return f.read()
 
     def test_install_and_uninstall(self):
-        notes = self.dp.install(command=self.app, cfg=self.cfg)
+        self.dp.install(command=self.app, cfg=self.cfg)
         self.assertEqual(self.read("lua", "contrib", "kader", "kader_command"), self.app + "\n")
         with open(os.path.join(ROOT, "kader.lua"), encoding="utf-8") as f:
             self.assertEqual(self.read("lua", "contrib", "kader", "kader.lua"), f.read())
         rc = self.read("darktablerc")
         self.assertIn("lua/script_manager/contrib/kader=TRUE\n", rc)
-        self.assertIn("lua/script_manager/contrib/auto_crop_negative=FALSE\n", rc)   # altes Plugin aus
         self.assertTrue(rc.startswith("plugins/darkroom/foo=1\n"))
         self.assertIn("ui/theme=darktable\n", rc)
-        self.assertTrue(notes)
         luarc = self.read("luarc")
         self.assertTrue(luarc.startswith('require "tools/script_manager"\n'))
         self.assertEqual(luarc.count(self.dp.LUARC_LINE), 1)

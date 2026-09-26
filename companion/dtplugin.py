@@ -19,7 +19,6 @@ from . import dtconfig
 
 PLUGIN = ("contrib", "kader")
 PREF_KEY = "lua/script_manager/contrib/kader"
-OLD_PREF_KEY = "lua/script_manager/contrib/auto_crop_negative"     # Plugin vor der Umbenennung
 LUARC_MARK = "-- Kader-Plugin (von der Kader-App eingetragen)"
 LUARC_LINE = 'if not package.searchpath("tools/script_manager", package.path) then require "contrib/kader/kader" end'
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,7 +61,7 @@ def status(cfg=None):
 
 
 def install(command=None, cfg=None, lua=None):
-    """Installiert das Plugin; liefert eine Liste von Hinweisen fuer den Nutzer."""
+    """Installiert das Plugin (darktable darf dabei nicht laufen)."""
     cfg = cfg or dtconfig.config_dir()
     command = command or app_command()
     lua = lua or bundled_lua()
@@ -76,16 +75,9 @@ def install(command=None, cfg=None, lua=None):
     os.makedirs(d, exist_ok=True)
     shutil.copyfile(lua, os.path.join(d, "kader.lua"))
     _write(os.path.join(d, "kader_command"), command + "\n")
-    notes = []
     rc = os.path.join(cfg, "darktablerc")
-    prefs = _read(rc) if os.path.isfile(rc) else ""
-    prefs = set_pref(prefs, PREF_KEY, "TRUE")
-    if get_pref(prefs, OLD_PREF_KEY) == "TRUE":
-        prefs = set_pref(prefs, OLD_PREF_KEY, "FALSE")
-        notes.append("Das alte Plugin „auto_crop_negative“ wurde im Script Manager ausgeschaltet.")
-    _write(rc, prefs)
+    _write(rc, set_pref(_read(rc) if os.path.isfile(rc) else "", PREF_KEY, "TRUE"))
     _luarc_add(os.path.join(cfg, "luarc"))
-    return notes
 
 
 def uninstall(cfg=None):
@@ -117,14 +109,6 @@ def refresh(cfg=None):
     except OSError:
         return False
     return True
-
-
-def get_pref(text, key):
-    for line in text.splitlines():
-        k, sep, v = line.partition("=")
-        if sep and k == key:
-            return v
-    return None
 
 
 def set_pref(text, key, value):

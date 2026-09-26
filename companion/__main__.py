@@ -54,8 +54,7 @@ def _darktable_plugin(action):
     from . import dtplugin
     try:
         if action == "install":
-            for note in dtplugin.install():
-                print(note)
+            dtplugin.install()
             print(f"Installiert: {dtplugin.plugin_dir()}")
             print("darktable starten: im Leuchttisch erscheint das Modul „Kader“.")
         elif action == "uninstall":
