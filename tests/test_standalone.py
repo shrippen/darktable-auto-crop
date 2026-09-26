@@ -461,6 +461,304 @@ class RawTherapeeTest(Tmp):
         self.assertEqual(pp3.get_value(open(raw + ".pp3").read(), "Crop", "Enabled"), "false")
 
 
+def _dt_history(text):
+    """[(num, operation, enabled, params)] der History einer darktable-XMP."""
+    import re
+    out = []
+    for li in re.findall(r"<rdf:li\b[^>]*?/>", text.split("<darktable:history>")[1].split("</darktable:history>")[0],
+                         re.S):
+        get = lambda k: re.search(r'darktable:%s="([^"]*)"' % k, li).group(1)     # noqa: E731
+        out.append((int(get("num")), get("operation"), get("enabled") == "1", get("params")))
+    return out
+
+
+def _dt_labels(text):
+    import re
+    block = re.search(r"<darktable:colorlabels>.*?</darktable:colorlabels>", text, re.S)
+    return [int(c) for c in re.findall(r"<rdf:li>(\d+)</rdf:li>", block.group(0))] if block else []
+
+
+def _crop_floats(params):
+    import struct
+    return [round(v, 4) for v in struct.unpack("<ffff", bytes.fromhex(params)[:16])]
+
+
+class DarktableXmpTest(Tmp):
+    EXISTING = """<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="XMP Core 4.4.0-Exiv2">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmlns:darktable="http://darktable.sf.net/"
+   xmp:Rating="3"
+   darktable:xmp_version="5"
+   darktable:auto_presets_applied="1"
+   darktable:history_end="2"
+   darktable:history_current_hash="abc">
+   <darktable:colorlabels>
+    <rdf:Seq>
+     <rdf:li>0</rdf:li>
+     <rdf:li>3</rdf:li>
+    </rdf:Seq>
+   </darktable:colorlabels>
+   <darktable:masks_history>
+    <rdf:Seq>
+     <rdf:li darktable:mask_num="1" darktable:mask_id="7"/>
+     <rdf:li darktable:mask_num="2" darktable:mask_id="8"/>
+    </rdf:Seq>
+   </darktable:masks_history>
+   <darktable:history>
+    <rdf:Seq>
+     <rdf:li darktable:num="0" darktable:operation="exposure" darktable:enabled="1" darktable:params="aa"/>
+     <rdf:li darktable:num="1" darktable:operation="retouch" darktable:enabled="1" darktable:params="bb"/>
+     <rdf:li darktable:num="2" darktable:operation="vignette" darktable:enabled="1" darktable:params="cc"/>
+    </rdf:Seq>
+   </darktable:history>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+"""
+
+    def setUp(self):
+        super().setUp()
+        cfg = os.path.join(self.tmp, "dtconfig")          # nie die echte darktable-Bibliothek lesen
+        p = unittest.mock.patch("companion.dtconfig.config_dir", return_value=cfg)
+        p.start()
+        self.addCleanup(p.stop)
+        self.cfg = cfg
+
+    def test_new_sidecar_with_crop_rotation_and_label(self):
+        raw = self.file("F/a.nef")
+        red = self.file("F/b.nef")
+        s = self.session("darktable_xmp", [(raw, 0.9, [3000, 2000]), (red, 0.1, [3000, 2000])], converter="darktable")
+        s.patch_images([1], {"straighten": {"deg": 2.0}})
+        s.finish()
+        text = open(raw + ".xmp", encoding="utf-8").read()
+        hist = _dt_history(text)
+        self.assertEqual([(n, op, en) for n, op, en, _ in hist], [(0, "ashift", True), (1, "crop", True)])
+        import struct
+        self.assertAlmostEqual(struct.unpack("<f", bytes.fromhex(hist[0][3])[:4])[0], 2.0, places=4)
+        self.assertEqual(len(hist[0][3]) // 2, 892)
+        self.assertEqual(_crop_floats(hist[1][3]), [round(v, 4) for v in s.effective_crop(s.image(1))])
+        self.assertIn('darktable:history_end="2"', text)
+        self.assertEqual(_dt_labels(text), [2])
+        red_text = open(red + ".xmp", encoding="utf-8").read()          # rot: nur Label, kein Crop
+        self.assertEqual(_dt_labels(red_text), [0])
+        self.assertNotIn("<darktable:history>", red_text)
+        res = sess.read_json(s.path("result.json"))
+        self.assertNotIn("message", res["images"]["1"])                  # darktable-Rahmen: kein Hinweis
+        self.assertIn("importieren", res["message"])
+
+        s.reopen()                                                        # zurueck: Crop und Drehung aus
+        s.patch_images([1], {"decision": "skip"})
+        s.finish()
+        hist = _dt_history(open(raw + ".xmp", encoding="utf-8").read())
+        self.assertEqual([(n, op, en) for n, op, en, _ in hist[2:]], [(2, "ashift", False), (3, "crop", False)])
+
+    def test_existing_sidecar_keeps_history_and_blue_label(self):
+        raw = self.file("F/a.nef")
+        with open(raw + ".xmp", "w", encoding="utf-8") as f:
+            f.write(self.EXISTING)
+        s = self.session("darktable_xmp", [(raw, 0.4, [3000, 2000])], converter="rawpy")
+        s.finish()
+        text = open(raw + ".xmp", encoding="utf-8").read()
+        self.assertEqual([(n, op) for n, op, _, _ in _dt_history(text)], [(0, "exposure"), (1, "retouch"), (2, "crop")])
+        self.assertIn('darktable:history_end="3"', text)                 # rueckgaengig gemachter Schritt weg
+        self.assertNotIn('mask_num="2"', text)                            # ... samt seiner Maske
+        self.assertIn('mask_num="1"', text)
+        self.assertNotIn("history_current_hash", text)
+        self.assertIn('xmp:Rating="3"', text)
+        self.assertIn('darktable:auto_presets_applied="1"', text)
+        self.assertEqual(_dt_labels(text), [1, 3])                        # gelb statt rot, blau bleibt
+        self.assertIn("rawpy", sess.read_json(s.path("result.json"))["images"]["1"]["message"])
+
+    def test_unknown_history_form_is_left_alone(self):
+        raw = self.file("F/a.nef")
+        odd = self.EXISTING.replace('<rdf:li darktable:num="2" darktable:operation="vignette" darktable:enabled="1" '
+                                    'darktable:params="cc"/>',
+                                    '<rdf:li rdf:parseType="Resource"><darktable:num>2</darktable:num></rdf:li>')
+        with open(raw + ".xmp", "w", encoding="utf-8") as f:
+            f.write(odd)
+        s = self.session("darktable_xmp", [(raw, 0.9, [3000, 2000])])
+        s.finish()
+        self.assertEqual(open(raw + ".xmp", encoding="utf-8").read(), odd)
+        self.assertEqual(sess.read_json(s.path("result.json"))["images"]["1"]["status"], "error")
+
+    def test_imported_images_are_named(self):
+        import sqlite3
+        raw = self.file("F/a.nef")
+        other = self.file("F/b.nef")
+        os.makedirs(self.cfg)
+        con = sqlite3.connect(os.path.join(self.cfg, "library.db"))
+        con.executescript("CREATE TABLE film_rolls (id INTEGER PRIMARY KEY, folder TEXT);"
+                          "CREATE TABLE images (id INTEGER PRIMARY KEY, film_id INTEGER, filename TEXT);")
+        con.execute("INSERT INTO film_rolls VALUES (1, ?)", (os.path.dirname(raw),))
+        con.execute("INSERT INTO images VALUES (1, 1, 'a.nef')")
+        con.commit()
+        con.close()
+        s = self.session("darktable_xmp", [(raw, 0.9, [3000, 2000]), (other, 0.9, [3000, 2000])])
+        s.finish()
+        res = sess.read_json(s.path("result.json"))
+        self.assertIn("schon in darktable importiert", res["images"]["1"]["message"])
+        self.assertNotIn("message", res["images"]["2"])
+        self.assertIn("1 Bild ist schon in darktable importiert", res["message"])
+
+    def test_suggested_when_darktable_sidecars_exist(self):
+        raw = self.file("F/a.nef")
+        with open(raw + ".xmp", "w", encoding="utf-8") as f:
+            f.write(self.EXISTING)
+        self.assertEqual(targets.suggest([raw]), "darktable_xmp")
+
+    @unittest.skipUnless(shutil.which("darktable-cli"), "darktable-cli fehlt")
+    def test_darktable_cli_applies_the_crop(self):
+        """Gegenprobe mit echtem darktable: die XMP schneidet den Export zu."""
+        import subprocess
+        from companion.targets.darktable_xmp import history_steps, update_xmp
+        img = os.path.join(self.tmp, "a.jpg")
+        shutil.copy(TEST_JPG, img)
+        xmp = os.path.join(self.tmp, "a.jpg.xmp")
+        with open(xmp, "w", encoding="utf-8") as f:
+            f.write(update_xmp(None, history_steps({"apply": True, "crop": [0.1, 0.2, 0.9, 0.7]}), "green"))
+        out = os.path.join(self.tmp, "out.jpg")
+        cfg = os.path.join(self.tmp, "cfg")
+        subprocess.run(["darktable-cli", img, xmp, out, "--core", "--conf", "write_sidecar_files=never"],
+                       env=dict(os.environ, XDG_CONFIG_HOME=cfg, XDG_CACHE_HOME=os.path.join(cfg, "c")),
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300, check=True)
+        from PIL import Image
+        w, h = Image.open(TEST_JPG).size
+        ow, oh = Image.open(out).size
+        self.assertAlmostEqual(ow / w, 0.8, delta=0.01)
+        self.assertAlmostEqual(oh / h, 0.5, delta=0.01)
+
+
+class DtPluginTest(Tmp):
+    RC = "plugins/darkroom/foo=1\nlua/script_manager/contrib/auto_crop_negative=TRUE\nui/theme=darktable\n"
+
+    def setUp(self):
+        super().setUp()
+        from companion import dtplugin
+        self.dp = dtplugin
+        self.cfg = os.path.join(self.tmp, "darktable")
+        os.makedirs(self.cfg)
+        with open(os.path.join(self.cfg, "darktablerc"), "w") as f:
+            f.write(self.RC)
+        with open(os.path.join(self.cfg, "luarc"), "w") as f:
+            f.write('require "tools/script_manager"')                   # ohne Zeilenende, wie beim Nutzer
+        self.app = self.file("Apps/Kader.AppImage")
+
+    def read(self, *rel):
+        with open(os.path.join(self.cfg, *rel), encoding="utf-8") as f:
+            return f.read()
+
+    def test_install_and_uninstall(self):
+        notes = self.dp.install(command=self.app, cfg=self.cfg)
+        self.assertEqual(self.read("lua", "contrib", "kader", "kader_command"), self.app + "\n")
+        with open(os.path.join(ROOT, "kader.lua"), encoding="utf-8") as f:
+            self.assertEqual(self.read("lua", "contrib", "kader", "kader.lua"), f.read())
+        rc = self.read("darktablerc")
+        self.assertIn("lua/script_manager/contrib/kader=TRUE\n", rc)
+        self.assertIn("lua/script_manager/contrib/auto_crop_negative=FALSE\n", rc)   # altes Plugin aus
+        self.assertTrue(rc.startswith("plugins/darkroom/foo=1\n"))
+        self.assertIn("ui/theme=darktable\n", rc)
+        self.assertTrue(notes)
+        luarc = self.read("luarc")
+        self.assertTrue(luarc.startswith('require "tools/script_manager"\n'))
+        self.assertEqual(luarc.count(self.dp.LUARC_LINE), 1)
+        self.dp.install(command=self.app, cfg=self.cfg)                  # zweimal: nichts doppelt
+        self.assertEqual(self.read("luarc").count(self.dp.LUARC_LINE), 1)
+        self.assertEqual(self.read("darktablerc").count("contrib/kader="), 1)
+        self.assertTrue(self.dp.status(self.cfg)["installed"])
+
+        self.dp.uninstall(cfg=self.cfg)
+        self.assertFalse(os.path.exists(os.path.join(self.cfg, "lua", "contrib", "kader")))
+        self.assertIn("lua/script_manager/contrib/kader=FALSE\n", self.read("darktablerc"))
+        self.assertEqual(self.read("luarc"), 'require "tools/script_manager"\n')
+
+    def test_install_replaces_an_older_luarc_entry(self):
+        with open(os.path.join(self.cfg, "luarc"), "w") as f:
+            f.write(f'require "tools/script_manager"\n{self.dp.LUARC_MARK}\nrequire "contrib/kader/kader"\n-- eigenes\n')
+        self.dp.install(command=self.app, cfg=self.cfg)
+        luarc = self.read("luarc")
+        self.assertEqual(luarc.count("contrib/kader/kader"), 1)
+        self.assertIn(self.dp.LUARC_LINE, luarc)
+        self.assertIn("-- eigenes\n", luarc)
+
+    def test_refuses_while_darktable_runs(self):
+        with open(os.path.join(self.cfg, "library.db.lock"), "w") as f:
+            f.write(f"{os.getpid()}\0")                                  # so schreibt darktable sie
+        with self.assertRaises(self.dp.PluginError):
+            self.dp.install(command=self.app, cfg=self.cfg)
+        self.assertEqual(self.read("darktablerc"), self.RC)
+        with open(os.path.join(self.cfg, "library.db.lock"), "w") as f:
+            f.write("999999999")                                          # verwaiste Sperre zaehlt nicht
+        self.dp.install(command=self.app, cfg=self.cfg)
+
+    def test_outside_the_app_it_points_to_install_sh(self):
+        with self.assertRaises(self.dp.PluginError) as cm:
+            self.dp.install(cfg=self.cfg)
+        self.assertIn("install.sh", str(cm.exception))
+
+    def test_refresh_records_a_moved_app(self):
+        self.dp.install(command=self.app, cfg=self.cfg)
+        moved = self.file("Downloads/Kader-0.3.AppImage")
+        with unittest.mock.patch.object(sys, "frozen", True, create=True), \
+                unittest.mock.patch.dict(os.environ, {"APPIMAGE": moved}), \
+                unittest.mock.patch("companion.dtconfig.config_dir", return_value=self.cfg):
+            self.assertTrue(self.dp.refresh())
+            self.assertFalse(self.dp.refresh())                           # schon aktuell
+        self.assertEqual(self.dp.status(self.cfg)["command"], moved)
+
+    def test_launcher_offers_plugin_once(self):
+        from companion import launcher
+        env = {"XDG_CONFIG_HOME": os.path.join(self.tmp, "cfg"), "APPIMAGE": self.app}
+        with unittest.mock.patch.object(sys, "frozen", True, create=True), \
+                unittest.mock.patch.dict(os.environ, env), \
+                unittest.mock.patch("companion.dtconfig.config_dir", return_value=self.cfg):
+            self.assertTrue(launcher.should_offer_plugin())
+            with unittest.mock.patch("companion.launcher._ask_plugin", return_value="never"):
+                launcher._offer_plugin()
+            self.assertFalse(launcher.should_offer_plugin())              # "Nie fragen" merkt sich das
+            os.remove(launcher.settings_path())
+            with unittest.mock.patch("companion.launcher._ask_plugin", return_value="install"), \
+                    unittest.mock.patch("companion.launcher._message") as msg:
+                launcher._offer_plugin()
+            self.assertIn("installiert", msg.call_args[0][1])
+            self.assertFalse(launcher.should_offer_plugin())              # schon installiert
+        self.assertEqual(self.read("lua", "contrib", "kader", "kader_command"), self.app + "\n")
+        self.assertFalse(launcher.should_offer_plugin())                  # ohne App-Paket nie
+
+    def test_launcher_passthrough_without_stdout(self):
+        """exe ohne Konsole, vom Plugin mit "serve ..." gestartet: kein sys.stdout."""
+        from companion import launcher
+        with unittest.mock.patch.object(sys, "stdout", None), unittest.mock.patch.object(sys, "stderr", None):
+            self.assertEqual(launcher.main(["darktable-plugin", "status"]), 0)
+
+
+class ProgramsTest(unittest.TestCase):
+    def test_windows_install_dirs(self):
+        from companion import programs
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for rel in ("RawTherapee/5.9/rawtherapee-cli.exe", "RawTherapee/5.11/rawtherapee-cli.exe"):
+            os.makedirs(os.path.dirname(os.path.join(tmp, rel)), exist_ok=True)
+            open(os.path.join(tmp, rel), "w").close()
+        env = {"ProgramFiles": tmp}
+        rt = programs.candidates(programs.RAWTHERAPEE_CLI, "win32", env)
+        self.assertEqual(rt[0], os.path.join(tmp, "RawTherapee", "5.11", "rawtherapee-cli.exe"))  # neueste zuerst
+        self.assertEqual(programs.candidates(programs.DARKTABLE_CLI, "win32", env),
+                         [os.path.join(tmp, "darktable", "bin", "darktable-cli.exe")])
+        self.assertEqual(programs.candidates(programs.DARKTABLE, "darwin", env),
+                         ["/Applications/darktable.app/Contents/MacOS/darktable"])
+
+    def test_clean_env_restores_library_path_in_bundle(self):
+        from companion import programs
+        env = {"LD_LIBRARY_PATH": "/tmp/_MEI123", "LD_LIBRARY_PATH_ORIG": "/usr/lib/x", "PATH": "/bin"}
+        with unittest.mock.patch.object(sys, "frozen", True, create=True):
+            self.assertEqual(programs.clean_env(env), {"LD_LIBRARY_PATH": "/usr/lib/x", "PATH": "/bin"})
+            self.assertEqual(programs.clean_env({"LD_LIBRARY_PATH": "/tmp/_MEI1"}), {})
+        self.assertEqual(programs.clean_env(env), env)                    # ohne Paket unveraendert
+
+
 # ── CLI und echter Durchlauf ─────────────────────────────────────────────────
 
 class CliTest(Tmp):

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 (2026-09-26)
+
+### darktable und RawTherapee ohne Terminal
+- **Neues Ziel `darktable_xmp`**: schreibt Crop, Drehung und Farblabel als History-Schritte direkt in die
+  darktable-Sidecar `<datei>.xmp` – ohne Plugin, ohne laufendes darktable. Dieselbe Kodierung wie das Plugin,
+  gegen darktable 5.6 per `darktable-cli` geprüft; vorhandene Bearbeitungen bleiben. Das Ergebnis nennt Bilder, die
+  schon in darktable importiert sind (darktable liest die XMP nur beim Import), und warnt, wenn darktable läuft.
+  Vorgeschlagen, wenn schon darktable-XMPs im Ordner liegen.
+- **darktable-Plugin aus der App einrichten**: der erste Doppelklick bietet es an, wenn darktable installiert ist
+  (oder `Kader darktable-plugin install|uninstall|status`). Kopiert `kader.lua`, trägt den Ort der App ein, schaltet
+  es im Script Manager ein. Das Plugin startet den Server dann über die App statt über Python.
+- **`kader.lua` unter Windows**: Prozesse, Browser, Pfade und Temp-Dateien über `cmd.exe`
+  (`start`, `tasklist`, `taskkill`) statt Shell; läuft ohne `lib/dtutils`. Unter Windows noch nicht in echtem
+  darktable geprüft.
+- **Statusfenster nach „Fertig“**: bei den Zielen RawTherapee und darktable der Knopf **RawTherapee öffnen** bzw.
+  **darktable öffnen** (auch als Flatpak) samt Hinweis, was dort passiert.
+- **`darktable-cli`/`rawtherapee-cli` unter Windows und macOS** in den üblichen Installationsordnern gefunden
+  (die Installer tragen sie nicht in den PATH ein). Aus exe/AppImage gestartete Programme erben nicht mehr die
+  Bibliothekspfade des Pakets, unter Windows ohne Konsolenfenster je Bild.
+
+### Korrekturen
+- Die exe ohne Konsole stürzte ab, wenn sie mit Argumenten (z. B. `serve` aus dem Plugin) ohne stdout lief.
+
 ## 0.2.0 (2026-09-26)
 
 ### Doppelklick-Pakete für Windows und Linux

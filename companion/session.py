@@ -1057,9 +1057,11 @@ class Session:
         applied["revision"] = self.revision
         applied["target"] = target.name
         atomic_write_json(self.path("applied.json"), applied)
-        atomic_write_json(self.path("result.json"), {
-            "revision": self.revision, "status": "ok", "target": target.name,
-            "images": report or {}})
+        result = {"revision": self.revision, "status": "ok", "target": target.name, "images": report or {}}
+        message = target.summary_message(self, report or {})
+        if message:
+            result["message"] = message
+        atomic_write_json(self.path("result.json"), result)
         self.state["phase"] = "applied"
         self.save()
 

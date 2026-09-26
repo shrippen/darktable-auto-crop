@@ -18,7 +18,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import export as dt_export
-from . import pp3
+from . import pp3, programs
 
 DARKTABLE = "darktable"
 RAWTHERAPEE = "rawtherapee"
@@ -30,7 +30,7 @@ TIMEOUT_S = 600
 
 
 def find_rawtherapee_cli():
-    return shutil.which("rawtherapee-cli")
+    return programs.find(programs.RAWTHERAPEE_CLI)
 
 
 def has_rawpy():
@@ -139,7 +139,8 @@ def _export_rawtherapee(cli, raw, out, work_dir):
         cmd += ["-p", prof.name]
     cmd += ["-c", raw]
 
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=TIMEOUT_S)
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=TIMEOUT_S,
+                          **programs.run_kwargs())
     if not os.path.exists(out):
         raise RuntimeError(f"rawtherapee-cli Export fehlgeschlagen ({proc.returncode}): "
                            f"{(proc.stderr or proc.stdout).strip()[-200:]}")

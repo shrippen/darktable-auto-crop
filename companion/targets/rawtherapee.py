@@ -27,6 +27,10 @@ class RawTherapeeTarget(Target):
     def apply(self, session, plan):
         return {str(e["id"]): self._one(session, e) for e in plan["images"]}
 
+    def summary_message(self, session, report):
+        return ("Profile (.pp3) liegen neben den Bildern: den Ordner in RawTherapee öffnen, "
+                "es liest sie automatisch.")
+
     def _one(self, session, e):
         img = session.image(e["id"])
         side = pp3.sidecar_path(img["path"])

@@ -5,8 +5,11 @@
 ]]
 
 local dt = require "darktable"
-local du = require "lib/dtutils"
-du.check_min_api_version("8.0.0", "Kader")
+-- lib/dtutils gehoert zu den lua-scripts (Script Manager); ohne sie laeuft das Plugin trotzdem
+local has_du, du = pcall(require, "lib/dtutils")
+if has_du and type(du) == "table" and du.check_min_api_version then
+  du.check_min_api_version("8.0.0", "Kader")
+end
 
 local _ = dt.gettext.gettext
 
@@ -42,7 +45,7 @@ end
 local function get_script_dir()
   local info = debug.getinfo(1, "S")
   local src = info.source:match("@(.+)")
-  if src then return src:match("(.*/)") or "." end
+  if src then return src:match("(.*[/\\])") or "." end
   return "."
 end
 local SCRIPT_DIR = get_script_dir()
@@ -65,6 +68,93 @@ local function write_file(p, c)
   h:write(c); h:close(); return true
 end
 
+-- ═══ Betriebssystem: Linux (Shell) und Windows (cmd.exe) ═══════
+-- Alles, was Prozesse startet, abfragt oder beendet, laeuft ueber diese Funktionen.
+
+local IS_WINDOWS = (type(dt.configuration) == "table" and dt.configuration.running_os == "windows")
+  or package.config:sub(1, 1) == "\\"
+local HOME = os.getenv("HOME") or os.getenv("USERPROFILE") or "."
+local LOCALAPPDATA = os.getenv("LOCALAPPDATA") or (HOME .. "\\AppData\\Local")
+
+local function sh_quote(str)
+  if IS_WINDOWS then return '"' .. (tostring(str):gsub('"', "")) .. '"' end
+  return "'" .. (tostring(str):gsub("'", "'\\''")) .. "'"
+end
+
+local function mkdir_p(path)
+  if IS_WINDOWS then
+    os.execute("mkdir " .. sh_quote(path) .. " 2>nul")
+  else
+    os.execute("mkdir -p " .. sh_quote(path))
+  end
+end
+
+local function pid_alive(pid)
+  if not pid or pid == 0 then return false end
+  if IS_WINDOWS then
+    local h = io.popen(string.format('tasklist /FI "PID eq %d" /NH 2>nul', pid), "r")
+    local out = h and h:read("*a") or ""
+    if h then h:close() end
+    return out:find("%f[%d]" .. pid .. "%f[%D]") ~= nil
+  end
+  return os.execute(string.format("kill -0 %d 2>/dev/null", pid)) == true
+end
+
+-- Fuer haeufige Events: unter Linux /proc (kein Prozessstart). Unter Windows liesse sich das nur
+-- mit einem aufblitzenden Konsolenfenster pruefen; dort genuegt server.json, die der Server beim
+-- Beenden selbst entfernt.
+local function pid_alive_cheap(pid)
+  if not pid then return false end
+  if IS_WINDOWS then return true end
+  return file_exists("/proc/" .. pid)
+end
+
+local function kill_pid(pid, hard)
+  if IS_WINDOWS then
+    os.execute(string.format("taskkill /PID %d /T /F >nul 2>&1", pid))
+  else
+    os.execute(string.format("kill -%s %d 2>/dev/null", hard and "KILL" or "TERM", pid))
+  end
+end
+
+local function open_url(url)
+  if IS_WINDOWS then
+    os.execute('start "" ' .. sh_quote(url))
+  else
+    os.execute("xdg-open " .. sh_quote(url) .. " >/dev/null 2>&1 &")
+  end
+end
+
+local function tmp_path(ext)
+  if IS_WINDOWS then
+    return string.format("%s\\kader-%d-%06d%s", os.getenv("TEMP") or LOCALAPPDATA, os.time(),
+      math.random(0, 999999), ext)
+  end
+  return os.tmpname() .. ext
+end
+
+-- Startet cmd im Hintergrund (Ausgabe nach out_path). Linux: die PID; Windows: true, die PID
+-- steht dann in server.json.
+local function spawn_background(cmd, out_path)
+  if IS_WINDOWS then
+    local ok = os.execute('start "" /B ' .. cmd .. " > " .. sh_quote(out_path) .. " 2>&1")
+    return ok and true or nil
+  end
+  local h = io.popen(string.format("%s > %s 2>&1 & echo $!", cmd, sh_quote(out_path)), "r")
+  local pid = h and tonumber(h:read("*l"))
+  if h then h:close() end
+  return pid
+end
+
+local function darktable_pid()
+  if IS_WINDOWS then return nil end          -- nur fuer --watch-pid; unter Windows beendet "exit"
+  -- $PPID der von io.popen gestarteten Shell ist der darktable-Prozess selbst
+  local h = io.popen("echo $PPID", "r")
+  local pid = h and tonumber(h:read("*l"))
+  if h then h:close() end
+  return pid and math.tointeger(pid)
+end
+
 -- string.format("%f", ...) folgt der C-Locale des Prozesses: unter z.B.
 -- Deutsch liefert es "0,300" statt "0.300" (Komma-Dezimaltrenner). An
 -- Python weitergereicht bricht das --confidence-threshold sofort mit
@@ -75,7 +165,8 @@ local function fmt_float_c(v, prec)
 end
 
 -- Datei-Log fuer Diagnose (unabhaengig von Terminal-Flags)
-local LOG_FILE = os.getenv("HOME") .. "/.cache/darktable/kader.log"
+local LOG_FILE = ((type(dt.configuration) == "table" and dt.configuration.cache_dir)
+  or (IS_WINDOWS and (LOCALAPPDATA .. "\\darktable") or (HOME .. "/.cache/darktable"))) .. "/kader.log"
 
 local function log_rotate()
   local h = io.open(LOG_FILE, "r")
@@ -242,7 +333,7 @@ local function batch_cancel()
   if not st.active then return end
   st.cancelled = true
   if st.pid then
-    os.execute(string.format("kill -TERM %d 2>/dev/null", st.pid))
+    kill_pid(st.pid)
   end
   log("CANCEL: vom Benutzer angefordert")
   dt.print(_("Auto Crop: Abgebrochen"))
@@ -282,8 +373,7 @@ local function check_batch()
   local done = g_str ~= nil
   local alive = false
   if st.pid and not done then
-    alive = (os.execute(string.format("kill -0 %d 2>/dev/null", st.pid))
-             == true)
+    alive = pid_alive(st.pid)
   end
 
   if done then
@@ -507,14 +597,14 @@ end
 local function apply_crop_style(image, op_params_hex, enabled, log_desc, angle)
   local style_name = "kader_tmp_" .. os.time() .. "_"
     .. tostring(math.random(100000, 999999))
-  local tmp_path = os.tmpname() .. ".dtstyle"
+  local style_path = tmp_path(".dtstyle")
   local xml = crop_style_xml(style_name, op_params_hex, enabled, angle)
-  local f = io.open(tmp_path, "w")
+  local f = assert(io.open(style_path, "w"))
   f:write(xml)
   f:close()
 
-  dt.styles.import(tmp_path)
-  os.remove(tmp_path)
+  dt.styles.import(style_path)
+  os.remove(style_path)
 
   local style_obj = nil
   for _, s in ipairs(dt.styles) do
@@ -656,10 +746,12 @@ local function detect_and_queue()
   log(string.format("detect: %d images", #paths))
 
   -- Batch detached starten: Lua blockiert nicht -> Abbruch-Knopf lebt
-  local py = find_python()
+  -- (nur Linux mit der Python-Installation von install.sh; die Kader-App kann "Review starten")
+  local py = not IS_WINDOWS and find_python()
   if not py then
     dt.print_error("Kader: Python script not found")
-    dt.print(_("Auto Crop: Fehler - Python nicht gefunden (siehe Log)"))
+    dt.print(_("Auto Crop: \"Detect & Queue\" braucht die Python-Installation (install.sh) - "
+      .. "stattdessen \"Review starten\" nutzen"))
     return
   end
   local json_file = os.tmpname() .. ".json"
@@ -830,7 +922,7 @@ end
 -- darktables eigene API (dt.styles, siehe apply_crop_style) gesetzt - nie ueber XMP.
 
 local CACHE_ROOT = os.getenv("KADER_CACHE")
-  or (os.getenv("HOME") .. "/.cache/kader")
+  or (IS_WINDOWS and (LOCALAPPDATA .. "\\kader") or (HOME .. "/.cache/kader"))
 local LAST_SESSION_FILE = CACHE_ROOT .. "/last_session"
 
 -- Rueckmeldung, die nicht spurlos verschwindet: Log + kurze Einblendung + Statuszeile
@@ -839,10 +931,6 @@ local function say(msg)
   log("companion: " .. msg)
   dt.print(msg)
   pcall(function() status_label.label = msg end)
-end
-
-local function sh_quote(str)
-  return "'" .. (tostring(str):gsub("'", "'\\''")) .. "'"
 end
 
 local function json_escape(str)
@@ -863,11 +951,6 @@ local function file_size(path)
   return n
 end
 
-local function pid_alive(pid)
-  return pid ~= nil
-    and os.execute(string.format("kill -0 %d 2>/dev/null", pid)) == true
-end
-
 local function write_atomic(path, content)
   local tmp = path .. ".tmp"
   if not write_file(tmp, content) then return false end
@@ -875,7 +958,7 @@ local function write_atomic(path, content)
 end
 
 local function remember_session(sid)
-  os.execute("mkdir -p " .. sh_quote(CACHE_ROOT))
+  mkdir_p(CACHE_ROOT)
   write_file(LAST_SESSION_FILE, sid .. "\n")
 end
 
@@ -885,10 +968,6 @@ local function last_session()
   local sid = raw:gsub("%s+", "")
   if sid == "" then return nil end
   return sid, CACHE_ROOT .. "/" .. sid
-end
-
-local function open_url(url)
-  os.execute("xdg-open " .. sh_quote(url) .. " >/dev/null 2>&1 &")
 end
 
 -- ── Serveranzeige im Plugin-Bereich ─────────────────────────────────────────
@@ -930,7 +1009,7 @@ local function read_server_info(dir)
 end
 
 -- Zeigt den echten Zustand (Server evtl. von selbst beendet, z. B. nach 30 min
--- Leerlauf). Billig genug fuer haeufige Events: nur /proc-Abfrage, hoechstens alle 2 s.
+-- Leerlauf). Billig genug fuer haeufige Events (pid_alive_cheap), hoechstens alle 2 s.
 local function refresh_server_status()
   if server_ui.starting then return end
   local now = os.time()
@@ -939,19 +1018,11 @@ local function refresh_server_status()
   local _sid, dir = last_session()
   local info = dir and read_server_info(dir)
   local pid = info and math.tointeger(info.pid)
-  if pid and file_exists("/proc/" .. pid) then
+  if pid and pid_alive_cheap(pid) then
     if server_ui.url ~= info.url then set_server_state("running", info.url) end
   elseif server_ui.url or (server_status and server_status.label:find("STARTET")) then
     set_server_state("stopped")
   end
-end
-
-local function darktable_pid()
-  -- $PPID der von io.popen gestarteten Shell ist der darktable-Prozess selbst
-  local h = io.popen("echo $PPID", "r")
-  local pid = h and tonumber(h:read("*l"))
-  if h then h:close() end
-  return pid and math.tointeger(pid)
 end
 
 -- Wartet, bis der Server server.json geschrieben hat (dt.control.sleep pumpt die
@@ -960,7 +1031,7 @@ local function wait_for_server(dir, timeout_ms)
   local waited = 0
   while waited < timeout_ms do
     local info = parse_json(read_file(dir .. "/server.json") or "")
-    if type(info) == "table" and info.url and pid_alive(info.pid) then
+    if type(info) == "table" and info.url and pid_alive_cheap(math.tointeger(info.pid)) then
       return info
     end
     dt.control.sleep(200)
@@ -969,19 +1040,34 @@ local function wait_for_server(dir, timeout_ms)
   return nil
 end
 
-local function spawn_companion(args, out_path)
+-- Wie der Companion-Server startet: ueber die Kader-App (exe/AppImage; deren Installer traegt
+-- den Pfad in kader_command ein) oder ueber die Python-Installation von install.sh.
+local function companion_command()
+  local app = read_file(SCRIPT_DIR .. "kader_command")
+  app = app and app:match("^%s*(.-)%s*$")
+  if app and app ~= "" then
+    if not file_exists(app) then
+      return nil, string.format(_("Auto Crop: Kader-App nicht gefunden (%s). Kader einmal per "
+        .. "Doppelklick starten, dann kennt das Plugin den neuen Ort."), app)
+    end
+    return sh_quote(app)
+  end
   local py = find_python()
   if not py or not py:match("kader_wrapper%.py$") then
-    say(_("Auto Crop: kader_wrapper.py nicht gefunden (install.sh ausfuehren)"))
+    return nil, _("Auto Crop: Kader nicht gefunden - das Plugin aus der Kader-App installieren")
+  end
+  return sh_quote(py) .. " companion"
+end
+
+local function spawn_companion(args, out_path)
+  local prefix, err = companion_command()
+  if not prefix then
+    say(err)
     return nil
   end
-  local cmd = string.format("%s companion %s > %s 2>&1 & echo $!",
-    sh_quote(py), args, sh_quote(out_path))
+  local cmd = prefix .. " " .. args
   log("spawn companion: " .. cmd)
-  local h = io.popen(cmd, "r")
-  local pid = h and tonumber(h:read("*l"))
-  if h then h:close() end
-  return pid
+  return spawn_background(cmd, out_path)
 end
 
 local function companion_start()
@@ -990,7 +1076,7 @@ local function companion_start()
     say(_("Auto Crop: keine Bilder ausgewaehlt"))
     return
   end
-  os.execute("mkdir -p " .. sh_quote(CACHE_ROOT))
+  mkdir_p(CACHE_ROOT)
   local sid = os.date("%Y-%m-%dT%H-%M-%S")
     .. string.format("-%04x", math.random(0, 65535))
   local dir = CACHE_ROOT .. "/" .. sid
@@ -1005,7 +1091,7 @@ local function companion_start()
     '{"session":"%s","mode":"darktable","settings":{"t_green":%s,"t_yellow":%s},"images":[%s]}',
     sid, (fmt_float_c(t_green, 3)), (fmt_float_c(t_yellow, 3)),
     table.concat(parts, ","))
-  local job_path = os.tmpname() .. ".json"
+  local job_path = tmp_path(".json")
   if not write_file(job_path, job) then
     say(_("Auto Crop: Job-Datei konnte nicht geschrieben werden"))
     return
@@ -1081,12 +1167,12 @@ local function companion_stop()
     say(_("Auto Crop: Server laeuft nicht"))
     return
   end
-  os.execute(string.format("kill -TERM %d 2>/dev/null", pid))
+  kill_pid(pid)
   for _ = 1, 25 do                      -- bis zu 5 s auf das geordnete Ende warten
     if not pid_alive(pid) then break end
     dt.control.sleep(200)
   end
-  if pid_alive(pid) then os.execute(string.format("kill -KILL %d 2>/dev/null", pid)) end
+  if pid_alive(pid) then kill_pid(pid, true) end
   os.remove(dir .. "/server.json")
   set_server_state("stopped")
   say(_("Auto Crop: Server gestoppt"))
@@ -1102,7 +1188,7 @@ dt.register_event("kader_exit", "exit", function()
     local info = dir and read_server_info(dir)
     local pid = info and math.tointeger(info.pid)
     if pid then
-      os.execute(string.format("kill -TERM %d 2>/dev/null", pid))
+      kill_pid(pid)
       log("exit: Companion-Server " .. pid .. " gestoppt")
     end
   end)

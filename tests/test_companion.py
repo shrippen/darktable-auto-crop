@@ -1174,6 +1174,87 @@ class LuaBridgeTest(unittest.TestCase):
         self.assertFalse(os.path.exists(f"/proc/{info['pid']}"))
         self.assertFalse(os.path.exists(os.path.join(self.root, sid, "server.json")))
 
+    def _plugin_copy(self, app_path):
+        """kader.lua wie vom Installer der App: in einem eigenen Ordner, mit kader_command."""
+        plugin = os.path.join(self.tmp, "lua", "contrib", "kader")
+        os.makedirs(plugin)
+        shutil.copy(os.path.join(ROOT, "kader.lua"), plugin)
+        with open(os.path.join(plugin, "kader_command"), "w") as f:
+            f.write(app_path + "\n")
+        return os.path.join(plugin, "kader.lua")
+
+    def test_app_mode_starts_the_bundled_app(self):
+        """Mit kader_command startet das Plugin die Kader-App (hier: der Launcher mit Python)."""
+        import signal
+        app = os.path.join(self.tmp, "Kader App", "Kader.AppImage")
+        os.makedirs(os.path.dirname(app))
+        with open(app, "w") as f:
+            f.write(f'#!/bin/sh\nexec "{sys.executable}" -c "import sys; sys.path.insert(0, \'{ROOT}\'); '
+                    f'from companion.launcher import main; sys.exit(main())" "$@"\n')
+        os.chmod(app, 0o755)
+        script = self._plugin_copy(app)
+        env = dict(os.environ, KADER_CACHE=self.root, HARNESS_IMAGES=self.images,
+                   HARNESS_SELECT="1", HOME=self.tmp, PATH=self.bin + os.pathsep + os.environ["PATH"])
+        os.makedirs(os.path.join(self.tmp, ".cache", "darktable"), exist_ok=True)
+
+        def lua(action):
+            p = subprocess.run([LUA, os.path.join(ROOT, "tests", "lua_harness.lua"), script, action],
+                               env=env, capture_output=True, text=True, timeout=90)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            return json.loads(p.stdout.strip().splitlines()[-1])
+
+        out = lua("start")
+        self.assertIn("SERVER LÄUFT", out["status"])
+        sid = open(os.path.join(self.root, "last_session")).read().strip()
+        info = sess.read_json(os.path.join(self.root, sid, "server.json"))
+        self.addCleanup(lambda: os.path.exists(f"/proc/{info['pid']}") and os.kill(info["pid"], signal.SIGKILL))
+        self.assertIn("gestoppt", lua("stop")["status"])
+        for _ in range(50):
+            if not os.path.exists(f"/proc/{info['pid']}"):
+                break
+            time.sleep(0.1)
+        self.assertFalse(os.path.exists(f"/proc/{info['pid']}"))
+
+    def test_app_mode_reports_a_moved_app(self):
+        script = self._plugin_copy(os.path.join(self.tmp, "weg", "Kader.AppImage"))
+        env = dict(os.environ, KADER_CACHE=self.root, HARNESS_IMAGES=self.images,
+                   HARNESS_SELECT="1", HOME=self.tmp)
+        os.makedirs(os.path.join(self.tmp, ".cache", "darktable"), exist_ok=True)
+        p = subprocess.run([LUA, os.path.join(ROOT, "tests", "lua_harness.lua"), script, "start"],
+                           env=env, capture_output=True, text=True, timeout=90)
+        out = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertTrue(any("Kader-App nicht gefunden" in m for m in out["prints"]), out["prints"])
+
+    def test_windows_commands(self):
+        """Unter Windows: cmd.exe-Befehle mit doppelten Anfuehrungszeichen, tasklist/taskkill statt kill."""
+        app = os.path.join(self.tmp, "Program Files", "Kader", "kader.exe")
+        os.makedirs(os.path.dirname(app))
+        open(app, "w").close()
+        script = self._plugin_copy(app)
+        env = dict(os.environ, KADER_CACHE=self.root, HARNESS_IMAGES=self.images, HARNESS_SELECT="1",
+                   HARNESS_OS="windows", HARNESS_CACHE_DIR=self.tmp, TEMP=os.path.join(self.tmp, "t"))
+
+        def lua(action):
+            p = subprocess.run([LUA, os.path.join(ROOT, "tests", "lua_harness.lua"), script, action],
+                               env=env, capture_output=True, text=True, timeout=90)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            return json.loads(p.stdout.strip().splitlines()[-1])
+
+        out = lua("start")
+        self.assertIn("SERVER LÄUFT", out["status"])
+        start = [c for c in out["commands"] if c.startswith('start "" /B')]
+        self.assertEqual(len(start), 1, out["commands"])
+        self.assertRegex(start[0], r'^start "" /B "%s" serve --job "[^"]+\.json" --root "%s" --watch-pid 0 '
+                         r'> "[^"]+\.out" 2>&1$' % (re.escape(app), re.escape(self.root)))
+        self.assertIn('start "" "http://127.0.0.1:9/?t=x"', out["commands"])      # Browser
+        self.assertFalse([c for c in out["commands"] if "kill -" in c or "xdg-open" in c or "$" in c])
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, "kader.log")))     # Log im darktable-Cache
+
+        out = lua("stop")
+        self.assertIn('tasklist /FI "PID eq 4242" /NH 2>nul', out["commands"])
+        self.assertIn("taskkill /PID 4242 /T /F >nul 2>&1", out["commands"])
+        self.assertIn("gestoppt", out["status"])
+
     def test_exit_event_stops_the_server(self):
         """Beim Beenden von darktable (Lua-Ereignis "exit") stoppt der Server sofort."""
         import signal

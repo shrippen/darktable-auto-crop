@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kader"
-version = "0.2.0"
+version = "0.3.0"
 description = "Erkennt den Bildrahmen abfotografierter Filmnegative und schneidet zu; Web-UI zur Pruefung, Ausgabe fuer darktable, RawTherapee, Lightroom (XMP) oder als Dateien."
 readme = "README.md"
 license = "MIT"

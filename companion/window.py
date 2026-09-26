@@ -9,6 +9,7 @@ import subprocess
 import sys
 import webbrowser
 
+from . import programs
 from .session import read_json
 
 POLL_MS = 500
@@ -22,6 +23,9 @@ COL = {
 }
 STAGE_TEXT = {"export": "RAW-Entwicklung", "detect": "Erkennung", "skew": "Schräglage wird gemessen"}
 STOP_TEXT = {"quit": "Beendet.", "idle": "Wegen Leerlauf beendet.", "signal": "Beendet."}
+# Ziele, deren Ergebnis ein Programm beim Oeffnen des Ordners liest: Knopf "In ... oeffnen"
+EDITORS = {"darktable_xmp": (programs.DARKTABLE, "darktable öffnen"),
+           "rawtherapee": (programs.RAWTHERAPEE, "RawTherapee öffnen")}
 FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "vendor", "fonts")
 
 
@@ -53,10 +57,20 @@ def snapshot(app):
         st = [i.get("status") for i in (res.get("images") or {}).values()]
         out = s.target.describe(s).get("out") or snap["folder"]
         snap.update(mode="done" if phase == "applied" else "failed", out=out, message=res.get("message"),
+                    target=s.target.name,
                     ok=st.count("ok"), skipped=st.count("skipped"), error=st.count("error"))
         return snap
     snap.update(mode="ready", **{g: groups.count(g) for g in ("green", "yellow", "red")})
     return snap
+
+
+def editor_for(target, find_gui=None):
+    """(Knopftext, argv) fuer das Programm, das das Ergebnis dieses Ziels liest, oder None."""
+    if target not in EDITORS:
+        return None
+    name, label = EDITORS[target]
+    argv = (find_gui or programs.find_gui)(name)
+    return (label, argv) if argv else None
 
 
 def strip_cells(snap):
@@ -103,7 +117,7 @@ def open_folder(path):
     if sys.platform == "win32":
         os.startfile(path)      # noqa: S606
     else:
-        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path], env=programs.clean_env())
 
 
 class Window:
@@ -160,6 +174,7 @@ class Window:
         self.quit_btn = self._outline(btns, "Beenden", self.quit)
         self.quit_btn.pack(side="right")
         self.browser_btn = self._outline(btns, "Browser", self.open_browser)
+        self.editor = None
         root.protocol("WM_DELETE_WINDOW", self.quit)
         root.update_idletasks()
         _dark_titlebar(root)
@@ -253,8 +268,13 @@ class Window:
         else:
             self.badge.pack(side="right")
         if mode == "done":
-            self.primary.configure(text="Ausgabeordner öffnen", bg=COL["aqua"], activebackground=COL["aqua_h"],
-                                   command=self.open_out)
+            self.editor = editor_for(snapshot(self.app).get("target"))
+            if self.editor:
+                self.primary.configure(text=self.editor[0], bg=COL["aqua"], activebackground=COL["aqua_h"],
+                                       command=self.open_editor)
+            else:
+                self.primary.configure(text="Ausgabeordner öffnen", bg=COL["aqua"],
+                                       activebackground=COL["aqua_h"], command=self.open_out)
             self.browser_btn.pack(side="right", padx=(0, self.unit))
         else:
             self.primary.configure(text="Im Browser öffnen", bg=COL["blue"], activebackground=COL["blue_h"],
@@ -310,6 +330,13 @@ class Window:
             open_folder(path if os.path.isdir(path) else snap["folder"])
         except OSError:
             self.open_browser()
+
+    def open_editor(self):
+        folder = snapshot(self.app)["folder"]
+        try:
+            programs.launch(self.editor[1] + [folder])
+        except OSError:
+            self.open_out()
 
     def quit(self):
         self.app.stop("quit")

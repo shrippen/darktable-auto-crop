@@ -2,10 +2,12 @@
 
 Eigenstaendig, ohne darktable:
   kader ORDNER                     = open ORDNER
-  kader open ORDNER [--target auto|json|copies|xmp|rawtherapee]
+  kader open ORDNER [--target auto|json|copies|xmp|rawtherapee|darktable_xmp]
                             [--out DIR] [--converter auto|darktable|rawtherapee|rawpy]
                             [--films 33 34] [--new] [--no-browser] [--tui | --window] [--bind ADRESSE]
   kader check [ORDNER]             Konverter, Ziele, Vorschlag fuer ORDNER
+  kader darktable-plugin install|uninstall|status
+                                   darktable-Plugin aus der App einrichten (exe/AppImage)
 
   --tui zeigt statt der einmaligen URL-Ausgabe eine laufende Statusanzeige im Terminal
   (Fortschritt, Zähler, URL, Taste O öffnet den Browser, Q beendet den Server) - gedacht für
@@ -45,7 +47,30 @@ from .export import is_raw
 from .server import acquire_lock, make_server, serve
 from .sources import folder_job, standalone_job
 
-COMMANDS = ("open", "check", "serve", "cleanup")
+COMMANDS = ("open", "check", "serve", "cleanup", "darktable-plugin")
+
+
+def _darktable_plugin(action):
+    from . import dtplugin
+    try:
+        if action == "install":
+            for note in dtplugin.install():
+                print(note)
+            print(f"Installiert: {dtplugin.plugin_dir()}")
+            print("darktable starten: im Leuchttisch erscheint das Modul „Kader“.")
+        elif action == "uninstall":
+            dtplugin.uninstall()
+            print("Entfernt.")
+        else:
+            st = dtplugin.status()
+            print(f"darktable gefunden: {'ja' if st['darktable'] else 'nein'}")
+            print(f"Plugin installiert: {'ja' if st['installed'] else 'nein'} ({st['dir']})")
+            if st["command"]:
+                print(f"startet: {st['command']}")
+    except dtplugin.PluginError as e:
+        print(f"Fehler: {e}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def main(argv=None):
@@ -95,6 +120,9 @@ def main(argv=None):
                     help="beenden, sobald dieser Prozess (darktable) nicht mehr laeuft")
     _server_args(sp)
 
+    dp = sub.add_parser("darktable-plugin", help="darktable-Plugin der Kader-App einrichten oder entfernen")
+    dp.add_argument("action", choices=["install", "uninstall", "status"])
+
     clp = sub.add_parser("cleanup")
     clp.add_argument("--days", type=int, default=sess.CACHE_DAYS)
     clp.add_argument("--root", default=sess.DEFAULT_ROOT)
@@ -106,6 +134,8 @@ def main(argv=None):
         return 0
     if args.cmd == "check":
         return _check(args.folder)
+    if args.cmd == "darktable-plugin":
+        return _darktable_plugin(args.action)
     if args.cmd == "open":
         return _open(args)
     return _serve(args)
@@ -263,7 +293,7 @@ def _check(folder):
     print("RAW-Konverter:")
     for name in converters.NAMES:
         print(f"  {name:12} {'ja' if avail[name] else 'nein'}")
-    print("Ziele: " + ", ".join(targets.standalone_names()) + " (darktable: Lua-Plugin)")
+    print("Ziele: " + ", ".join(targets.standalone_names()) + " (darktable mit Plugin: Lua)")
     tui_reason = tui.unavailable_reason()
     print("Terminal-Statusanzeige (--tui): " + ("ja" if not tui_reason else f"nein ({tui_reason})"))
     if not folder:

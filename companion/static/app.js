@@ -12,7 +12,7 @@ const standalone = () => !!store.s && store.s.mode === 'standalone';
 // Ziel als Elementpaar, bei Ausgabeordner mit Pfad
 const targetHtml = (s) => T('tgt_' + s.target.name) + (s.target.out ? ` <code>${esc(s.target.out)}</code>` : '');
 // Zahl der "tgt_<name>_limitN"-Zeilen je Ziel (siehe i18n.js)
-const TARGET_LIMITS = { copies: 3, json: 2, xmp: 4, rawtherapee: 4 };
+const TARGET_LIMITS = { copies: 3, json: 2, xmp: 4, rawtherapee: 4, darktable_xmp: 4 };
 let settingsBuilt = false;
 let refreshTimer = null;
 let logLines = [];

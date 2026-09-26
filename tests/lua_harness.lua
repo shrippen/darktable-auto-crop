@@ -77,6 +77,37 @@ local dt = {
 setmetatable(dt.styles, { __index = function(_, k) return style_store[k] end,
   __len = function() return #style_store end })
 
+-- HARNESS_OS=windows: darktable meldet Windows; Befehle an cmd.exe werden nur aufgezeichnet.
+-- "start ... serve --job" legt eine server.json an (Server-Attrappe mit PID 4242), tasklist kennt
+-- die PID, bis taskkill sie beendet.
+local commands = {}
+if os.getenv("HARNESS_OS") == "windows" then
+  dt.configuration = { running_os = "windows", cache_dir = os.getenv("HARNESS_CACHE_DIR") }
+  local real_execute, killed = os.execute, {}
+  os.execute = function(cmd)
+    if cmd:match("^sleep ") then return real_execute(cmd) end
+    commands[#commands + 1] = cmd
+    local job = cmd:match('^start "" /B .- serve %-%-job "([^"]+)"')
+    if job then
+      local f = io.open(job); local txt = f:read("*a"); f:close()
+      local dir = cmd:match('%-%-root "([^"]+)"') .. "/" .. txt:match('"session":"([^"]+)"')
+      real_execute("mkdir -p '" .. dir .. "'")
+      local g = io.open(dir .. "/server.json", "w")
+      g:write('{"url":"http://127.0.0.1:9/?t=x","pid":4242}'); g:close()
+    end
+    local pid = cmd:match("^taskkill /PID (%d+)")
+    if pid then killed[pid] = true end
+    return true
+  end
+  io.popen = function(cmd)
+    commands[#commands + 1] = cmd
+    local pid = cmd:match("PID eq (%d+)")
+    local out = (pid and not killed[pid]) and ("kader.exe  " .. pid .. " Console  1  9.000 K\n")
+      or "INFO: Es werden keine Aufgaben ausgefuehrt.\n"
+    return { read = function() return out end, close = function() end }
+  end
+end
+
 package.preload["darktable"] = function() return dt end
 package.preload["lib/dtutils"] = function() return { check_min_api_version = function() end } end
 
@@ -124,6 +155,8 @@ for _, w in ipairs(registry) do
   if (w.kind == "label" or w.kind == "section_label") and status == "" and w.label:lower():find("server") then status = w.label end
   if w.kind == "button" and w.label:find("^http") then url_label = w.label end
 end
-print(string.format('{"labels":[%s],"styles":[%s],"prints":[%s],"status":"%s","url_label":"%s","markup":%d}',
+local cmds = {}
+for _, c in ipairs(commands) do cmds[#cmds + 1] = '"' .. c:gsub("\\", "\\\\"):gsub('"', '\\"') .. '"' end
+print(string.format('{"labels":[%s],"styles":[%s],"prints":[%s],"status":"%s","url_label":"%s","markup":%d,"commands":[%s]}',
   table.concat(labels, ","), table.concat(st, ","), table.concat(pr, ","),
-  status:gsub('"', '\\"'), url_label, #markup_labels))
+  status:gsub('"', '\\"'), url_label, #markup_labels, table.concat(cmds, ",")))

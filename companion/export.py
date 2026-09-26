@@ -16,6 +16,8 @@ import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from . import programs
+
 RAW_EXTENSIONS = {
     ".nef", ".cr2", ".cr3", ".arw", ".raf", ".orf", ".rw2", ".dng",
     ".pef", ".srw", ".erf", ".kdc", ".3fr", ".mos", ".iiq", ".x3f",
@@ -28,13 +30,7 @@ _OP = re.compile(r'darktable:operation="([^"]*)"')
 
 
 def find_darktable_cli():
-    exe = shutil.which("darktable-cli")
-    if exe:
-        return exe
-    for cand in ("/usr/bin/darktable-cli", "/usr/local/bin/darktable-cli"):
-        if os.path.exists(cand):
-            return cand
-    return None
+    return programs.find(programs.DARKTABLE_CLI)
 
 
 def find_xmp(image_path):
@@ -88,8 +84,8 @@ def export_one(dt_cli, raw, out, work_dir):
         return out
     cfg = tempfile.mkdtemp(prefix="cfg_", dir=work_dir)
     try:
-        env = dict(os.environ, XDG_CONFIG_HOME=cfg,
-                   XDG_CACHE_HOME=os.path.join(cfg, "cache"))
+        kw = programs.run_kwargs(dict(os.environ, XDG_CONFIG_HOME=cfg,
+                                      XDG_CACHE_HOME=os.path.join(cfg, "cache")))
         cmd = [dt_cli, raw]
         if xmp:
             with open(xmp, encoding="utf-8", errors="replace") as f:
@@ -107,7 +103,7 @@ def export_one(dt_cli, raw, out, work_dir):
         if os.path.exists(out):
             os.remove(out)
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              text=True, env=env, timeout=600)
+                              text=True, timeout=600, **kw)
         if not os.path.exists(out):
             # darktable-cli haengt manchmal einen Zaehler an (out_01.jpg)
             base = os.path.splitext(out)[0]

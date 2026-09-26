@@ -11,8 +11,8 @@ Wenn man analoge Negative mit einer Kamera digitalisiert, bleibt der Filmstreife
 
 Die Erkennung findet den Filmrahmen im Bild und schlägt einen Crop vor. In einer lokalen Web-Oberfläche prüfst und
 korrigierst du die Vorschläge, sortiert nach Sicherheit (🟢 grün / 🟡 gelb / 🔴 rot). **Fertig** übergibt das Ergebnis an ein
-**Ziel**: zugeschnittene Kopien, eine Crop-Liste (JSON/CSV), Sidecars für RawTherapee oder Lightroom oder – über das
-Lua-Plugin – direkt darktable.
+**Ziel**: zugeschnittene Kopien, eine Crop-Liste (JSON/CSV), Sidecars für darktable, RawTherapee oder Lightroom oder –
+über das Lua-Plugin – direkt in darktable.
 
 ### Erkannte Filmformate
 
@@ -81,6 +81,19 @@ Kader. RAWs werden ohne weitere Programme entwickelt (rawpy ist enthalten). Die 
 „Weitere Informationen“ → „Trotzdem ausführen“), das AppImage muss einmal ausführbar gemacht werden. Bauen:
 [packaging/README.md](packaging/README.md).
 
+**Mit darktable oder RawTherapee**, ohne Terminal:
+
+| Weg | So geht's | Gut für |
+|-----|-----------|---------|
+| Ziel **darktable-Sidecars** | App starten, Ordner wählen, prüfen, **Fertig**; im Statusfenster **darktable öffnen** importiert den Ordner | neue Rollen, die noch nicht in darktable sind |
+| **darktable-Plugin** | beim ersten Start bietet die App an, es einzurichten (darktable vorher schließen); danach in darktable Bilder wählen → **Review starten** | Bilder, die schon in darktable liegen |
+| Ziel **RawTherapee-Profile** | App starten, Ordner wählen, prüfen, **Fertig**; **RawTherapee öffnen** zeigt den Ordner, die `.pp3`-Profile liest es selbst | RawTherapee-Nutzer |
+
+RawTherapee hat keine Plugin-Schnittstelle; Kader läuft dort immer vorher. Vorhandene `.pp3`-Profile und darktable-
+Bearbeitungen bleiben stehen, Kader ergänzt nur Crop (und bei darktable Drehung) und Farblabel. Kader findet
+`darktable-cli`/`rawtherapee-cli` auch in den Windows-Installationsordnern, wo die Installer sie nicht in den PATH
+eintragen.
+
 ### Mit Python
 
 Voraussetzungen: Python 3.8+, OpenCV, NumPy, Pillow (werden mitinstalliert).
@@ -100,6 +113,17 @@ Kein Lua-Schritt, keine darktable-Dateien.
 Alternativ von Hand: `pip install ".[raw]"` (ohne `[raw]`: RAWs brauchen dann `darktable-cli` oder `rawtherapee-cli`).
 
 ### Als darktable-Plugin
+
+Aus der App (exe/AppImage): der erste Start bietet die Einrichtung an, oder jederzeit
+`Kader darktable-plugin install` (`uninstall`, `status`). Das kopiert `kader.lua` nach
+`<darktable-Konfiguration>/lua/contrib/kader/`, trägt dort den Ort der App ein (`kader_command`; ein Start der
+verschobenen App trägt den neuen Ort nach), schaltet das Plugin im Script Manager ein
+(`lua/script_manager/contrib/kader=TRUE` in `darktablerc`) und ergänzt für darktable ohne Script Manager eine
+`require`-Zeile in `luarc`. darktable muss dabei geschlossen sein. Das Plugin startet den Server dann über die App,
+Python ist nicht nötig; es läuft unter Linux und Windows (dort `cmd.exe`, `tasklist`/`taskkill`; unter Windows
+noch nicht in echtem darktable geprüft). „Detect & Queue“ braucht weiterhin die Python-Installation unten.
+
+Mit Python:
 
 - Darktable (4.0+) mit Lua-Unterstützung
 
@@ -175,6 +199,7 @@ kader open ~/Scans --target xmp --films 33 34 --converter rawpy --out ~/Export -
 | `json` | `OUT/crops.json` und `OUT/crops.csv` (Crop normiert und in Pixeln, Winkel, Gruppe) | Winkel in der Datei | RAWs ohne bekannte Sidecars |
 | `xmp` | Adobe-Sidecar `<Name>.xmp`: `crs:HasCrop`, `crs:Crop*`, Farblabel `xmp:Label` | nein | eine Adobe-XMP (`crs:`) liegt neben einem RAW |
 | `rawtherapee` | Profil `<Datei>.pp3`: `[Crop]`, `[General] ColorLabel` | nein | ein `.pp3` liegt im Ordner |
+| `darktable_xmp` | darktable-Sidecar `<Datei>.xmp`: History-Schritte `crop` (und `ashift`), Farblabel | ja, Modul „Drehen und Perspektive“ | eine darktable-XMP liegt im Ordner |
 | `darktable` | über das Lua-Plugin, siehe [Nutzung mit darktable](#nutzung-mit-darktable) | ja | – (nur aus darktable) |
 | `reviews` | Kalibrierung, siehe [Kalibrierung](#kalibrierung-und-ground-truth) | Winkel als Referenz | – |
 
@@ -203,6 +228,13 @@ Grenzen der Ziele (ehrlicher Stand):
   Rahmen; mit einem anderen Konverter kann er um einige Pixel abweichen (Hinweis im Ergebnis). Kein Winkel. Ein neu
   angelegtes `.pp3` enthält nur Crop und Label – RawTherapee nimmt für den Rest seine eingebauten Standards, nicht dein
   Standardprofil. Besser: Bilder vorher einmal in RawTherapee öffnen. Gegen RawTherapee selbst nicht getestet.
+- **`darktable_xmp`**: dieselben History-Schritte wie das Plugin (gegen darktable 5.6 per `darktable-cli` geprüft).
+  Vorhandene History bleibt, die neuen Schritte kommen oben drauf; rückgängig gemachte Schritte (ab `history_end`)
+  entfallen wie bei jeder neuen Bearbeitung in darktable. Blau/lila bleiben. Eine History in unbekannter Form wird
+  nicht angefasst (Fehler im Ergebnis). darktable liest die XMP nur beim **Import**: für schon importierte Bilder
+  „Einstellungen → Speicher → beim Start nach aktualisierten XMP-Dateien suchen“ einschalten und neu starten, oder
+  das Plugin nehmen. Das Ergebnis nennt solche Bilder (schreibgeschützter Blick in `library.db`) und warnt, wenn
+  darktable währenddessen läuft (es kann die XMP dann mit seinem Stand überschreiben).
 - **Capture One** wird nicht unterstützt (zurückgestellt, siehe [`roadmap-standalone.md`](roadmap-standalone.md)).
 
 ### RAW-Konverter
@@ -384,7 +416,9 @@ saubere Ende (benötigt `rich`, sonst übersprungen).
 | `film_scale.py` | Maßstab einer Rolle aus der Perforation |
 | `companion/` | Companion: lokaler Server, Sitzungen, Web-Oberfläche (`static/`), CLI (`__main__.py`) |
 | `companion/converters.py` | RAW-Konverter (Eingabe-Adapter): darktable, RawTherapee, rawpy |
-| `companion/targets/` | Ziele (Ausgabe-Adapter): darktable, reviews, json, copies, xmp, rawtherapee |
+| `companion/targets/` | Ziele (Ausgabe-Adapter): darktable, reviews, json, copies, xmp, rawtherapee, darktable_xmp |
+| `companion/programs.py` | darktable/RawTherapee finden (auch Windows-Installationsordner) und starten |
+| `companion/dtconfig.py`, `companion/dtplugin.py` | darktables Konfiguration lesen; Plugin aus der App einrichten |
 | `companion/tui.py` | Terminal-Statusanzeige (`--tui`), nur eigenständige Nutzung |
 | `kader.lua` | darktable-Integration (Lua-Plugin) |
 | `pyproject.toml` | Python-Paket, Befehl `kader` |
